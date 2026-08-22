@@ -5,7 +5,6 @@ import * as db from "./database.js";
 dotenv.config();
 
 const TOKEN = process.env.BOT_TOKEN;
-// تنظیم آیدی مالک یا نام کاربری آن (در صورت نیاز به چک کردن با username یا ID)
 const OWNER_USERNAME = "ARENAM_10";
 const OWNER_ID = Number(process.env.OWNER_ID);
 const STORE_NAME = process.env.STORE_NAME || "LEX VIP";
@@ -19,31 +18,24 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 const userState = {};
 
-// تابع ساخت منوی اصلی شیشه‌ای (خرید و مدیریت در سطرهای جداگانه، بقیه دو ستونی)
+// تابع ساخت منوی اصلی شیشه‌ای (بدون تست سرعت و راهنمای اتصال)
 function getInlineMenu(userId, username) {
     const isOwner = (userId === OWNER_ID) || (username === OWNER_USERNAME);
     const keyboard = [];
 
-    // اگر کاربر ادمین/مالک باشد، دکمه مدیریت در یک سطر جداگانه و بالا قرار می‌گیرد
     if (isOwner) {
         keyboard.push([{ text: "🔐 مدیریت ربات", callback_data: "menu_admin" }]);
     }
 
-    // دکمه بزرگ خرید اشتراک در یک سطر جداگانه
     keyboard.push([{ text: "🛒 خرید اشتراک", callback_data: "menu_buy" }]);
 
-    // بقیه گزینه‌ها به صورت دو ستونی
     keyboard.push(
         [
             { text: "🎁 هدیه روزانه", callback_data: "menu_gift" },
-            { text: "🚀 تست سرعت", callback_data: "menu_speed" }
+            { text: "💳 حساب کاربری", callback_data: "menu_account" }
         ],
         [
-            { text: "💳 حساب کاربری", callback_data: "menu_account" },
-            { text: "📂 اشتراک‌های من", callback_data: "menu_my_subs" }
-        ],
-        [
-            { text: "📘 راهنمای اتصال", callback_data: "menu_guide" },
+            { text: "📂 اشتراک‌های من", callback_data: "menu_my_subs" },
             { text: "🤝 اخذ نمایندگی", callback_data: "menu_agency" }
         ],
         [
@@ -97,7 +89,6 @@ function getAdminPanelKeyboard() {
     };
 }
 
-// دکمه بازگشت شیشه‌ای
 function getInlineBack() {
     return {
         reply_markup: {
@@ -108,7 +99,6 @@ function getInlineBack() {
     };
 }
 
-// دکمه بازگشت به پنل مدیریت
 function getAdminBack() {
     return {
         reply_markup: {
@@ -202,7 +192,6 @@ bot.on("message", async (msg) => {
             return;
         }
 
-        // بخش ادمین برای افزودن اشتراک
         if (isOwner) {
             if (state.action === "add_title") {
                 state.title = text;
@@ -245,7 +234,6 @@ bot.on("message", async (msg) => {
                 return bot.sendMessage(chatId, "✔️ محصول جدید با موفقیت اضافه شد.", getAdminPanelKeyboard());
             }
 
-            // ارسال همگانی
             if (state.action === "broadcast_text") {
                 delete userState[userId];
                 bot.sendMessage(chatId, "📢 ارسال همگانی پیام آغاز شد...", getAdminPanelKeyboard());
@@ -255,9 +243,7 @@ bot.on("message", async (msg) => {
                     try {
                         await bot.sendMessage(u.user_id, text);
                         count++;
-                    } catch (e) {
-                        // احتمال مسدود بودن ربات توسط کاربر
-                    }
+                    } catch (e) {}
                 }
                 return bot.sendMessage(chatId, `✔️ پیام همگانی با موفقیت به ${count} کاربر ارسال شد.`);
             }
@@ -306,15 +292,6 @@ bot.on("callback_query", async (query) => {
             });
         }
 
-        if (data === "menu_speed") {
-            bot.answerCallbackQuery(query.id);
-            return bot.editMessageText("🚀 برای دریافت تست رایگان با پشتیبانی در ارتباط باشید.", {
-                chat_id: chatId,
-                message_id: query.message.message_id,
-                ...getInlineBack()
-            });
-        }
-
         if (data === "menu_account") {
             const accountText = `👤 شناسه کاربری: \`${userId}\`\n` +
                 `💰 موجودی کیف پول: **0 تومان**\n` +
@@ -346,15 +323,6 @@ bot.on("callback_query", async (query) => {
             });
         }
 
-        if (data === "menu_guide") {
-            bot.answerCallbackQuery(query.id);
-            return bot.editMessageText("📘 راهنمای استفاده:\n\nاندروید: V2rayNG\nآیفون: FoXray / Streisand\nکامپیوتر: V2rayN", {
-                chat_id: chatId,
-                message_id: query.message.message_id,
-                ...getInlineBack()
-            });
-        }
-
         if (data === "menu_agency") {
             userState[userId] = { action: "waiting_agency_request" };
             bot.answerCallbackQuery(query.id);
@@ -376,7 +344,7 @@ bot.on("callback_query", async (query) => {
 
         if (data === "menu_support") {
             bot.answerCallbackQuery(query.id);
-            return bot.editMessageText(`☎️ راه ارتباط با پشتیبانی:\n\nآیدی پشتیبان: \`@${OWNER_USERNAME}\`\n\nلطفاً پیش از ارسال پیام، راهنمای اتصال را مطالعه کنید.`, {
+            return bot.editMessageText(`☎️ راه ارتباط با پشتیبانی:\n\nآیدی پشتیبان: \`@${OWNER_USERNAME}\``, {
                 chat_id: chatId,
                 message_id: query.message.message_id,
                 parse_mode: "Markdown",
@@ -384,7 +352,6 @@ bot.on("callback_query", async (query) => {
             });
         }
 
-        // پنل مدیریت اصلی ادمین
         if (data === "menu_admin" && isOwner) {
             bot.answerCallbackQuery(query.id);
             return bot.editMessageText("🛠 **پنل مدیریت ربات**\n\nگزینه موردنظر را انتخاب کنید:", {
@@ -395,7 +362,6 @@ bot.on("callback_query", async (query) => {
             });
         }
 
-        // زیرمنوهای پنل مدیریت ادمین
         if (isOwner) {
             if (data === "admin_sub_management") {
                 bot.answerCallbackQuery(query.id);
@@ -653,4 +619,4 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-console.log("🤖 ربات با پنل کامل مدیریت و تنظیمات مالک فعال شد.");
+console.log("🤖 ربات با موفقیت به‌روزرسانی شد و گزینه‌های اضافی حذف گردیدند.");
