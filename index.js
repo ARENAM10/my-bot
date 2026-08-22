@@ -1,10 +1,10 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
 
-const TOKEN = "8850301156:AAEH94AQeKKpf4-eBAgfrwsnvoIRph4--Y4";
+const TOKEN = "8850301156:AAGXFnSqSwyGbvPtucnkZdXhkLWIQi2GpWo";
 const ADMIN_USERNAME = "ARENAM_10";
 
-// تنظیمات پایدار برای جلوگیری از خطاهای پولینگ
+// راه‌اندازی ربات با تنظیمات پایدار پولینگ
 const bot = new TelegramBot(TOKEN, { 
     polling: {
         interval: 300,
@@ -17,7 +17,7 @@ const db = new sqlite3.Database("./arena_shop.db", (err) => {
     if (err) console.error("Database Error: " + err.message);
 });
 
-// حافظه موقت برای وضعیت کاربران (مثل انتظار برای ارسال رسید یا افزودن کانفیگ)
+// حافظه موقت برای وضعیت کاربران (مثل انتظار برای ارسال رسید پرداخت یا افزودن کانفیگ)
 const userState = {};
 
 // ================= 🛠️ LOGGING & NOTIFICATIONS =================
@@ -130,13 +130,11 @@ bot.on("message", (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
-    // پاسخ به کلمه سلام یا تست اولیه
     if (msg.text && msg.text.toLowerCase() === "سلام") {
-        return bot.sendMessage(chatId, "سلام! ربات کاملاً آنلاین و آماده به کار است. 🚀");
+        return bot.sendMessage(chatId, "سلام! ربات آرنا کاملاً آنلاین و آماده به کار است. 🚀");
     }
 
     if (isAdmin(msg.from)) {
-        // اگر ادمین در حال افزودن کانفیگ بود
         if (userState[userId] && userState[userId].action === "adding_config_step") {
             const parts = msg.text.split("|").map(p => p.trim());
             if (parts.length >= 5) {
@@ -158,7 +156,6 @@ bot.on("message", (msg) => {
         return; 
     }
 
-    // اگر کاربر عادی در مرحله ارسال رسید پرداخت بود
     if (userState[userId] && userState[userId].action === "awaiting_receipt") {
         if (msg.photo || msg.document) {
             const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
@@ -172,7 +169,6 @@ bot.on("message", (msg) => {
                     const orderId = this.lastID;
                     bot.sendMessage(chatId, "✅ *رسید شما با موفقیت ثبت شد و برای مالک ارسال گردید.*\nبه زودی پس از بررسی، کانفیگ اختصاصی برایتان ارسال خواهد شد.", { parse_mode: "Markdown" });
 
-                    // ارسال رسید و اطلاعات به مالک ربات
                     db.get(`SELECT * FROM configs WHERE id = ?`, [configId], (err, cfg) => {
                         db.get(`SELECT username FROM users WHERE id = ?`, [userId], (err, u) => {
                             const adminText = `📦 **سفارش جدید نیازمند تایید!**\n\n👤 کاربر: @${u?.username || userId}\n🛒 محصول: ${cfg?.name}\n💰 قیمت: ${cfg?.price?.toLocaleString()} تومان`;
@@ -248,7 +244,6 @@ bot.on("callback_query", async (query) => {
             return bot.sendMessage(chatId, "⚡ هر کاربر یک‌بار می‌تواند تست رایگان دریافت کند. برای دریافت به پشتیبانی پیام دهید: @ARENAM_10");
         }
 
-        // ================= 🛒 فروشگاه و انبار (حذف اتوماتیک کانفیگ فروخته شده) =================
         if (data === "buy_menu") {
             db.all(`SELECT * FROM configs WHERE sold = 0`, [], (err, rows) => {
                 if (!rows || rows.length === 0) {
@@ -295,7 +290,6 @@ bot.on("callback_query", async (query) => {
             });
         }
 
-        // ================= 👑 پنل مدیریت ادمین =================
         if (data === "adm_add_prompt" && isAdmin(user)) {
             userState[user.id] = { action: "adding_config_step" };
             return bot.sendMessage(chatId, "➕ لطفاً مشخصات کانفیگ جدید را با خط عمودی (`|`) به این شکل بفرستید:\n\n`نام | حجم | روز | قیمت | لینک کانفیگ`", { parse_mode: "Markdown" });
@@ -368,4 +362,4 @@ bot.on("polling_error", (err) => {
     console.log("Polling error:", err.message);
 });
 
-console.log("🔥 ARENA SHOP BOT IS FULLY UP AND RUNNING...");
+console.log("🔥 ARENA SHOP BOT IS RUNNING WITH CORRECT TOKEN...");
