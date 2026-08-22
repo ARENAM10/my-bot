@@ -5,7 +5,6 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 console.log("🤖 ربات روشن شد و منتظر پیام است...");
 
-// پاسخ به کلمه سلام یا دستورات ساده
 bot.on('message', (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text ? msg.text.trim().toLowerCase() : "";
