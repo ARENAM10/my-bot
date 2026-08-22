@@ -5,7 +5,7 @@ const OWNER_USERNAME = "ARENAM_10";
 
 const bot = new TelegramBot(token, { polling: true });
 
-// دیتابیس موقت برای مدیریت دقیق بخش‌ها
+// دیتابیس موقت ربات
 const db = {
     configs: [], 
     users: new Set(),
@@ -16,20 +16,18 @@ const db = {
         cardNumber: "6219861861735792",
         cardOwner: "مزراعی",
         bankName: "بلو",
-        payGuide: "لطفا پس از واریز رسید خود را ارسال کنید",
-        joinLockStatus: "خاموش",
-        channel: ""
+        payGuide: "لطفا پس از واریز رسید خود را ارسال کنید"
     }
 };
 
-console.log("🔥 Exact Match Config Bot is running successfully...");
+console.log("🔥 Clean Bot without Join Lock is running successfully...");
 
 const isOwner = (msg) => {
     const username = msg.from.username;
     return username && username.toLowerCase() === OWNER_USERNAME.toLowerCase();
 };
 
-// منوی اصلی مدیریت (دقیقاً مطابق عکس پنل مدیریت)
+// منوی مدیریت بدون دکمه عضویت اجباری
 const sendAdminPanel = (chatId, isEdit = false, messageId = null) => {
     const text = `گزینه موردنظر را انتخاب کنید.`;
     const replyMarkup = {
@@ -51,14 +49,11 @@ const sendAdminPanel = (chatId, isEdit = false, messageId = null) => {
                 { text: "💳 تنظیمات پرداخت", callback_data: "admin_pay_config" }
             ],
             [
-                { text: "🔒 عضویت اجباری", callback_data: "admin_join_lock" },
-                { text: "📢 ارسال همگانی", callback_data: "admin_broadcast" }
+                { text: "📢 ارسال همگانی", callback_data: "admin_broadcast" },
+                { text: "🗑 حذف پیام", callback_data: "admin_del_broadcast" }
             ],
             [
-                { text: "🗑 حذف پیام", callback_data: "admin_del_broadcast" },
-                { text: "📌 سنجاق پیام", callback_data: "admin_pin_msg" }
-            ],
-            [
+                { text: "📌 سنجاق پیام", callback_data: "admin_pin_msg" },
                 { text: "👤 گزینه‌های مشتریان", callback_data: "admin_client_options" }
             ],
             [
@@ -137,9 +132,6 @@ bot.on('callback_query', async (query) => {
         };
         bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
     }
-    else if (data === 'admin_add_config') {
-        bot.sendMessage(chatId, `➕ لطفاً لینک یا مشخصات اشتراک جدید را ارسال کنید:`);
-    }
     else if (data === 'admin_history') {
         const text = `📦 **فروش‌های معتبر اشتراک**\n\n___________________\n\nهنوز فروش تأییدشده و دارای اطلاعات کامل وجود ندارد.`;
         const keyboard = {
@@ -197,18 +189,6 @@ bot.on('callback_query', async (query) => {
         };
         bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
     }
-    else if (data === 'admin_join_lock') {
-        const s = db.settings;
-        const text = `🔒 **عضویت اجباری**\n\n___________________\n\nوضعیت: ${s.joinLockStatus}\n\nبرای فعال‌سازی، یک کانال عمومی را ثبت کنید.`;
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: "➕ تنظیم/تغییر کانال", callback_data: "set_channel" }],
-                [{ text: "ℹ️ راهنمای تنظیم", callback_data: "guide_channel" }],
-                [{ text: "🔙 بازگشت به مدیریت", callback_data: "open_admin_panel" }]
-            ]
-        };
-        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
-    }
     else if (data === 'admin_broadcast') {
         const text = `📢 **پیام همگانی**\n\nمتن پیام خود را ارسال کنید.\nبرای لغو، «لغو» را بفرستید.`;
         const keyboard = {
@@ -240,8 +220,5 @@ bot.on('callback_query', async (query) => {
             ]
         };
         bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
-    }
-    else if (data.startsWith('cli_') || data === 'buy_sub' || data === 'my_account' || data === 'wallet_charge') {
-        bot.sendMessage(chatId, `شبیه‌سازی بخش مشتریان اجرا شد.`);
     }
 });
