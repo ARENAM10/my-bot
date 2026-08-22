@@ -1,10 +1,8 @@
+{
   "name": "my-bot",
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",
-  "engines": {
-    "node": "20.x"
-  },
   "scripts": {
     "start": "node index.js"
   },
@@ -12,3 +10,4 @@
     "node-telegram-bot-api": "^0.66.0"
   }
 }
+
