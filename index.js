@@ -1,7 +1,7 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
 
-const TOKEN = "8850301156:AAHfNQeFI2tWfBQg_PZTzuvoW-R5TGPe4mo";
+const TOKEN = "8850301156:AAEH94AQeKKpf4-eBAgfrwsnvoIRph4--Y4";
 const ADMIN_USERNAME = "ARENAM_10";
 
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -158,7 +158,6 @@ bot.on("callback_query", async (query) => {
         showMainMenu(chatId, user.first_name || "کاربر");
     }
 
-    // خرید محصول
     if (data.startsWith("buy_")) {
         const configId = data.split("_")[1];
         db.get(`SELECT * FROM configs WHERE id = ? AND sold = 0`, [configId], (err, config) => {
@@ -173,7 +172,6 @@ bot.on("callback_query", async (query) => {
                     return bot.sendMessage(chatId, `❌ موجودی کیف پول شما کافی نیست!\n💰 موجودی: ${balance}\n🏷 قیمت: ${config.price}\n\nلطفاً ابتدا کیف پول خود را شارژ کنید.`);
                 }
 
-                // کسر موجودی و ثبت خرید
                 db.run(`UPDATE users SET balance = balance - ? WHERE id = ?`, [config.price, chatId]);
                 db.run(`UPDATE configs SET sold = 1, buyer = ? WHERE id = ?`, [chatId, configId]);
                 
@@ -186,7 +184,6 @@ bot.on("callback_query", async (query) => {
         });
     }
 
-    // پنل مدیریت - آمار انبار
     if (data === "admin_stock" && isAdmin(user)) {
         db.all(`SELECT * FROM configs`, [], (err, rows) => {
             const free = rows.filter(r => !r.sold).length;
