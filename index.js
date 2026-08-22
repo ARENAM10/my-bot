@@ -17,20 +17,20 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 const userState = {};
 
-// کیبورد اصلی ربات
+// منوی اصلی با استایل و ایموجی‌های جدید
 function getMainKeyboard(userId) {
     const isOwner = userId === OWNER_ID;
     const keyboard = [
-        [{ text: "💎 خرید اشتراک" }],
-        [{ text: "🎁 اشتراک رایگان" }, { text: "⚡️ سرور تست" }],
-        [{ text: "💰 کیف پول" }],
-        [{ text: "📦 اشتراک‌های من" }, { text: "📖 آموزش اتصال" }],
-        [{ text: "🤝 درخواست نمایندگی" }],
-        [{ text: "👥 دعوت دوستان" }, { text: "📞 پشتیبانی" }]
+        [{ text: "🛒 خرید اشتراک" }],
+        [{ text: "🎁 هدیه روزانه" }, { text: "🚀 تست سرعت" }],
+        [{ text: "💳 حساب کاربری" }],
+        [{ text: "📂 اشتراک‌های من" }, { text: "📘 راهنمای اتصال" }],
+        [{ text: "🤝 اخذ نمایندگی" }],
+        [{ text: "🌐 معرفی به دوستان" }, { text: "☎️ ارتباط با پشتیبانی" }]
     ];
 
     if (isOwner) {
-        keyboard.unshift([{ text: "🔐 پنل مدیریت مالک" }]);
+        keyboard.unshift([{ text: "🔐 مدیریت ربات" }]);
     }
 
     return {
@@ -41,11 +41,11 @@ function getMainKeyboard(userId) {
     };
 }
 
-// کیبورد حالت بازگشت
+// کیبورد بازگشت
 function getBackKeyboard() {
     return {
         reply_markup: {
-            keyboard: [[{ text: "🔙 بازگشت" }]],
+            keyboard: [[{ text: "🔙 بازگشت به منو" }]],
             resize_keyboard: true
         }
     };
@@ -61,7 +61,7 @@ bot.onText(/\/start/, (msg) => {
 
     bot.sendMessage(
         chatId,
-        `💎 به ربات ${STORE_NAME} خوش آمدید 💎\n\n💎 ما اینجاایم تا شما رو به اینترنت آزاد وصل کنیم:\n\n💎 @LexVipBot`,
+        `✨ به پنل اختصاصی ${STORE_NAME} خوش آمدید.\n\nلطفاً از منوی زیر گزینه مورد نظر خود را انتخاب کنید:`,
         getMainKeyboard(userId)
     );
 });
@@ -73,16 +73,16 @@ bot.on("message", async (msg) => {
 
     if (!text) return;
 
-    if (text === "🔙 بازگشت" || text === "/start") {
+    if (text === "🔙 بازگشت به منو" || text === "/start") {
         delete userState[userId];
-        return bot.sendMessage(chatId, "به منوی اصلی برگشتید:", getMainKeyboard(userId));
+        return bot.sendMessage(chatId, "شما به منوی اصلی بازگشتید:", getMainKeyboard(userId));
     }
 
     db.addUser(msg.from);
 
     const state = userState[userId];
     if (state) {
-        // ثبت رسید پرداخت
+        // ثبت رسید
         if (state.action === "waiting_receipt") {
             const orderId = state.orderId;
             let receiptValue = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.text;
@@ -90,20 +90,20 @@ bot.on("message", async (msg) => {
             db.setReceipt(orderId, receiptValue);
             delete userState[userId];
 
-            bot.sendMessage(chatId, "✅ رسید شما با موفقیت ثبت شد و برای مدیریت ارسال گردید. لطفاً منتظر تأیید بمانید.", getMainKeyboard(userId));
+            bot.sendMessage(chatId, "✔️ رسید شما با موفقیت ثبت شد و جهت بررسی به ادمین ارسال گردید.", getMainKeyboard(userId));
 
             const orderInfo = db.getOrder(orderId);
-            const ownerMsg = `🔔 **سفارش جدید نیازمند بررسی!**\n\n` +
+            const ownerMsg = `🔔 **سفارش جدید ثبت شد!**\n\n` +
                 `👤 کاربر: @${orderInfo.username || "ندارد"} (${orderInfo.first_name})\n` +
-                `📦 اشتراک: ${orderInfo.title}\n` +
-                `💰 قیمت: ${orderInfo.price} تومان\n` +
-                `🆔 شماره سفارش: ${orderId}`;
+                `📦 محصول: ${orderInfo.title}\n` +
+                `💵 مبلغ: ${orderInfo.price} تومان\n` +
+                `📌 شناسه سفارش: ${orderId}`;
 
             const ownerKeyboard = {
                 reply_markup: {
                     inline_keyboard: [
                         [
-                            { text: "✅ تأیید و ارسال اشتراک", callback_data: `approve_${orderId}` },
+                            { text: "✅ تأیید و ارسال", callback_data: `approve_${orderId}` },
                             { text: "❌ رد سفارش", callback_data: `reject_${orderId}` }
                         ]
                     ]
@@ -113,12 +113,12 @@ bot.on("message", async (msg) => {
             if (msg.photo) {
                 await bot.sendPhoto(OWNER_ID, receiptValue, { caption: ownerMsg, parse_mode: "Markdown", ...ownerKeyboard });
             } else {
-                await bot.sendMessage(OWNER_ID, `${ownerMsg}\n\n📄 متن/رسید: ${receiptValue}`, { parse_mode: "Markdown", ...ownerKeyboard });
+                await bot.sendMessage(OWNER_ID, `${ownerMsg}\n\n📄 جزئیات: ${receiptValue}`, { parse_mode: "Markdown", ...ownerKeyboard });
             }
             return;
         }
 
-        // دریافت رزومه برای درخواست نمایندگی
+        // درخواست نمایندگی
         if (state.action === "waiting_agency_request") {
             if (text === "انصراف") {
                 delete userState[userId];
@@ -126,18 +126,18 @@ bot.on("message", async (msg) => {
             }
 
             delete userState[userId];
-            bot.sendMessage(chatId, "✅ رزومه و درخواست شما با موفقیت برای مدیریت ارسال شد.", getMainKeyboard(userId));
+            bot.sendMessage(chatId, "✔️ درخواست و اطلاعات شما برای مدیریت ارسال شد.", getMainKeyboard(userId));
 
-            const agencyMsg = `🤝 **درخواست نمایندگی جدید!**\n\n` +
+            const agencyMsg = `🤝 **درخواست نمایندگی جدید:**\n\n` +
                 `👤 کاربر: @${msg.from.username || "ندارد"} (${msg.from.first_name})\n` +
-                `🆔 آیدی عددی: \`${userId}\`\n\n` +
-                `📝 **متن درخواست/رزومه:**\n${text}`;
+                `🆔 شناسه: \`${userId}\`\n\n` +
+                `📝 **متن ارسالی:**\n${text}`;
 
             await bot.sendMessage(OWNER_ID, agencyMsg, { parse_mode: "Markdown" });
             return;
         }
 
-        // بخش افزودن اشتراک توسط ادمین
+        // بخش ادمین برای افزودن اشتراک
         if (userId === OWNER_ID) {
             if (state.action === "add_title") {
                 state.title = text;
@@ -157,19 +157,19 @@ bot.on("message", async (msg) => {
             if (state.action === "add_duration") {
                 state.duration = text;
                 state.action = "add_price";
-                return bot.sendMessage(chatId, "قیمت (به تومان) را به صورت عدد وارد کنید:");
+                return bot.sendMessage(chatId, "مبلغ (به تومان) را وارد کنید:");
             }
             if (state.action === "add_price") {
                 const price = parseInt(text);
-                if (isNaN(price)) return bot.sendMessage(chatId, "❌ لطفاً فقط یک عدد معتبر برای قیمت وارد کنید.");
+                if (isNaN(price)) return bot.sendMessage(chatId, "❌ لطفاً فقط یک عدد معتبر وارد کنید.");
                 state.price = price;
                 state.action = "add_config_string";
-                return bot.sendMessage(chatId, "لینک یا متن اشتراک (ساب) را ارسال کنید:");
+                return bot.sendMessage(chatId, "لینک یا کانفیگ اتصال را ارسال کنید:");
             }
             if (state.action === "add_config_string") {
                 state.config = text;
                 state.action = "add_desc";
-                return bot.sendMessage(chatId, "توضیحات تکمیلی را وارد کنید (یا ارسال کنید 'ندارد'):");
+                return bot.sendMessage(chatId, "توضیحات تکمیلی را وارد کنید (یا کلمه 'ندارد' را بفرستید):");
             }
             if (state.action === "add_desc") {
                 state.description = text === "ندارد" ? "" : text;
@@ -177,74 +177,73 @@ bot.on("message", async (msg) => {
                 db.addConfig(state);
                 delete userState[userId];
 
-                return bot.sendMessage(chatId, "✅ اشتراک جدید با موفقیت اضافه شد!", getMainKeyboard(userId));
+                return bot.sendMessage(chatId, "✔️ محصول جدید با موفقیت اضافه شد.", getMainKeyboard(userId));
             }
         }
     }
 
-    // مدیریت دکمه‌های منوی اصلی
-    if (text === "💎 خرید اشتراک") {
-        return bot.sendMessage(chatId, "💎 محصول مورد نظر را انتخاب کنید:", {
+    // پاسخ‌های منو با استایل جدید
+    if (text === "🛒 خرید اشتراک") {
+        return bot.sendMessage(chatId, "لطفاً بخش مورد نظر را انتخاب کنید:", {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: "📋 مشاهده همه اشتراک‌های موجود", callback_data: "cat_all" }]
+                    [{ text: "📂 مشاهده لیست اشتراک‌ها", callback_data: "cat_all" }]
                 ]
             }
         });
     }
 
-    if (text === "🎁 اشتراک رایگان") {
-        return bot.sendMessage(chatId, "🎁 در حال حاضر اشتراک رایگانی فعال نیست.");
+    if (text === "🎁 هدیه روزانه") {
+        return bot.sendMessage(chatId, "🎁 در حال حاضر هدیه‌ای برای دریافت وجود ندارد.");
     }
 
-    if (text === "⚡️ سرور تست") {
-        return bot.sendMessage(chatId, "⚡️ برای دریافت سرور تست به پشتیبانی پیام دهید.");
+    if (text === "🚀 تست سرعت") {
+        return bot.sendMessage(chatId, "🚀 برای دریافت تست رایگان با پشتیبانی در ارتباط باشید.");
     }
 
-    if (text === "💰 کیف پول") {
-        const walletText = `💎 شناسه کاربری: \`${userId}\`\n` +
-            `💎 موجودی شما: **0 تومان**\n` +
-            `💎 تاریخ عضویت: امروز\n\n` +
-            `💎 برای افزایش موجودی یا وارد کردن کد هدیه از منوی زیر استفاده کنید:`;
+    if (text === "💳 حساب کاربری") {
+        const accountText = `👤 شناسه کاربری: \`${userId}\`\n` +
+            `💰 موجودی کیف پول: **0 تومان**\n` +
+            `📅 وضعیت حساب: عادی`;
 
-        return bot.sendMessage(chatId, walletText, {
+        return bot.sendMessage(chatId, accountText, {
             parse_mode: "Markdown",
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: "💳 شارژ حساب", callback_data: "wallet_charge" }],
-                    [{ text: "🎁 استفاده از کد هدیه", callback_data: "wallet_gift" }]
+                    [{ text: "➕ افزایش موجودی", callback_data: "wallet_charge" }],
+                    [{ text: "🏷 ثبت کد تخفیف", callback_data: "wallet_gift" }]
                 ]
             }
         });
     }
 
-    if (text === "📦 اشتراک‌های من") {
-        return bot.sendMessage(chatId, "🛒 شما در حال حاضر اشتراک فعالی ندارید.");
+    if (text === "📂 اشتراک‌های من") {
+        return bot.sendMessage(chatId, "📌 شما در حال حاضر هیچ اشتراک فعالی ندارید.");
     }
 
-    if (text === "📖 آموزش اتصال") {
-        return bot.sendMessage(chatId, "📖 برای اتصال از برنامه‌های V2rayNG برای اندروید و FoXray برای آیفون استفاده کنید.");
+    if (text === "📘 راهنمای اتصال") {
+        return bot.sendMessage(chatId, "📘 راهنمای استفاده:\n\nاندروید: V2rayNG\nآیفون: FoXray / Streisand\nکامپیوتر: V2rayN");
     }
 
-    if (text === "🤝 درخواست نمایندگی") {
+    if (text === "🤝 اخذ نمایندگی") {
         userState[userId] = { action: "waiting_agency_request" };
-        return bot.sendMessage(chatId, "📝 لطفاً توضیحات و رزومه خود را برای ثبت درخواست نمایندگی ارسال نمایید.\n\nدر صورت انصراف، کلمه «انصراف» را ارسال کنید.", getBackKeyboard());
+        return bot.sendMessage(chatId, "✍️ لطفاً توضیحات، سوابق یا درخواست خود را ارسال کنید.\n\nبرای لغو کلمه «انصراف» را بفرستید.", getBackKeyboard());
     }
 
-    if (text === "👥 دعوت دوستان") {
-        return bot.sendMessage(chatId, "💎 سیستم رفرال در حال حاضر غیرفعال است.");
+    if (text === "🌐 معرفی به دوستان") {
+        return bot.sendMessage(chatId, "🌐 سیستم امتیازدهی و معرفی دوستان در حال حاضر غیرفعال است.");
     }
 
-    if (text === "📞 پشتیبانی") {
-        return bot.sendMessage(chatId, "💎 جهت ارتباط با پشتیبانی با آیدی زیر در ارتباط باشید:\n\n💎 @ARENAM_10\n\n💎 لطفاً قبل از ارسال پیام اگر مشکلی در اتصال دارید ابتدا بخش \"آموزش اتصال\" را مطالعه کنید.");
+    if (text === "☎️ ارتباط با پشتیبانی") {
+        return bot.sendMessage(chatId, "☎️ راه ارتباط با پشتیبانی:\n\nآیدی پشتیبان: `@ARENAM_10`\n\nلطفاً پیش از ارسال پیام، راهنمای اتصال را مطالعه کنید.");
     }
 
-    if (text === "🔐 پنل مدیریت مالک" && userId === OWNER_ID) {
-        return bot.sendMessage(chatId, "🔐 به پنل مدیریت خوش آمدید:", {
+    if (text === "🔐 مدیریت ربات" && userId === OWNER_ID) {
+        return bot.sendMessage(chatId, "🔐 بخش مدیریت کل سیستم:", {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: "➕ افزودن اشتراک جدید", callback_data: "admin_add" }],
-                    [{ text: "📊 آمار فروش و کاربران", callback_data: "admin_stats" }]
+                    [{ text: "➕ تعریف اشتراک جدید", callback_data: "admin_add" }],
+                    [{ text: "📊 آمار و گزارشات", callback_data: "admin_stats" }]
                 ]
             }
         });
@@ -260,15 +259,15 @@ bot.on("callback_query", async (query) => {
         if (data === "cat_all" || data.startsWith("cat_")) {
             const configs = db.getConfigs();
             if (configs.length === 0) {
-                return bot.answerCallbackQuery(query.id, { text: "📭 در حال حاضر هیچ اشتراکی موجود نیست.", show_alert: true });
+                return bot.answerCallbackQuery(query.id, { text: "موردی یافت نشد.", show_alert: true });
             }
 
             const inlineKeyboard = configs.map(c => [
-                { text: `${c.title} - ${c.volume} (${c.price} تومان)`, callback_data: `buy_${c.id}` }
+                { text: `${c.title} | ${c.volume} - ${c.price} تومان`, callback_data: `buy_${c.id}` }
             ]);
 
             bot.answerCallbackQuery(query.id);
-            return bot.sendMessage(chatId, "📋 لیست اشتراک‌های موجود:", {
+            return bot.sendMessage(chatId, "لیست تعرفه‌های فعال:", {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
         }
@@ -278,18 +277,18 @@ bot.on("callback_query", async (query) => {
             const config = db.getConfig(configId);
 
             if (!config || config.sold === 1) {
-                return bot.answerCallbackQuery(query.id, { text: "❌ این اشتراک فروخته شده یا وجود ندارد.", show_alert: true });
+                return bot.answerCallbackQuery(query.id, { text: "این مورد ناموجود یا فروخته شده است.", show_alert: true });
             }
 
             const orderId = db.createOrder(userId, configId);
 
-            const text = `📦 **جزئیات اشتراک:**\n\n` +
+            const text = `📦 **جزئیات سفارش:**\n\n` +
                 `🔹 عنوان: ${config.title}\n` +
                 `📂 دسته: ${config.category}\n` +
-                `⚡️ مشخصات: ${config.volume}\n` +
+                `⚡️ حجم: ${config.volume}\n` +
                 `⏳ مدت: ${config.duration}\n` +
-                `💵 قیمت: ${config.price} تومان\n\n` +
-                `💳 لطفاً مبلغ فوق را واریز کرده و تصویر رسید را همینجا ارسال کنید.`;
+                `💳 مبلغ قابل پرداخت: ${config.price} تومان\n\n` +
+                `لطفاً هزینه را واریز کرده و تصویر فیش یا متن رسید را ارسال کنید.`;
 
             bot.answerCallbackQuery(query.id);
             userState[userId] = { action: "waiting_receipt", orderId };
@@ -297,7 +296,7 @@ bot.on("callback_query", async (query) => {
                 parse_mode: "Markdown",
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "❌ لغو سفارش", callback_data: `cancel_${orderId}` }]
+                        [{ text: "❌ انصراف از خرید", callback_data: `cancel_${orderId}` }]
                     ]
                 }
             });
@@ -308,18 +307,18 @@ bot.on("callback_query", async (query) => {
             const order = db.getOrder(orderId);
 
             if (!order || order.status !== "pending") {
-                return bot.answerCallbackQuery(query.id, { text: "این سفارش قبلاً بررسی شده است.", show_alert: true });
+                return bot.answerCallbackQuery(query.id, { text: "قبلاً پردازش شده است.", show_alert: true });
             }
 
             db.updateOrderStatus(orderId, "approved");
             db.markConfigSold(order.config_id);
 
-            await bot.sendMessage(order.user_id, `🎉 **سفارش شما با موفقیت تأیید شد!**\n\nاشتراک اختصاصی شما:\n\`${order.config}\``, {
+            await bot.sendMessage(order.user_id, `🎉 **سفارش شما تأیید شد!**\n\nاطلاعات اتصال شما:\n\`${order.config}\``, {
                 parse_mode: "Markdown"
             });
 
-            bot.answerCallbackQuery(query.id, { text: "✅ سفارش تأیید و ارسال شد." });
-            return bot.editMessageCaption(`✅ **تأیید شده توسط مالک**\n\n` + query.message.caption, {
+            bot.answerCallbackQuery(query.id, { text: "انجام شد." });
+            return bot.editMessageCaption(`✔️ **تأیید شده توسط ادمین**\n\n` + query.message.caption, {
                 chat_id: chatId,
                 message_id: query.message.message_id,
                 parse_mode: "Markdown"
@@ -332,11 +331,11 @@ bot.on("callback_query", async (query) => {
 
             const order = db.getOrder(orderId);
             if (order) {
-                await bot.sendMessage(order.user_id, "❌ متأسفانه رسید پرداخت شما رد شد.");
+                await bot.sendMessage(order.user_id, "❌ متأسفانه رسید پرداختی شما رد شد.");
             }
 
-            bot.answerCallbackQuery(query.id, { text: "❌ سفارش رد شد." });
-            return bot.editMessageCaption(`❌ **رد شده توسط مالک**\n\n` + query.message.caption, {
+            bot.answerCallbackQuery(query.id, { text: "رد شد." });
+            return bot.editMessageCaption(`❌ **رد شده توسط ادمین**\n\n` + query.message.caption, {
                 chat_id: chatId,
                 message_id: query.message.message_id,
                 parse_mode: "Markdown"
@@ -345,37 +344,35 @@ bot.on("callback_query", async (query) => {
 
         if (data === "wallet_charge") {
             bot.answerCallbackQuery(query.id);
-            return bot.sendMessage(chatId, "💳 برای شارژ حساب، مبلغ مورد نظر را به کارت واریز کرده و رسید را برای پشتیبانی بفرستید.");
+            return bot.sendMessage(chatId, "💳 برای شارژ حساب به پشتیبانی پیام بدهید.");
         }
 
         if (data === "wallet_gift") {
             bot.answerCallbackQuery(query.id);
-            return bot.sendMessage(chatId, "🎁 لطفاً کد هدیه خود را ارسال کنید:");
+            return bot.sendMessage(chatId, "🎁 کد هدیه خود را ارسال کنید:");
         }
 
         if (data === "admin_add" && userId === OWNER_ID) {
             userState[userId] = { action: "add_title" };
             bot.answerCallbackQuery(query.id);
-            return bot.sendMessage(chatId, "➕ عنوان اشتراک را وارد کنید:");
+            return bot.sendMessage(chatId, "➕ عنوان محصول را وارد کنید:");
         }
 
         if (data === "admin_stats" && userId === OWNER_ID) {
             const stats = db.getStats();
-            const statsText = `📊 **آمار کلی فروشگاه:**\n\n` +
+            const statsText = `📊 **آمار سیستم:**\n\n` +
                 `👥 کاربران: ${stats.users}\n` +
-                `📦 اشتراک‌ها: ${stats.configs}\n` +
-                `🛒 سفارش‌ها: ${stats.orders}\n` +
-                `💰 درآمد: ${stats.revenue} تومان`;
+                `📦 کل محصولات: ${stats.configs}\n` +
+                `🛒 سفارشات: ${stats.orders}\n` +
+                `💰 مجموع درآمد: ${stats.revenue} تومان`;
 
             bot.answerCallbackQuery(query.id);
             return bot.sendMessage(chatId, statsText, { parse_mode: "Markdown" });
         }
 
     } catch (error) {
-        console.error("خطا در پردازش دکمه شیشه‌ای:", error);
+        console.error("خطا:", error);
     }
 });
 
-console.log("🤖 ربات کاملاً به صورت حرفه‌ای فعال شد.");
-
-            
+console.log("🤖 ربات با ظاهر و ساختار جدید با موفقیت روشن شد.");
