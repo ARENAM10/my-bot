@@ -1,13 +1,11 @@
 import TelegramBot from 'node-telegram-bot-api';
 
-// خواندن توکن از متغیر محیطی ریلی (برای امنیت بیشتر) یا استفاده از توکن مستقیم
-const token = process.env.BOT_TOKEN || "8850301156:AAFHdC0BvS5h0W-QnhndZm6wXr9W8v51NMw";
+const token = "8850301156:AAFHdC0BvS5h0W-QnhndZm6wXr9W8v51NMw";
 
 const bot = new TelegramBot(token, { polling: true });
 
 console.log("Bot is running successfully...");
 
-// منوی استارت و دکمه‌های شیشه‌ای مدیریت
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const userName = msg.from.first_name || "کاربر";
@@ -29,7 +27,6 @@ bot.onText(/\/start/, (msg) => {
     });
 });
 
-// مدیریت کلیک روی دکمه‌های شیشه‌ای
 bot.on('callback_query', (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
@@ -42,6 +39,5 @@ bot.on('callback_query', (query) => {
         bot.sendMessage(chatId, "💬 برای ارتباط با پشتیبانی به آیدی زیر پیام دهید:\n@Support_ID");
     }
 
-    // بستن حالت لودینگ دکمه در تلگرام
     bot.answerCallbackQuery(query.id);
 });
