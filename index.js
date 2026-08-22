@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 
-const token = "8850301156:AAG1uFVUXWcgEqXKOyEO8Nhinxdjy9a6d6g";
+const token = "8850301156:AAGB5ewQkolWaLg2kjKL-cL8KXDhrbNciHQ";
 const OWNER_USERNAME = "ARENAM_10"; 
 
 const bot = new TelegramBot(token, { polling: true });
@@ -26,12 +26,11 @@ const db = {
     }
 };
 
-// تابع ذخیره‌سازی موقت (قابل اتصال به فایل یا دیتابیس واقعی)
 function saveDb() {
     // ذخیره تغییرات دیتابیس
 }
 
-console.log("🔥 Full Integrated Config Arena Bot is running successfully...");
+console.log("🔥 Full Integrated Config Arena Bot is running successfully with new token...");
 
 const isOwner = (msg) => {
     const username = msg.from.username || msg.username;
@@ -39,7 +38,7 @@ const isOwner = (msg) => {
 };
 
 // ===============================
-// 📦 مدیریت دستی کانفیگ‌ها (کیبورد و نماها)
+// 📦 مدیریت دستی کانفیگ‌ها
 // ===============================
 function configAdminKeyboard() {
   return {
@@ -96,7 +95,6 @@ function configProductKeyboard() {
   return { inline_keyboard: rows };
 }
 
-// وضعیت موقت عملیات ادمین
 const adminState = {};
 
 // ===============================
@@ -148,9 +146,6 @@ const sendAdminPanel = (chatId, isEdit = false, messageId = null) => {
     }
 };
 
-// ===============================
-// منوی اصلی کاربران
-// ===============================
 const sendMainMenu = (chatId, userName, isOwnerUser = false, isEdit = false, messageId = null) => {
     let text = `سلام ${userName} عزیز! ⚡️\nبه ربات کانفیگ آرنا خوش آمدید.`;
     const replyMarkup = {
@@ -183,9 +178,6 @@ bot.onText(/\/admin/, (msg) => {
     sendAdminPanel(msg.chat.id);
 });
 
-// ===============================
-// مدیریت دکمه‌های شیشه‌ای (Callback Query)
-// ===============================
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const messageId = query.message.message_id;
@@ -204,7 +196,6 @@ bot.on('callback_query', async (query) => {
     else if (data === 'open_admin_panel' || data === 'admin_owner_start') {
         sendAdminPanel(chatId, true, messageId);
     }
-    // مدیریت کانفیگ‌ها
     else if (data === 'admin_configs') {
         return sendConfigAdmin(chatId, true, messageId);
     }
@@ -299,7 +290,6 @@ bot.on('callback_query', async (query) => {
         saveDb();
         return bot.editMessageText("✅ کانفیگ با موفقیت حذف شد.", { chat_id: chatId, message_id: messageId, reply_markup: configAdminKeyboard() }).catch(() => {});
     }
-    // سایر بخش‌های ادمین
     else if (data === 'admin_subs') {
         const text = `📦 **مدیریت پکیج‌ها**\n\nبرای مشاهده یا ویرایش هر اشتراک، روی آن بزنید.\nوضعیت ✅ فعال و ⏸ غیرفعال است.`;
         const keyboard = {
@@ -414,9 +404,6 @@ bot.on('callback_query', async (query) => {
     }
 });
 
-// ===============================
-// دریافت پیام متنی از ادمین (برای ثبت کانفیگ)
-// ===============================
 bot.on("message", async msg => {
     if (!msg.text) return;
     if (!isOwner(msg)) return;
@@ -474,9 +461,6 @@ bot.on("message", async msg => {
     );
 });
 
-// ===============================
-// تابع تخصیص کانفیگ به کاربر هنگام خرید
-// ===============================
 async function createConfigForProduct(product, user, orderId) {
     const index = db.configs.findIndex(c => c.productId === product.id && !c.sold);
     if (index === -1) {
