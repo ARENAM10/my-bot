@@ -1,23 +1,35 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
-import fs from "fs";
+
+const TOKEN = "8850301156:AAEH94AQeKKpf4-eBAgfrwsnvoIRph4--Y4";import TelegramBot from "node-telegram-bot-api";
+import sqlite3 from "sqlite3";
 
 const TOKEN = "8850301156:AAEH94AQeKKpf4-eBAgfrwsnvoIRph4--Y4";
-const ADMIN_ID = 0; // اگر آیدی عددی ادمین را دارید اینجا وارد کنید، در غیر این صورت با یوزرنیم چک می‌شود
 const ADMIN_USERNAME = "ARENAM_10";
 
-const bot = new TelegramBot(TOKEN, { polling: true });
-const db = new sqlite3.Database("./arena_shop.db", (err) => {
-    if (err) logError("Database Connection Error: " + err.message);
+// راه‌اندازی ربات با تنظیمات پایدار پولینگ
+const bot = new TelegramBot(TOKEN, { 
+    polling: {
+        interval: 300,
+        autoStart: true,
+        params: { timeout: 10 }
+    } 
 });
 
-// ================= 🛠️ LOGGING SYSTEM =================
-function logError(message) {
-    const logData = `[${new Date().toISOString()}] ${message}\n`;
-    fs.appendFile("error.log", logData, (err) => {
-        if (err) console.error("Failed to write to log:", err);
+const db = new sqlite3.Database("./arena_shop.db", (err) => {
+    if (err) console.error("Database Error: " + err.message);
+});
+
+// حافظه موقت برای وضعیت کاربران (مثل انتظار برای ارسال رسید پرداخت)
+const userState = {};
+
+// ================= 🛠️ LOGGING & NOTIFICATIONS =================
+function notifyAdmin(text) {
+    db.get(`SELECT id FROM users WHERE username = ? COLLATE NOCASE`, [ADMIN_USERNAME], (err, row) => {
+        if (row) {
+            bot.sendMessage(row.id, `🔔 **گزارش فعالیت زنده:**\n\n${text}`, { parse_mode: "Markdown" }).catch(() => {});
+        }
     });
-    console.error(logData);
 }
 
 // ================= 🗄️ DATABASE SETUP =================
@@ -29,14 +41,8 @@ db.serialize(() => {
         joined TEXT
     )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT
-    )`);
-
     db.run(`CREATE TABLE IF NOT EXISTS configs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        category_id INTEGER,
         name TEXT,
         volume TEXT,
         days INTEGER,
@@ -57,162 +63,285 @@ db.serialize(() => {
 });
 
 // ================= 👤 HELPERS =================
-const isAdmin = (user) => {
-    return (ADMIN_ID && user.id === ADMIN_ID) || (user.username && user.username.toLowerCase() === ADMIN_USERNAME.toLowerCase());
-};
+const isAdmin = (user) => user.username && user.username.toLowerCase() === ADMIN_USERNAME.toLowerCase();
 
 const saveUser = (msg) => {
-    const user = msg.from;
     db.run(`INSERT OR IGNORE INTO users (id, username, joined) VALUES (?, ?, ?)`, 
-        [user.id, user.username || "none", new Date().toISOString()]);
+        [msg.from.id, msg.from.username || "none", new Date().toISOString()]);
 };
 
 // ================= 🏠 MAIN MENU =================
 function showMainMenu(chatId, name) {
-    const text = `
+    db.get(`SELECT balance FROM users WHERE id = ?`, [chatId], (err, row) => {
+        const balance = row?.balance || 0;
+
+        const text = `
 🔥 **فروشگاه تخصصی کانفیگ آرنا** 🔥
 
 سلام *${name}* عزیز؛
-از طریق دکمه‌های زیر می‌توانید بسته‌های پرسرعت و اختصاصی را مشاهده و خریداری کنید. ⚡
-    `.trim();
+از طریق دکمه‌های زیر می‌توانید بسته‌های پرسرعت، اختصاصی و بدون قطعی را مشاهده و خریداری کنید. ⚡
 
-    bot.sendMessage(chatId, text, {
-        parse_mode: "Markdown",
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: "🛒 خرید اشتراک و کانفیگ", callback_data: "shop_categories" }],
-                [
-                    { text: "💰 کیف پول من", callback_data: "my_wallet" },
-                    { text: "📦 سفارش‌های من", callback_data: "my_orders" }
-                ],
-                [
-                    { text: "📞 پشتیبانی", callback_data: "support" },
-                    { text: "📖 راهنمای اتصال", callback_data: "guide" }
+💰 *موجودی کیف پول شما:* \`${balance.toLocaleString()} تومان\`
+        `.trim();
+
+        bot.sendMessage(chatId, text, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🛒 خرید اشتراک و کانفیگ", callback_data: "buy_menu" }],
+                    [
+                        { text: "💰 افزایش موجودی", callback_data: "wallet" },
+                        { text: "📦 سفارش‌های من", callback_data: "my_orders" }
+                    ],
+                    [{ text: "⚡ دریافت تست رایگان", callback_data: "free_test" }],
+                    [
+                        { text: "📞 پشتیبانی", callback_data: "support" },
+                        { text: "📖 راهنمای اتصال", callback_data: "guide" }
+                    ]
                 ]
-            ]
-        }
-    }).catch(err => logError(err.message));
+            }
+        }).catch(err => console.log("Menu Error:", err.message));
+    });
 }
 
 // ================= 🚀 START & COMMANDS =================
 bot.onText(/\/start/, (msg) => {
     saveUser(msg);
     showMainMenu(msg.chat.id, msg.from.first_name || "کاربر");
+    notifyAdmin(`👤 کاربر [@${msg.from.username || msg.from.id}] ربات را استارت کرد (/start).`);
 });
 
 bot.onText(/\/admin/, (msg) => {
-    if (!isAdmin(msg.from)) return bot.sendMessage(msg.chat.id, "❌ شما دسترسی ندارید.");
+    if (!isAdmin(msg.from)) {
+        return bot.sendMessage(msg.chat.id, "❌ شما دسترسی به پنل مدیریت ندارید.");
+    }
     
     bot.sendMessage(msg.chat.id, "🖥 *پنل مدیریت مرکزی آرنا*", {
         parse_mode: "Markdown",
         reply_markup: {
             inline_keyboard: [
-                [{ text: "➕ افزودن کانفیگ", callback_data: "adm_add_cfg" }, { text: "🗑 حذف/مدیریت کانفیگ‌ها", callback_data: "adm_list_cfg" }],
-                [{ text: "👥 آمار و مدیریت کاربران", callback_data: "adm_users" }, { text: "📢 ارسال پیام همگانی", callback_data: "adm_broadcast" }],
-                [{ text: "📦 سفارش‌های در انتظار تایید", callback_data: "adm_pending_orders" }]
+                [{ text: "➕ افزودن کانفیگ جدید به انبار", callback_data: "adm_add_prompt" }],
+                [{ text: "📦 بررسی رسیدهای پرداخت", callback_data: "adm_pending_orders" }],
+                [{ text: "📊 آمار و موجودی انبار", callback_data: "adm_stock" }, { text: "👥 آمار کاربران", callback_data: "adm_users" }]
             ]
         }
     });
 });
 
+// ================= 📥 MESSAGE & RECEIPT HANDLER =================
+bot.on("message", (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+
+    if (isAdmin(msg.from)) {
+        // اگر ادمین در حال افزودن کانفیگ متنی بود
+        if (userState[userId] && userState[userId].action === "adding_config_step") {
+            // ساختار نمونه برای افزودن سریع: نام | حجم | روز | قیمت | لینک_کانفیگ
+            const parts = msg.text.split("|").map(p => p.trim());
+            if (parts.length >= 5) {
+                db.run(`INSERT INTO configs (name, volume, days, price, description, config_data, sold) VALUES (?, ?, ?, ?, ?, ?, 0)`,
+                    [parts[0], parts[1], parseInt(parts[2]), parseInt(parts[3]), "ثبت شده توسط ادمین", parts[4]], (err) => {
+                        if (err) {
+                            bot.sendMessage(chatId, "❌ خطا در ثبت کانفیگ در دیتابیس.");
+                        } else {
+                            bot.sendMessage(chatId, `✅ کانفیگ [${parts[0]}] با موفقیت به انبار اضافه شد!`);
+                            notifyAdmin(`➕ ادمین یک کانفیگ جدید [${parts[0]}] به انبار اضافه کرد.`);
+                        }
+                        delete userState[userId];
+                    });
+            } else {
+                bot.sendMessage(chatId, "⚠️ فرمت ارسال اشتباه است!\nلطفاً اطلاعات را به این صورت (با کاما یا خط عمودی |) بفرستید:\n\n`نام | حجم | روز | قیمت | لینک کانفیگ`", { parse_mode: "Markdown" });
+            }
+            return;
+        }
+        return; 
+    }
+
+    // اگر کاربر عادی در مرحله ارسال رسید بود
+    if (userState[userId] && userState[userId].action === "awaiting_receipt") {
+        if (msg.photo || msg.document) {
+            const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
+            const configId = userState[userId].configId;
+
+            db.run(`INSERT INTO orders (user_id, config_id, receipt_file_id, status, date) VALUES (?, ?, ?, 'pending', ?)`,
+                [userId, configId, fileId, new Date().toLocaleString("fa-IR")], function(err) {
+                    if (err) {
+                        return bot.sendMessage(chatId, "❌ خطایی در ثبت سفارش رخ داد. دوباره تلاش کنید.");
+                    }
+                    const orderId = this.lastID;
+                    bot.sendMessage(chatId, "✅ *رسید شما با موفقیت ثبت شد و برای مالک ارسال گردید.*\nبه زودی پس از بررسی، کانفیگ اختصاصی برایتان ارسال خواهد شد.", { parse_mode: "Markdown" });
+
+                    // ارسال اطلاعات و رسید به مالک ربات
+                    db.get(`SELECT * FROM configs WHERE id = ?`, [configId], (err, cfg) => {
+                        db.get(`SELECT username FROM users WHERE id = ?`, [userId], (err, u) => {
+                            const adminText = `📦 **سفارش جدید نیازمند تایید!**\n\n👤 کاربر: @${u?.username || userId}\n🛒 محصول: ${cfg?.name}\n💰 قیمت: ${cfg?.price?.toLocaleString()} تومان`;
+
+                            bot.sendPhoto(ADMIN_USERNAME, fileId, {
+                                caption: adminText,
+                                parse_mode: "Markdown",
+                                reply_markup: {
+                                    inline_keyboard: [
+                                        [
+                                            { text: "✅ تایید و ارسال کانفیگ", callback_data: `approve_${orderId}` },
+                                            { text: "❌ رد سفارش", callback_data: `reject_${orderId}` }
+                                        ]
+                                    ]
+                                }
+                            }).catch(() => {
+                                bot.sendDocument(ADMIN_USERNAME, fileId, { caption: adminText, parse_mode: "Markdown" });
+                            });
+                        });
+                    });
+                });
+
+            delete userState[userId];
+        } else {
+            bot.sendMessage(chatId, "⚠️ لطفاً حتماً **اسکرین‌شات یا عکس رسید پرداخت** را ارسال کنید.");
+        }
+    }
+});
+
 // ================= 🔄 CALLBACK QUERY HANDLER =================
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
-    const messageId = query.message.message_id;
     const data = query.data;
     const user = query.from;
 
     await bot.answerCallbackQuery(query.id).catch(() => {});
 
     try {
-        if (data === "main_menu") {
+        if (data === "back_home") {
             return showMainMenu(chatId, user.first_name || "کاربر");
         }
 
         if (data === "support") {
-            return bot.sendMessage(chatId, "📞 پشتیبانی 24 ساعته:\n@ARENAM_10", { parse_mode: "Markdown" });
+            notifyAdmin(`📞 کاربر [@${user.username || user.id}] روی دکمه پشتیبانی کلیک کرد.`);
+            return bot.sendMessage(chatId, "📞 *پشتیبانی 24 ساعته:*\nبرای ارتباط با مدیریت به آیدی زیر پیام دهید:\n@ARENAM_10", { parse_mode: "Markdown" });
         }
 
         if (data === "guide") {
-            return bot.sendMessage(chatId, "📖 برای اتصال از برنامه‌های V2RayNG (اندروید) یا Streisand (آیفون) استفاده کنید.");
+            return bot.sendMessage(chatId, "📖 *راهنمای اتصال:*\nنرم‌افزار V2RayNG (برای اندروید) یا Streisand / FoXray (برای آیفون) را دانلود کرده و لینک کانفیگ خریداری‌شده را داخل آن ایمپورت کنید.", { parse_mode: "Markdown" });
         }
 
-        if (data === "my_wallet") {
-            db.get(`SELECT balance FROM users WHERE id = ?`, [chatId], (err, row) => {
-                bot.sendMessage(chatId, `💰 موجودی کیف پول شما: \`${row?.balance || 0} تومان\``, {
-                    parse_mode: "Markdown",
-                    reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] }
+        if (data === "wallet") {
+            notifyAdmin(`💰 کاربر [@${user.username || user.id}] بخش کیف پول را بررسی کرد.`);
+            return bot.sendMessage(chatId, "💳 *شارژ کیف پول*\n\nبرای افزایش موجودی، به پشتیبانی (@ARENAM_10) پیام دهید تا کارت به کارت انجام شود.", { parse_mode: "Markdown" });
+        }
+
+        if (data === "my_orders") {
+            db.all(`SELECT orders.*, configs.name FROM orders JOIN configs ON orders.config_id = configs.id WHERE orders.user_id = ?`, [chatId], (err, rows) => {
+                if (!rows || rows.length === 0) {
+                    return bot.sendMessage(chatId, "📦 شما تاکنون هیچ سفارشی ثبت نکرده‌اید.");
+                }
+                let text = "📦 *سفارش‌های شما:*\n\n";
+                rows.forEach((o, index) => {
+                    let st = o.status === 'approved' ? '✅ تایید شده' : (o.status === 'rejected' ? '❌ رد شده' : '⏳ در انتظار بررسی ادمین');
+                    text += `${index + 1}. محصول: ${o.name}\nوضعیت: ${st}\n📅 تاریخ: ${o.date}\n-------------------\n`;
+                });
+                bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+            });
+        }
+
+        if (data === "free_test") {
+            notifyAdmin(`⚡ کاربر [@${user.username || user.id}] درخواست تست رایگان داد.`);
+            return bot.sendMessage(chatId, "⚡ هر کاربر یک‌بار می‌تواند تست رایگان دریافت کند. برای دریافت به پشتیبانی پیام دهید: @ARENAM_10");
+        }
+
+        // ================= 🛒 فروشگاه و انبار (حذف اتوماتیک کانفیگ فروخته شده) =================
+        if (data === "buy_menu") {
+            db.all(`SELECT * FROM configs WHERE sold = 0`, [], (err, rows) => {
+                if (!rows || rows.length === 0) {
+                    return bot.sendMessage(chatId, "😔 در حال حاضر هیچ کانفیگی در انبار موجود نیست. لطفاً بعداً سر بزنید.", {
+                        reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "back_home" }]] }
+                    });
+                }
+                
+                const keyboard = rows.map(c => [{ text: `🟢 ${c.name} (${c.volume}) - ${c.price.toLocaleString()} تومان`, callback_data: `buy_${c.id}` }]);
+                keyboard.push([{ text: "🔙 بازگشت به منوی اصلی", callback_data: "back_home" }]);
+
+                bot.sendMessage(chatId, "🛒 لطفاً کانفیگ مورد نظر خود را برای خرید انتخاب کنید:", {
+                    reply_markup: { inline_keyboard: keyboard }
                 });
             });
         }
 
-        // دسته‌بندی فروشگاه
-        if (data === "shop_categories") {
-            db.all(`SELECT * FROM categories`, [], (err, cats) => {
-                if (!cats || cats.length === 0) {
-                    return bot.sendMessage(chatId, "😔 هنوز دسته‌بندی‌ای تعریف نشده است.", {
-                        reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] }
-                    });
+        if (data.startsWith("buy_")) {
+            const configId = data.split("_")[1];
+            db.get(`SELECT * FROM configs WHERE id = ? AND sold = 0`, [configId], (err, config) => {
+                if (!config) {
+                    return bot.sendMessage(chatId, "❌ متأسفانه این کانفیگ قبلاً توسط شخص دیگری خریداری شده و از لیست حذف گردیده است.");
                 }
-                const keyboard = cats.map(c => [{ text: `📁 ${c.name}`, callback_data: `cat_${c.id}` }]);
-                keyboard.push([{ text: "🔙 بازگشت", callback_data: "main_menu" }]);
-                bot.sendMessage(chatId, "📂 لطفاً دسته‌بندی مورد نظر را انتخاب کنید:", { reply_markup: { inline_keyboard: keyboard } });
-            });
-        }
 
-        // نمایش کانفیگ‌های یک دسته
-        if (data.startsWith("cat_")) {
-            const catId = data.split("_")[1];
-            db.all(`SELECT * FROM configs WHERE category_id = ? AND sold = 0`, [catId], (err, configs) => {
-                if (!configs || configs.length === 0) {
-                    return bot.sendMessage(chatId, "😔 کانفیگ فعالی در این دسته موجود نیست.", {
-                        reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "shop_categories" }]] }
-                    });
-                }
-                const keyboard = configs.map(cfg => [{ text: `⚡ ${cfg.name} - ${cfg.price} تومان`, callback_data: `cfg_${cfg.id}` }]);
-                keyboard.push([{ text: "🔙 بازگشت", callback_data: "shop_categories" }]);
-                bot.sendMessage(chatId, "🛒 کانفیگ‌های موجود:", { reply_markup: { inline_keyboard: keyboard } });
-            });
-        }
-
-        // جزئیات کانفیگ
-        if (data.startsWith("cfg_")) {
-            const cfgId = data.split("_")[1];
-            db.get(`SELECT * FROM configs WHERE id = ?`, [cfgId], (err, cfg) => {
-                if (!cfg) return bot.sendMessage(chatId, "❌ این کانفیگ دیگر موجود نیست.");
+                userState[user.id] = { action: "awaiting_receipt", configId: config.id };
 
                 const text = `
-📦 **نام:** ${cfg.name}
-📊 **حجم:** ${cfg.volume}
-⏳ **مدت اعتبار:** ${cfg.days} روز
-💰 **قیمت:** ${cfg.price.toLocaleString()} تومان
-📝 **توضیحات:** ${cfg.description || "ندارد"}
+🛒 **جزئیات اشتراک انتخابی:**
+نام: ${config.name}
+حجم: ${config.volume}
+مدت اعتبار: ${config.days} روز
+💰 قیمت: ${config.price.toLocaleString()} تومان
+
+💳 **مرحله پرداخت:**
+لطفاً مبلغ فوق را به کارت پشتیبانی واریز کرده و **اسکرین‌شات رسید پرداخت** را همینجا در چت بفرستید (عکس ارسال کنید).
                 `.trim();
 
                 bot.sendMessage(chatId, text, {
                     parse_mode: "Markdown",
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: "💳 خرید و ارسال رسید پرداخت", callback_data: `buy_${cfg.id}` }],
-                            [{ text: "🔙 بازگشت", callback_data: "shop_categories" }]
-                        ]
-                    }
+                    reply_markup: { inline_keyboard: [[{ text: "❌ انصراف", callback_data: "buy_menu" }]] }
                 });
+
+                notifyAdmin(`🛒 کاربر [@${user.username || user.id}] درخواست خرید کانفیگ [${config.name}] را ثبت کرد و منتظر ارسال رسید است.`);
             });
         }
 
-        // خرید و درخواست رسید
-        if (data.startsWith("buy_")) {
-            const cfgId = data.split("_")[1];
-            bot.sendMessage(chatId, `💳 برای خرید این اشتراک، مبلغ را به کارت پشتیبانی واریز کرده و **اسکرین‌شات رسید** را همینجا بفرستید. (عکس را ارسال کنید)`, {
-                reply_markup: {
-                    force_reply: true
+        // ================= 👑 پنل مدیریت ادمین (تایید / رد رسید / افزودن) =================
+        if (data === "adm_add_prompt" && isAdmin(user)) {
+            userState[user.id] = { action: "adding_config_step" };
+            return bot.sendMessage(chatId, "➕ لطفاً مشخصات کانفیگ جدید را با خط عمودی (`|`) به این شکل بفرستید:\n\n`نام | حجم | روز | قیمت | لینک کانفیگ`", { parse_mode: "Markdown" });
+        }
+
+        if (data.startsWith("approve_") && isAdmin(user)) {
+            const orderId = data.split("_")[1];
+            db.get(`SELECT orders.*, configs.config_data, configs.name, users.id as client_id FROM orders JOIN configs ON orders.config_id = configs.id JOIN users ON orders.user_id = users.id WHERE orders.id = ?`, [orderId], (err, order) => {
+                if (!order) return bot.sendMessage(chatId, "❌ سفارش پیدا نشد.");
+
+                db.run(`UPDATE orders SET status = 'approved' WHERE id = ?`, [orderId]);
+                db.run(`UPDATE configs SET sold = 1 WHERE id = ?`, [order.config_id]);
+
+                bot.sendMessage(order.client_id, `🎉 **پرداخت شما تایید شد!**\n\n📦 اشتراک اختصاصی شما:\n\`${order.config_data}\``, { parse_mode: "Markdown" });
+                bot.sendMessage(chatId, `✅ سفارش تایید شد و کانفیگ با موفقیت به کاربر تحویل داده شد و از انبار خارج گردید.`);
+                
+                bot.editMessageCaption(`✅ **تایید و به کاربر تحویل داده شد**`, {
+                    chat_id: chatId,
+                    message_id: query.message.message_id
+                }).catch(() => {});
+            });
+        }
+
+        if (data.startsWith("reject_") && isAdmin(user)) {
+            const orderId = data.split("_")[1];
+            db.get(`SELECT user_id FROM orders WHERE id = ?`, [orderId], (err, order) => {
+                if (order) {
+                    bot.sendMessage(order.user_id, "❌ متأسفانه رسید پرداخت شما توسط مدیریت رد شد. در صورت وجود مشکل به پشتیبانی پیام دهید: @ARENAM_10");
                 }
+                db.run(`UPDATE orders SET status = 'rejected' WHERE id = ?`, [orderId]);
+                bot.sendMessage(chatId, `❌ سفارش رد شد.`);
+                
+                bot.editMessageCaption(`❌ **سفارش رد شد**`, {
+                    chat_id: chatId,
+                    message_id: query.message.message_id
+                }).catch(() => {});
             });
-            // ذخیره موقت وضعیت خرید کاربر (می‌توانید با مموری یا دیتابیس هندل کنید)
         }
 
-        // ================= 👑 پنل ادمین =================
+        if (data === "adm_stock" && isAdmin(user)) {
+            db.all(`SELECT * FROM configs`, [], (err, rows) => {
+                const free = rows.filter(r => !r.sold).length;
+                const sold = rows.filter(r => r.sold).length;
+                bot.sendMessage(chatId, `📦 *وضعیت انبار کانفیگ‌ها:*\n\n🟢 موجود برای فروش: ${free}\n🔴 فروخته شده (حذف شده از لیست): ${sold}\n📊 کل کانفیگ‌ها: ${rows.length}`, { parse_mode: "Markdown" });
+            });
+        }
+
         if (data === "adm_users" && isAdmin(user)) {
             db.get(`SELECT COUNT(*) as count FROM users`, [], (err, row) => {
                 bot.sendMessage(chatId, `👥 تعداد کل کاربران ربات: ${row.count} نفر`);
@@ -223,17 +352,223 @@ bot.on("callback_query", async (query) => {
             db.all(`SELECT orders.id, users.username, configs.name FROM orders JOIN users ON orders.user_id = users.id JOIN configs ON orders.config_id = configs.id WHERE orders.status = 'pending'`, [], (err, orders) => {
                 if (!orders || orders.length === 0) return bot.sendMessage(chatId, "📦 هیچ سفارش در انتظاری وجود ندارد.");
                 
-                const keyboard = orders.map(o => [{ text: `👤 @${o.username} - 📦 ${o.name}`, callback_data: `check_order_${o.id}` }]);
-                bot.sendMessage(chatId, "لیست سفارش‌های منتظر تایید:", { reply_markup: { inline_keyboard: keyboard } });
+                const keyboard = orders.map(o => [{ text: `👤 @${o.username} - 📦 ${o.name}`, callback_data: `adm_check_${o.id}` }]);
+                bot.sendMessage(chatId, "لیست سفارش‌های منتظر تایید رسید:", { reply_markup: { inline_keyboard: keyboard } });
             });
         }
 
     } catch (e) {
-        logError(e.message);
+        console.error("Callback Error:", e.message);
     }
 });
 
-// ================= ⚠️ ERROR & POLLING HANDLING =================
-bot.on("polling_error", (err) => logError("Polling error: " + err.message));
+// ================= ⚠️ ERROR HANDLING =================
+bot.on("polling_error", (err) => {
+    console.log("Polling error:", err.message);
+});
 
-console.log("🔥 PROFESSIONAL ARENA SHOP BOT RUNNING SUCCESSFULLY...");
+console.log("🔥 ULTIMATE ARENA SHOP BOT RUNNING SUCCESSFULLY...");
+
+const ADMIN_USERNAME = "ARENAM_10";
+
+const bot = new TelegramBot(TOKEN, { polling: true });
+const db = new sqlite3.Database("./arena.db");
+
+// ================= 🗄️ DATABASE INITIALIZATION =================
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        username TEXT,
+        balance INTEGER DEFAULT 0,
+        joined_date TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        config TEXT,
+        price INTEGER,
+        days INTEGER,
+        sold INTEGER DEFAULT 0,
+        buyer INTEGER DEFAULT NULL
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        config_name TEXT,
+        price INTEGER,
+        date TEXT
+    )`);
+});
+
+// ================= 🛠️ HELPER FUNCTIONS =================
+const isAdmin = (user) => user.username && user.username.toLowerCase() === ADMIN_USERNAME.toLowerCase();
+
+const saveUser = (msg) => {
+    const now = new Date().toISOString();
+    db.run(`INSERT OR IGNORE INTO users (id, username, joined_date) VALUES (?, ?, ?)`, 
+        [msg.from.id, msg.from.username || "none", now]);
+};
+
+// ================= 🏠 MAIN MENU =================
+function showMainMenu(chatId, name) {
+    db.get(`SELECT balance FROM users WHERE id = ?`, [chatId], (err, row) => {
+        const balance = row?.balance || 0;
+
+        const text = `
+🔥 **ARENA VIP CONFIGS** 🔥
+
+سلام *${name}* عزیز به ربات رسمی آرنا خوش آمدید. ⚡
+با استفاده از این ربات می‌توانید کانفیگ‌های پرسرعت، اختصاصی و بدون قطعی تهیه کنید.
+
+💰 *موجودی کیف پول:* \`${balance.toLocaleString()} تومان\`
+        `.trim();
+
+        bot.sendMessage(chatId, text, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🛒 خرید اشتراک پرسرعت", callback_data: "buy_menu" }],
+                    [
+                        { text: "💰 افزایش موجودی", callback_data: "wallet" },
+                        { text: "📦 خریدهای من", callback_data: "my_orders" }
+                    ],
+                    [{ text: "⚡ دریافت تست رایگان", callback_data: "free_test" }],
+                    [
+                        { text: "📞 پشتیبانی", callback_data: "support" },
+                        { text: "📖 راهنمای اتصال", callback_data: "guide" }
+                    ]
+                ]
+            }
+        });
+    });
+}
+
+// ================= 🚀 START COMMAND =================
+bot.onText(/\/start/, (msg) => {
+    saveUser(msg);
+    showMainMenu(msg.chat.id, msg.from.first_name || "کاربر");
+});
+
+// ================= 👑 ADMIN PANEL =================
+bot.onText(/\/admin/, (msg) => {
+    if (!isAdmin(msg.from)) {
+        return bot.sendMessage(msg.chat.id, "❌ شما دسترسی به پنل مدیریت ندارید.");
+    }
+
+    bot.sendMessage(msg.chat.id, "🖥 *پنل مدیریت پیشرفته آرنا*", {
+        parse_mode: "Markdown",
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "➕ افزودن کانفیگ جدید به انبار", callback_data: "admin_add" }],
+                [{ text: "📦 آمار و موجودی انبار", callback_data: "admin_stock" }],
+                [{ text: "📊 آمار کاربران کل", callback_data: "admin_stats" }]
+            ]
+        }
+    });
+});
+
+// ================= 🔄 CALLBACK HANDLER =================
+bot.on("callback_query", async (query) => {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+    const user = query.from;
+
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+
+    if (data === "support") {
+        return bot.sendMessage(chatId, "📞 *پشتیبانی 24 ساعته:*\nبرای هرگونه سوال یا مشکل به ادمین پیام دهید:\n@ARENAM_10", { parse_mode: "Markdown" });
+    }
+
+    if (data === "guide") {
+        return bot.sendMessage(chatId, "📖 *راهنمای اتصال:*\nنرم‌افزارهای مورد نیاز برای اندروید، آیفون و ویندوز (مثل V2RayNG یا Streisand) را دانلود کرده و لینک کانفیگ خریداری‌شده را داخل آن‌ها ایمپورت کنید.", { parse_mode: "Markdown" });
+    }
+
+    if (data === "wallet") {
+        return bot.sendMessage(chatId, "💳 *شارژ کیف پول*\n\nبرای افزایش موجودی، به پشتیبانی (@ARENAM_10) پیام دهید تا کارت به کارت انجام شود و موجودیتان شارژ گردد.", { parse_mode: "Markdown" });
+    }
+
+    if (data === "my_orders") {
+        db.all(`SELECT * FROM orders WHERE user_id = ?`, [chatId], (err, rows) => {
+            if (!rows || rows.length === 0) {
+                return bot.sendMessage(chatId, "📦 شما تاکنون هیچ سفارشی ثبت نکرده‌اید.");
+            }
+            let text = "📦 *خریدهای قبلی شما:*\n\n";
+            rows.forEach((o, index) => {
+                text += `${index + 1}. محصول: ${o.config_name}\n💰 قیمت: ${o.price} تومان\n📅 تاریخ: ${o.date}\n-------------------\n`;
+            });
+            bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+        });
+    }
+
+    if (data === "free_test") {
+        return bot.sendMessage(chatId, "⚡ هر کاربر یکبار می‌تواند تست رایگان دریافت کند. (به زودی فعال می‌شود یا از پشتیبانی بگیرید).");
+    }
+
+    if (data === "buy_menu") {
+        db.all(`SELECT * FROM configs WHERE sold = 0`, [], (err, rows) => {
+            if (!rows || rows.length === 0) {
+                return bot.sendMessage(chatId, "😔 در حال حاضر هیچ کانفیگی در انبار موجود نیست. لطفاً بعداً سر بزنید.");
+            }
+            
+            const keyboard = rows.map(c => [{ text: `🟢 ${c.name} - ${c.price.toLocaleString()} تومان`, callback_data: `buy_${c.id}` }]);
+            keyboard.push([{ text: "🔙 بازگشت به منوی اصلی", callback_data: "back_home" }]);
+
+            bot.sendMessage(chatId, "🛒 لطفاً کانفیگ مورد نظر خود را انتخاب کنید:", {
+                reply_markup: { inline_keyboard: keyboard }
+            });
+        });
+    }
+
+    if (data === "back_home") {
+        showMainMenu(chatId, user.first_name || "کاربر");
+    }
+
+    if (data.startsWith("buy_")) {
+        const configId = data.split("_")[1];
+        db.get(`SELECT * FROM configs WHERE id = ? AND sold = 0`, [configId], (err, config) => {
+            if (!config) {
+                return bot.sendMessage(chatId, "❌ متأسفانه این کانفیگ قبلاً فروخته شده یا موجود نیست.");
+            }
+
+            db.get(`SELECT balance FROM users WHERE id = ?`, [chatId], (err, uRow) => {
+                const balance = uRow?.balance || 0;
+
+                if (balance < config.price) {
+                    return bot.sendMessage(chatId, `❌ موجودی کیف پول شما کافی نیست!\n💰 موجودی: ${balance}\n🏷 قیمت: ${config.price}\n\nلطفاً ابتدا کیف پول خود را شارژ کنید.`);
+                }
+
+                db.run(`UPDATE users SET balance = balance - ? WHERE id = ?`, [config.price, chatId]);
+                db.run(`UPDATE configs SET sold = 1, buyer = ? WHERE id = ?`, [chatId, configId]);
+                
+                const now = new Date().toLocaleDateString("fa-IR");
+                db.run(`INSERT INTO orders (user_id, config_name, price, date) VALUES (?, ?, ?, ?)`, 
+                    [chatId, config.name, config.price, now]);
+
+                bot.sendMessage(chatId, `✅ *خرید با موفقیت انجام شد!*\n\n📦 کانفیگ شما:\n\`${config.config}\``, { parse_mode: "Markdown" });
+            });
+        });
+    }
+
+    if (data === "admin_stock" && isAdmin(user)) {
+        db.all(`SELECT * FROM configs`, [], (err, rows) => {
+            const free = rows.filter(r => !r.sold).length;
+            const sold = rows.filter(r => r.sold).length;
+            bot.sendMessage(chatId, `📦 *وضعیت انبار آرنا:*\n\n🟢 آزاد: ${free}\n🔴 فروخته شده: ${sold}\n📊 کل: ${rows.length}`, { parse_mode: "Markdown" });
+        });
+    }
+
+    if (data === "admin_stats" && isAdmin(user)) {
+        db.get(`SELECT COUNT(*) as count FROM users`, [], (err, row) => {
+            bot.sendMessage(chatId, `👥 تعداد کل کاربران ربات: ${row.count} نفر`);
+        });
+    }
+});
+
+// ================= ⚠️ ERROR HANDLING =================
+bot.on("polling_error", (err) => {
+    console.log("Polling error:", err.message);
+});
+
+console.log("🔥 PROFESSIONAL ARENA BOT RUNNING SUCCESSFULLY...");
