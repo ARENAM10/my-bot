@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 
-const token = process.env.BOT_TOKEN;
+const token =8850301156:AAFHdCOBvS5hOW-QnhndZm6wXr9W8v5lNMw
 
 if (!token) {
   console.error("❌ Error: BOT_TOKEN is not set!");
