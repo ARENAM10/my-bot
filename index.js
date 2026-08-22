@@ -2,6 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 
 const token = "8850301156:AAG1uFVUXWcgEqXKOyEO8Nhinxdjy9a6d6g";
 
+
 const bot = new TelegramBot(token, { polling: true });
 
 console.log("Bot is running successfully...");
