@@ -6,7 +6,7 @@ dotenv.config();
 
 const TOKEN = process.env.BOT_TOKEN;
 const OWNER_ID = Number(process.env.OWNER_ID);
-const STORE_NAME = process.env.STORE_NAME || "ARENA CONFIG";
+const STORE_NAME = process.env.STORE_NAME || "LEX VIP";
 
 if (!TOKEN || !OWNER_ID) {
     console.error("خطا: توکن ربات یا آیدی مالک در فایل .env تنظیم نشده است!");
@@ -17,7 +17,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 const userState = {};
 
-// کیبورد اصلی شبیه به ربات‌های حرفه‌ای (دقیقاً مطابق درخواست شما)
+// کیبورد اصلی ربات
 function getMainKeyboard(userId) {
     const isOwner = userId === OWNER_ID;
     const keyboard = [
@@ -41,16 +41,28 @@ function getMainKeyboard(userId) {
     };
 }
 
+// کیبورد حالت بازگشت
+function getBackKeyboard() {
+    return {
+        reply_markup: {
+            keyboard: [[{ text: "🔙 بازگشت" }]],
+            resize_keyboard: true
+        }
+    };
+}
+
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
+    const userId = msg.from.id;
     const user = msg.from;
 
+    delete userState[userId];
     db.addUser(user);
 
     bot.sendMessage(
         chatId,
-        `سلام ${user.first_name || "عزیز"}! به فروشگاه ${STORE_NAME} خوش آمدید. 🚀\nاز منوی زیر گزینه مورد نظر خود را انتخاب کنید:`,
-        getMainKeyboard(user.id)
+        `💎 به ربات ${STORE_NAME} خوش آمدید 💎\n\n💎 ما اینجاایم تا شما رو به اینترنت آزاد وصل کنیم:\n\n💎 @LexVipBot`,
+        getMainKeyboard(userId)
     );
 });
 
@@ -59,21 +71,21 @@ bot.on("message", async (msg) => {
     const userId = msg.from.id;
     const text = msg.text;
 
-    if (!text || text.startsWith("/")) return;
+    if (!text) return;
+
+    if (text === "🔙 بازگشت" || text === "/start") {
+        delete userState[userId];
+        return bot.sendMessage(chatId, "به منوی اصلی برگشتید:", getMainKeyboard(userId));
+    }
 
     db.addUser(msg.from);
 
     const state = userState[userId];
     if (state) {
+        // ثبت رسید پرداخت
         if (state.action === "waiting_receipt") {
             const orderId = state.orderId;
-            let receiptValue = "";
-
-            if (msg.photo) {
-                receiptValue = msg.photo[msg.photo.length - 1].file_id;
-            } else if (msg.text) {
-                receiptValue = msg.text;
-            }
+            let receiptValue = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.text;
 
             db.setReceipt(orderId, receiptValue);
             delete userState[userId];
@@ -106,22 +118,41 @@ bot.on("message", async (msg) => {
             return;
         }
 
-        // حالت‌های افزودن کانفیگ توسط ادمین
+        // دریافت رزومه برای درخواست نمایندگی
+        if (state.action === "waiting_agency_request") {
+            if (text === "انصراف") {
+                delete userState[userId];
+                return bot.sendMessage(chatId, "❌ درخواست نمایندگی لغو شد.", getMainKeyboard(userId));
+            }
+
+            delete userState[userId];
+            bot.sendMessage(chatId, "✅ رزومه و درخواست شما با موفقیت برای مدیریت ارسال شد.", getMainKeyboard(userId));
+
+            const agencyMsg = `🤝 **درخواست نمایندگی جدید!**\n\n` +
+                `👤 کاربر: @${msg.from.username || "ندارد"} (${msg.from.first_name})\n` +
+                `🆔 آیدی عددی: \`${userId}\`\n\n` +
+                `📝 **متن درخواست/رزومه:**\n${text}`;
+
+            await bot.sendMessage(OWNER_ID, agencyMsg, { parse_mode: "Markdown" });
+            return;
+        }
+
+        // بخش افزودن اشتراک توسط ادمین
         if (userId === OWNER_ID) {
             if (state.action === "add_title") {
                 state.title = text;
                 state.action = "add_category";
-                return bot.sendMessage(chatId, "دسته‌بندی اشتراک را وارد کنید (مثلا: VIP, Normal, 1Month):");
+                return bot.sendMessage(chatId, "دسته‌بندی اشتراک را وارد کنید:");
             }
             if (state.action === "add_category") {
                 state.category = text;
                 state.action = "add_volume";
-                return bot.sendMessage(chatId, "حجم اشتراک را وارد کنید (مثلا: 50GB یا نامحدود):");
+                return bot.sendMessage(chatId, "حجم یا تعداد کاربر را وارد کنید:");
             }
             if (state.action === "add_volume") {
                 state.volume = text;
                 state.action = "add_duration";
-                return bot.sendMessage(chatId, "مدت زمان اعتبار را وارد کنید (مثلا: 30 روزه):");
+                return bot.sendMessage(chatId, "مدت زمان اعتبار را وارد کنید:");
             }
             if (state.action === "add_duration") {
                 state.duration = text;
@@ -133,7 +164,7 @@ bot.on("message", async (msg) => {
                 if (isNaN(price)) return bot.sendMessage(chatId, "❌ لطفاً فقط یک عدد معتبر برای قیمت وارد کنید.");
                 state.price = price;
                 state.action = "add_config_string";
-                return bot.sendMessage(chatId, "لینک یا متن کانفیگ را ارسال کنید:");
+                return bot.sendMessage(chatId, "لینک یا متن اشتراک (ساب) را ارسال کنید:");
             }
             if (state.action === "add_config_string") {
                 state.config = text;
@@ -151,52 +182,61 @@ bot.on("message", async (msg) => {
         }
     }
 
-    // مدیریت دکمه‌های منوی جدید
+    // مدیریت دکمه‌های منوی اصلی
     if (text === "💎 خرید اشتراک") {
-        const configs = db.getConfigs();
-        if (configs.length === 0) {
-            return bot.sendMessage(chatId, "📭 در حال حاضر هیچ اشتراکی موجود نیست.");
-        }
-
-        const inlineKeyboard = configs.map(c => [
-            { text: `${c.title} - ${c.volume} (${c.price} تومان)`, callback_data: `buy_${c.id}` }
-        ]);
-
-        return bot.sendMessage(chatId, "📋 لیست اشتراک‌های موجود رو از زیر انتخاب کنید:", {
-            reply_markup: { inline_keyboard: inlineKeyboard }
+        return bot.sendMessage(chatId, "💎 محصول مورد نظر را انتخاب کنید:", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "📋 مشاهده همه اشتراک‌های موجود", callback_data: "cat_all" }]
+                ]
+            }
         });
     }
 
     if (text === "🎁 اشتراک رایگان") {
-        return bot.sendMessage(chatId, "🎁 در حال حاضر اشتراک رایگانی فعال نیست. لطفاً کانال ما را دنبال کنید.");
+        return bot.sendMessage(chatId, "🎁 در حال حاضر اشتراک رایگانی فعال نیست.");
     }
 
     if (text === "⚡️ سرور تست") {
-        return bot.sendMessage(chatId, "⚡️ برای دریافت سرور تست می‌توانید به پشتیبانی پیام دهید.");
+        return bot.sendMessage(chatId, "⚡️ برای دریافت سرور تست به پشتیبانی پیام دهید.");
     }
 
     if (text === "💰 کیف پول") {
-        return bot.sendMessage(chatId, "💰 موجودی کیف پول شما: **۰ تومان**\n\nبرای افزایش موجودی با پشتیبانی در ارتباط باشید.", { parse_mode: "Markdown" });
+        const walletText = `💎 شناسه کاربری: \`${userId}\`\n` +
+            `💎 موجودی شما: **0 تومان**\n` +
+            `💎 تاریخ عضویت: امروز\n\n` +
+            `💎 برای افزایش موجودی یا وارد کردن کد هدیه از منوی زیر استفاده کنید:`;
+
+        return bot.sendMessage(chatId, walletText, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "💳 شارژ حساب", callback_data: "wallet_charge" }],
+                    [{ text: "🎁 استفاده از کد هدیه", callback_data: "wallet_gift" }]
+                ]
+            }
+        });
     }
 
     if (text === "📦 اشتراک‌های من") {
-        return bot.sendMessage(chatId, "🛒 برای مشاهده وضعیت سفارش‌ها و اشتراک‌های خریداری شده، از منوی خرید اقدام کنید.");
+        return bot.sendMessage(chatId, "🛒 شما در حال حاضر اشتراک فعالی ندارید.");
     }
 
     if (text === "📖 آموزش اتصال") {
-        return bot.sendMessage(chatId, "📖 **راهنمای اتصال به سرورها:**\n\n- کاربران اندروید: اپلیکیشن V2rayNG\n- کاربران آیفون: اپلیکیشن FoXray یا Streisand\n- کاربران ویندوز: V2RayN\n\nلینک دانلود برنامه‌ها در کانال موجود است.");
+        return bot.sendMessage(chatId, "📖 برای اتصال از برنامه‌های V2rayNG برای اندروید و FoXray برای آیفون استفاده کنید.");
     }
 
     if (text === "🤝 درخواست نمایندگی") {
-        return bot.sendMessage(chatId, "🤝 برای دریافت پنل و شرایط نمایندگی، به آیدی پشتیبانی پیام دهید.");
+        userState[userId] = { action: "waiting_agency_request" };
+        return bot.sendMessage(chatId, "📝 لطفاً توضیحات و رزومه خود را برای ثبت درخواست نمایندگی ارسال نمایید.\n\nدر صورت انصراف، کلمه «انصراف» را ارسال کنید.", getBackKeyboard());
     }
 
     if (text === "👥 دعوت دوستان") {
-        return bot.sendMessage(chatId, "👥 با دعوت از دوستان خود به ربات، از تخفیف‌های ویژه بهره‌مند شوید!\nلینک دعوت شما: `https://t.me/`", { parse_mode: "Markdown" });
+        return bot.sendMessage(chatId, "💎 سیستم رفرال در حال حاضر غیرفعال است.");
     }
 
-    if (text === "📞 پشتیبانی" || text === "⚙️ راهنما و پشتیبانی") {
-        return bot.sendMessage(chatId, "📞 برای ارتباط با پشتیبانی و ارسال سوالات می‌توانید به مدیریت پیام دهید.");
+    if (text === "📞 پشتیبانی") {
+        return bot.sendMessage(chatId, "💎 جهت ارتباط با پشتیبانی با آیدی زیر در ارتباط باشید:\n\n💎 @danyaal\n\n💎 لطفاً قبل از ارسال پیام اگر مشکلی در اتصال دارید ابتدا بخش \"آموزش اتصال\" را مطالعه کنید.");
     }
 
     if (text === "🔐 پنل مدیریت مالک" && userId === OWNER_ID) {
@@ -217,12 +257,28 @@ bot.on("callback_query", async (query) => {
     const data = query.data;
 
     try {
+        if (data === "cat_all" || data.startsWith("cat_")) {
+            const configs = db.getConfigs();
+            if (configs.length === 0) {
+                return bot.answerCallbackQuery(query.id, { text: "📭 در حال حاضر هیچ اشتراکی موجود نیست.", show_alert: true });
+            }
+
+            const inlineKeyboard = configs.map(c => [
+                { text: `${c.title} - ${c.volume} (${c.price} تومان)`, callback_data: `buy_${c.id}` }
+            ]);
+
+            bot.answerCallbackQuery(query.id);
+            return bot.sendMessage(chatId, "📋 لیست اشتراک‌های موجود:", {
+                reply_markup: { inline_keyboard: inlineKeyboard }
+            });
+        }
+
         if (data.startsWith("buy_")) {
             const configId = parseInt(data.split("_")[1]);
             const config = db.getConfig(configId);
 
             if (!config || config.sold === 1) {
-                return bot.answerCallbackQuery(query.id, { text: "❌ این اشتراک قبلاً فروخته شده یا وجود ندارد.", show_alert: true });
+                return bot.answerCallbackQuery(query.id, { text: "❌ این اشتراک فروخته شده یا وجود ندارد.", show_alert: true });
             }
 
             const orderId = db.createOrder(userId, configId);
@@ -230,11 +286,10 @@ bot.on("callback_query", async (query) => {
             const text = `📦 **جزئیات اشتراک:**\n\n` +
                 `🔹 عنوان: ${config.title}\n` +
                 `📂 دسته: ${config.category}\n` +
-                `⚡️ حجم: ${config.volume}\n` +
+                `⚡️ مشخصات: ${config.volume}\n` +
                 `⏳ مدت: ${config.duration}\n` +
-                `💵 قیمت: ${config.price} تومان\n` +
-                `📝 توضیحات: ${config.description || "ندارد"}\n\n` +
-                `💳 لطفاً مبلغ فوق را واریز کرده و تصویر رسید یا کد پیگیری را همینجا ارسال کنید.`;
+                `💵 قیمت: ${config.price} تومان\n\n` +
+                `💳 لطفاً مبلغ فوق را واریز کرده و تصویر رسید را همینجا ارسال کنید.`;
 
             bot.answerCallbackQuery(query.id);
             userState[userId] = { action: "waiting_receipt", orderId };
@@ -245,16 +300,6 @@ bot.on("callback_query", async (query) => {
                         [{ text: "❌ لغو سفارش", callback_data: `cancel_${orderId}` }]
                     ]
                 }
-            });
-        }
-
-        if (data.startsWith("cancel_")) {
-            const orderId = parseInt(data.split("_")[1]);
-            db.updateOrderStatus(orderId, "cancelled");
-            bot.answerCallbackQuery(query.id, { text: "❌ سفارش لغو شد." });
-            return bot.editMessageText("❌ این سفارش لغو گردید.", {
-                chat_id: chatId,
-                message_id: query.message.message_id
             });
         }
 
@@ -273,7 +318,7 @@ bot.on("callback_query", async (query) => {
                 parse_mode: "Markdown"
             });
 
-            bot.answerCallbackQuery(query.id, { text: "✅ سفارش تأیید و اشتراک برای کاربر ارسال شد." });
+            bot.answerCallbackQuery(query.id, { text: "✅ سفارش تأیید و ارسال شد." });
             return bot.editMessageCaption(`✅ **تأیید شده توسط مالک**\n\n` + query.message.caption, {
                 chat_id: chatId,
                 message_id: query.message.message_id,
@@ -287,7 +332,7 @@ bot.on("callback_query", async (query) => {
 
             const order = db.getOrder(orderId);
             if (order) {
-                await bot.sendMessage(order.user_id, "❌ متأسفانه رسید پرداخت شما رد شد. در صورت وجود مشکل با پشتیبانی در ارتباط باشید.");
+                await bot.sendMessage(order.user_id, "❌ متأسفانه رسید پرداخت شما رد شد.");
             }
 
             bot.answerCallbackQuery(query.id, { text: "❌ سفارش رد شد." });
@@ -296,6 +341,16 @@ bot.on("callback_query", async (query) => {
                 message_id: query.message.message_id,
                 parse_mode: "Markdown"
             });
+        }
+
+        if (data === "wallet_charge") {
+            bot.answerCallbackQuery(query.id);
+            return bot.sendMessage(chatId, "💳 برای شارژ حساب، مبلغ مورد نظر را به کارت واریز کرده و رسید را برای پشتیبانی بفرستید.");
+        }
+
+        if (data === "wallet_gift") {
+            bot.answerCallbackQuery(query.id);
+            return bot.sendMessage(chatId, "🎁 لطفاً کد هدیه خود را ارسال کنید:");
         }
 
         if (data === "admin_add" && userId === OWNER_ID) {
@@ -307,11 +362,10 @@ bot.on("callback_query", async (query) => {
         if (data === "admin_stats" && userId === OWNER_ID) {
             const stats = db.getStats();
             const statsText = `📊 **آمار کلی فروشگاه:**\n\n` +
-                `👥 تعداد کل کاربران: ${stats.users}\n` +
-                `📦 اشتراک‌های فعال: ${stats.configs}\n` +
-                `🛒 کل سفارش‌ها: ${stats.orders}\n` +
-                `✅ سفارش‌های موفق: ${stats.completed}\n` +
-                `💰 درآمد کل: ${stats.revenue} تومان`;
+                `👥 کاربران: ${stats.users}\n` +
+                `📦 اشتراک‌ها: ${stats.configs}\n` +
+                `🛒 سفارش‌ها: ${stats.orders}\n` +
+                `💰 درآمد: ${stats.revenue} تومان`;
 
             bot.answerCallbackQuery(query.id);
             return bot.sendMessage(chatId, statsText, { parse_mode: "Markdown" });
@@ -322,12 +376,4 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-process.on("uncaughtException", (err) => {
-    console.error("خطای پیش‌بینی نشده:", err);
-});
-
-process.on("unhandledRejection", (reason, promise) => {
-    console.error("خطای مدیریت نشده:", reason);
-});
-
-console.log("🤖 ربات حرفه‌ای فروشگاه با موفقیت راه‌اندازی شد.");
+console.log("🤖 ربات کاملاً به صورت حرفه‌ای فعال شد.");
