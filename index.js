@@ -5,46 +5,47 @@ const ADMIN_USERNAME = "ARENAM_10";
 
 const bot = new TelegramBot(token, { polling: true });
 
-// 📊 دیتابیس حافظه موقت (برای پایداری دائمی می‌توان دیتابیس متصل کرد)
+// دیتابیس کامل و جامع ربات
 const db = {
-    configs: [], // { id, productId, config, sold: false, soldTo: null }
+    configs: [], 
     products: [
-        { id: 1, name: "اشتراک اقتصادی", volume: 10, days: 30, price: 45000 },
-        { id: 2, name: "اشتراک پرسرعت", volume: 30, days: 30, price: 95000 }
+        { id: 1, name: "تست سرعت بالا", volume: 5, days: 30, price: 0, isTest: true },
+        { id: 2, name: "محبوب آرنا", volume: 10, days: 30, price: 50000 }
     ],
     users: new Set(),
-    wallets: {}, // chatId: balance
+    wallets: {}, 
+    receiptRequests: [], 
     settings: {
         cardNumber: "6219861861735792",
         cardOwner: "مزراعی",
-        bankName: "بلو"
+        bankName: "بلو",
+        payGuide: "لطفا پس از واریز رسید خود را ارسال کنید"
     }
 };
 
-const adminState = {}; // ذخیره وضعیت موقت ادمین (مثل افزودن کانفیگ)
+const adminState = {};
 
-console.log("🔥 Full Complete Store Bot is running successfully...");
+console.log("🔥 Arena Bot with Complete Admin Panel is running...");
 
-// بررسی ادمین بودن
 const isOwner = (msgOrQuery) => {
     const user = msgOrQuery.from || msgOrQuery.chat;
     const username = user.username;
     return username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase();
 };
 
-// ================= ویوهای اصلی (کاربر) =================
-
+// ================= منوی اصلی کاربر =================
 const sendMainMenu = (chatId, firstName, isOwnerUser = false, edit = false, messageId = null) => {
     db.users.add(chatId);
     if (!db.wallets[chatId]) db.wallets[chatId] = 0;
 
-    const text = `سلام ${firstName} عزیز! ⚡️\nبه ربات کانفیگ آرنا خوش آمدید.\n\n💰 موجودی کیف پول: ${db.wallets[chatId].toLocaleString()} تومان`;
+    let text = `سلام ${firstName} عزیز! ⚡️\nبه ربات کانفیگ آرنا خوش آمدید.\n\n💰 موجودی کیف پول: ${db.wallets[chatId].toLocaleString()} تومان`;
     
     const replyMarkup = {
         inline_keyboard: [
-            [{ text: "🛒 خرید اشتراک", callback_data: "buy_sub" }, { text: "👤 حساب کاربری", callback_data: "my_account" }],
-            [{ text: "💰 شارژ کیف پول", callback_data: "wallet_charge" }, { text: "📦 اشتراک‌های من", callback_data: "my_subs" }],
-            [{ text: "⚡️ تست رایگان", callback_data: "free_test" }, { text: "📞 پشتیبانی", callback_data: "support" }]
+            [{ text: "🛒 خرید اشتراک", callback_data: "buy_sub" }, { text: "👤 حساب کاربری من", callback_data: "my_account" }],
+            [{ text: "💰 شارژ کیف پول", callback_data: "wallet_charge" }, { text: "📦 اشتراک‌های من", callback_data: "my_subs_client" }],
+            [{ text: "⚡️ تست رایگان", callback_data: "free_test" }, { text: "📞 پشتیبانی", callback_data: "support" }],
+            [{ text: "❓ راهنمای اتصال", callback_data: "help" }]
         ]
     };
 
@@ -59,47 +60,50 @@ const sendMainMenu = (chatId, firstName, isOwnerUser = false, edit = false, mess
     }
 };
 
-// ================= پنل مدیریت =================
-
+// ================= پنل مدیریت (دقیقاً مشابه عکس) =================
 const sendAdminPanel = (chatId, edit = false, messageId = null) => {
-    const text = "🖥 **پنل مدیریت پیشرفته ربات**\n\nگزینه مورد نظر را انتخاب کنید:";
+    const text = `گزینه موردنظر را انتخاب کنید.`;
     const replyMarkup = {
         inline_keyboard: [
             [
-                { text: "📦 مدیریت کانفیگ‌ها", callback_data: "admin_configs" },
-                { text: "📊 آمار ربات", callback_data: "admin_stats" }
+                { text: "🛒 مدیریت اشتراک", callback_data: "admin_subs" },
+                { text: "📦 سوابق اشتراک‌ها", callback_data: "admin_history" }
             ],
             [
-                { text: "💳 تنظیمات کارت", callback_data: "admin_pay_config" },
-                { text: "📢 ارسال همگانی", callback_data: "admin_broadcast" }
+                { text: "💰 شارژ کیف پول", callback_data: "admin_wallet" },
+                { text: "📋 رسیدها", callback_data: "admin_receipts" }
             ],
             [
-                { text: "🏠 بازگشت به منوی اصلی", callback_data: "main_menu" }
+                { text: "📊 آمار", callback_data: "admin_stats" },
+                { text: "👥 کاربران", callback_data: "admin_users" }
+            ],
+            [
+                { text: "💬 پیام مشتریان", callback_data: "admin_messages" },
+                { text: "💳 تنظیمات پرداخت", callback_data: "admin_pay_config" }
+            ],
+            [
+                { text: "📢 ارسال همگانی", callback_data: "admin_broadcast" },
+                { text: "🗑 حذف پیام", callback_data: "admin_del_broadcast" }
+            ],
+            [
+                { text: "📌 سنجاق پیام", callback_data: "admin_pin_msg" },
+                { text: "👤 گزینه‌های مشتریان", callback_data: "admin_client_options" }
+            ],
+            [
+                { text: "🔄 استارت مالک", callback_data: "admin_owner_start" },
+                { text: "🏠 گزینه‌های اصلی", callback_data: "main_menu" }
             ]
         ]
     };
 
     if (edit && messageId) {
-        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: replyMarkup }).catch(() => {});
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, reply_markup: replyMarkup }).catch(() => {});
     } else {
-        bot.sendMessage(chatId, text, { parse_mode: 'Markdown', reply_markup: replyMarkup });
+        bot.sendMessage(chatId, text, { reply_markup: replyMarkup });
     }
 };
 
-// دکمه‌های مدیریت کانفیگ
-function configAdminKeyboard() {
-    return {
-        inline_keyboard: [
-            [{ text: "➕ افزودن کانفیگ جدید", callback_data: "config_add" }],
-            [{ text: "📋 کانفیگ‌های آزاد", callback_data: "config_available" }, { text: "🔴 فروخته‌شده‌ها", callback_data: "config_sold" }],
-            [{ text: "📊 موجودی انبار", callback_data: "config_stock" }],
-            [{ text: "🔙 بازگشت به پنل مدیریت", callback_data: "open_admin_panel" }]
-        ]
-    };
-}
-
-// ================= هندلر دستورات متنی =================
-
+// دستورات اولیه
 bot.onText(/\/start/, (msg) => {
     sendMainMenu(msg.chat.id, msg.from.first_name || "کاربر", isOwner(msg));
 });
@@ -109,8 +113,7 @@ bot.onText(/\/admin/, (msg) => {
     sendAdminPanel(msg.chat.id);
 });
 
-// ================= هندلر دکمه‌ها (Callback Queries) =================
-
+// مدیریت کلیک دکمه‌ها
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const messageId = query.message.message_id;
@@ -119,174 +122,190 @@ bot.on('callback_query', async (query) => {
 
     await bot.answerCallbackQuery(query.id).catch(() => {});
 
-    // منوی اصلی
-    if (data === 'main_menu') {
+    // محافظت از پنل ادمین
+    if (data.startsWith('admin_') && !userIsOwner) {
+        return bot.answerCallbackQuery(query.id, { text: "⚠️ دسترسی فقط برای مالک ربات مجاز است.", show_alert: true });
+    }
+
+    if (data === 'main_menu' || data === 'cli_start') {
         sendMainMenu(chatId, query.from.first_name || "کاربر", userIsOwner, true, messageId);
     }
-    // پنل مدیریت
-    else if (data === 'open_admin_panel' || data === 'admin_configs') {
-        if (!userIsOwner) return bot.sendMessage(chatId, "⚠️ دسترسی غیرمجاز.");
-        if (data === 'open_admin_panel') {
-            sendAdminPanel(chatId, true, messageId);
-        } else {
-            bot.editMessageText("📦 **مدیریت کانفیگ‌ها و انبار**\n\nیک گزینه انتخاب کنید:", {
-                chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: configAdminKeyboard()
-            }).catch(() => {});
-        }
+    else if (data === 'open_admin_panel' || data === 'admin_owner_start') {
+        sendAdminPanel(chatId, true, messageId);
     }
-    // آمار ربات
-    else if (data === 'admin_stats') {
-        if (!userIsOwner) return;
-        const totalConfigs = db.configs.length;
-        const availableConfigs = db.configs.filter(c => !c.sold).length;
-        const text = `📊 **آمار کلی ربات**\n\n👥 تعداد کل کاربران: ${db.users.size}\n📦 کل کانفیگ‌ها: ${totalConfigs}\n🟢 کانفیگ‌های آزاد: ${availableConfigs}\n🔴 فروخته شده: ${totalConfigs - availableConfigs}`;
-        bot.editMessageText(text, {
-            chat_id: chatId, message_id: messageId, parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] }
-        }).catch(() => {});
+    else if (data === 'admin_subs') {
+        const text = `📦 **مدیریت اشتراک‌ها**\n\nمحصولات فعال در ربات:`;
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: "➕ افزودن کانفیگ جدید", callback_data: "config_add" }],
+                [{ text: "📊 موجودی انبار کانفیگ‌ها", callback_data: "config_stock" }],
+                [{ text: "🔙 بازگشت به مدیریت", callback_data: "open_admin_panel" }]
+            ]
+        };
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
     }
-    // افزودن کانفیگ (انتخاب محصول)
     else if (data === 'config_add') {
-        if (!userIsOwner) return;
-        const rows = db.products.map(p => [{ text: `📦 ${p.name} (${p.volume}GB)`, callback_data: `conf_add_p:${p.id}` }]);
-        rows.push([{ text: "🔙 بازگشت", callback_data: "admin_configs" }]);
-        bot.editMessageText("محصولی که می‌خواهید برای آن کانفیگ اضافه کنید را انتخاب کنید:", {
-            chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: rows }
-        }).catch(() => {});
+        adminState[chatId] = { action: "waiting_for_config" };
+        bot.editMessageText("✍️ متن کانفیگ جدید را ارسال کنید:\n\nبرای لغو کلمه «لغو» را بفرستید.", { chat_id: chatId, message_id: messageId }).catch(() => {});
     }
-    else if (data.startsWith("conf_add_p:")) {
-        if (!userIsOwner) return;
-        const productId = Number(data.split(":")[1]);
-        adminState[chatId] = { action: "waiting_for_config", productId };
-        bot.editMessageText("✍️ لطفاً متن کانفیگ (Link/Config) خود را ارسال کنید:\n\nبرای لغو کلمه «لغو» را بفرستید.", {
-            chat_id: chatId, message_id: messageId
-        }).catch(() => {});
-    }
-    // مشاهده موجودی انبار کانفیگ‌ها
     else if (data === 'config_stock') {
-        if (!userIsOwner) return;
         let text = "📊 **موجودی انبار کانفیگ‌ها**\n\n";
         db.products.forEach(p => {
             const freeCount = db.configs.filter(c => c.productId === p.id && !c.sold).length;
             text += `📦 ${p.name}: ${freeCount} عدد آزاد\n`;
         });
-        bot.editMessageText(text, {
-            chat_id: chatId, message_id: messageId, parse_mode: 'Markdown',
-            reply_markup: configAdminKeyboard()
-        }).catch(() => {});
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "admin_subs" }]] } }).catch(() => {});
     }
-    // بخش خرید اشتراک برای کاربر
-    else if (data === 'buy_sub') {
-        const rows = db.products.map(p => {
-            const freeCount = db.configs.filter(c => c.productId === p.id && !c.sold).length;
-            return [{ text: `📦 ${p.name} - ${p.price.toLocaleString()} تومان (${freeCount} عدد موجود)`, callback_data: `buy_p:${p.id}` }];
+    else if (data === 'admin_history') {
+        const soldConfigs = db.configs.filter(c => c.sold);
+        let text = `📦 **سوابق اشتراک‌های فروخته‌شده (${soldConfigs.length} مورد)**\n\n`;
+        soldConfigs.slice(-10).forEach((c, idx) => {
+            text += `${idx + 1}. کانفیگ برای کاربر \`${c.soldTo}\`\n`;
         });
+        if (!soldConfigs.length) text = "📦 هنوز فروشی ثبت نشده است.";
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+    }
+    else if (data === 'admin_wallet' || data === 'admin_receipts') {
+        const pending = db.receiptRequests;
+        if (!pending.length) {
+            return bot.editMessageText("💰 هیچ درخواست واریز یا رسیدی در انتظار نیست.", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+        }
+        const req = pending[0];
+        const text = `📋 **بررسی رسید شارژ کیف پول**\n\n👤 کاربر: \`${req.chatId}\`\n💵 مبلغ: ${req.amount}`;
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: "✅ تأیید موجودی", callback_data: `acc_req:${req.id}` }, { text: "❌ رد", callback_data: `rej_req:${req.id}` }],
+                [{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]
+            ]
+        };
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+    }
+    else if (data.startsWith("acc_req:") || data.startsWith("rej_req:")) {
+        const reqId = Number(data.split(":")[1]);
+        const index = db.receiptRequests.findIndex(r => r.id === reqId);
+        if (index === -1) return;
+        const req = db.receiptRequests.splice(index, 1)[0];
+
+        if (data.startsWith("acc_req")) {
+            if (!db.wallets[req.chatId]) db.wallets[req.chatId] = 0;
+            const numericAmount = parseInt(req.amount.replace(/[^0-9]/g, '')) || 0;
+            db.wallets[req.chatId] += numericAmount;
+            bot.sendMessage(req.chatId, `✅ کیف پول شما به مبلغ ${req.amount} شارژ شد.`);
+            bot.editMessageText("✅ رسید تأیید و موجودی کاربر اضافه شد.", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+        } else {
+            bot.sendMessage(req.chatId, `❌ رسید شما توسط مدیریت رد شد.`);
+            bot.editMessageText("❌ رسید رد شد.", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+        }
+    }
+    else if (data === 'admin_stats') {
+        const text = `📊 **آمار ربات**\n\n👥 تعداد کل کاربران: ${db.users.size}\n📦 کل کانفیگ‌ها: ${db.configs.length}\n🟢 کانفیگ‌های آزاد: ${db.configs.filter(c => !c.sold).length}`;
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+    }
+    else if (data === 'admin_users') {
+        bot.editMessageText(`👥 تعداد کل کاربران عضو در ربات: ${db.users.size} نفر`, { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+    }
+    else if (data === 'admin_messages') {
+        bot.editMessageText(`💬 هیچ پیام خوانده‌نشده‌ای از مشتریان وجود ندارد.`, { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+    }
+    else if (data === 'admin_pay_config') {
+        const s = db.settings;
+        const text = `💳 **تنظیمات پرداخت**\n\n🏦 شماره کارت: \`${s.cardNumber}\`\n👤 صاحب کارت: ${s.cardOwner}\n🏛 بانک: ${s.bankName}`;
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+    }
+    else if (data === 'admin_broadcast') {
+        bot.editMessageText(`📢 برای ارسال همگانی، متن پیام خود را ارسال کنید (فعلاً غیرفعال).`, { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+    }
+    else if (data === 'admin_del_broadcast') {
+        bot.editMessageText(`🗑 هیچ ارسال همگانی برای حذف وجود ندارد.`, { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+    }
+    else if (data === 'admin_pin_msg') {
+        bot.editMessageText(`📌 پیامی برای سنجاق کردن انتخاب نشده است.`, { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+    }
+    else if (data === 'admin_client_options') {
+        bot.editMessageText(`👤 **گزینه‌های مشتریان**\n\nمی‌توانید نمای منوی کاربران را بررسی کنید.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🏠 رفتن به منوی اصلی", callback_data: "main_menu" }, { text: "🔙 بازگشت", callback_data: "open_admin_panel" }]] } }).catch(() => {});
+    }
+    // دکمه‌های کاربران (خرید و شارژ)
+    else if (data === 'buy_sub') {
+        const rows = db.products.map(p => [{ text: `📦 ${p.name} - ${p.price.toLocaleString()} تومان`, callback_data: `buy_p:${p.id}` }]);
         rows.push([{ text: "🔙 بازگشت", callback_data: "main_menu" }]);
-        bot.editMessageText("🛒 **لیست محصولات برای خرید:**\n\nمحصول مورد نظر خود را انتخاب کنید:", {
-            chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: rows }
-        }).catch(() => {});
+        bot.editMessageText("🛒 محصولات موجود:", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: rows } }).catch(() => {});
     }
     else if (data.startsWith("buy_p:")) {
         const productId = Number(data.split(":")[1]);
         const product = db.products.find(p => p.id === productId);
         const freeConfig = db.configs.find(c => c.productId === productId && !c.sold);
 
-        if (!freeConfig) {
-            return bot.answerCallbackQuery(query.id, { text: "❌ متاسفانه این محصول در حال حاضر موجودی ندارد!", show_alert: true });
-        }
+        if (!freeConfig) return bot.answerCallbackQuery(query.id, { text: "❌ این محصول در حال حاضر موجودی ندارد!", show_alert: true });
+        
+        const balance = db.wallets[chatId] || 0;
+        if (balance < product.price) return bot.answerCallbackQuery(query.id, { text: "❌ موجودی کیف پول کافی نیست!", show_alert: true });
 
-        const userBalance = db.wallets[chatId] || 0;
-        if (userBalance < product.price) {
-            return bot.answerCallbackQuery(query.id, { text: "❌ موجودی کیف پول شما برای خرید کافی نیست! ابتدا کیف پول خود را شارژ کنید.", show_alert: true });
-        }
-
-        // کسر موجودی و تحویل کانفیگ
         db.wallets[chatId] -= product.price;
         freeConfig.sold = true;
         freeConfig.soldTo = chatId;
 
-        const successText = `✅ **خرید با موفقیت انجام شد!**\n\n📦 محصول: ${product.name}\n🔗 کانفیگ اختصاصی شما:\n\n\`${freeConfig.config}\``;
-        bot.editMessageText(successText, {
-            chat_id: chatId, message_id: messageId, parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: [[{ text: "🏠 بازگشت به منو", callback_data: "main_menu" }]] }
-        }).catch(() => {});
+        bot.editMessageText(`✅ **خرید موفقیت‌آمیز بود!**\n\n\`${freeConfig.config}\``, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🏠 منوی اصلی", callback_data: "main_menu" }]] } }).catch(() => {});
     }
     else if (data === 'wallet_charge') {
+        adminState[chatId] = { action: "waiting_for_receipt" };
         const s = db.settings;
-        const text = `💰 **شارژ کیف پول**\n\nبرای شارژ حساب، مبلغ مورد نظر را به شماره کارت زیر واریز کرده و رسید آن را به پشتیبانی ارسال کنید:\n\n💳 کارت: \`${s.cardNumber}\`\n👤 صاحب کارت: ${s.cardOwner}\n🏛 بانک: ${s.bankName}`;
-        bot.editMessageText(text, {
-            chat_id: chatId, message_id: messageId, parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] }
-        }).catch(() => {});
+        bot.editMessageText(`💰 مبلغ را به کارت زیر واریز کرده و رسید آن را ارسال کنید:\n\`${s.cardNumber}\` (${s.cardOwner})`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] } }).catch(() => {});
     }
     else if (data === 'my_account') {
-        const balance = db.wallets[chatId] || 0;
-        const text = `👤 **حساب کاربری شما**\n\n🆔 آی‌دی چت: \`${chatId}\`\n💰 موجودی کیف پول: ${balance.toLocaleString()} تومان`;
-        bot.editMessageText(text, {
-            chat_id: chatId, message_id: messageId, parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] }
-        }).catch(() => {});
+        bot.editMessageText(`👤 موجودی کیف پول: ${(db.wallets[chatId] || 0).toLocaleString()} تومان`, { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] } }).catch(() => {});
     }
-    else if (data === 'my_subs') {
-        const userConfigs = db.configs.filter(c => c.soldTo === chatId);
-        if (!userConfigs.length) {
-            return bot.editMessageText("📦 شما تاکنون هیچ اشتراکی خریداری نکرده‌اید.", {
-                chat_id: chatId, message_id: messageId,
-                reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] }
-            }).catch(() => {});
-        }
-        let text = "📦 **اشتراک‌های خریداری‌شده شما:**\n\n";
-        userConfigs.forEach((c, idx) => {
-            text += `${idx + 1}. \`${c.config}\`\n\n`;
-        });
-        bot.editMessageText(text, {
-            chat_id: chatId, message_id: messageId, parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] }
-        }).catch(() => {});
+    else if (data === 'my_subs_client') {
+        const subs = db.configs.filter(c => c.soldTo === chatId);
+        let text = "📦 اشتراک‌های شما:\n\n";
+        subs.forEach(s => text += `\`${s.config}\`\n\n`);
+        if (!subs.length) text = "📦 شما اشتراکی ندارید.";
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] } }).catch(() => {});
     }
-    else if (data === 'support') {
-        bot.editMessageText("📞 برای ارتباط با پشتیبانی به ادمین پیام دهید: @ARENAM_10", {
-            chat_id: chatId, message_id: messageId,
-            reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] }
-        }).catch(() => {});
+    else if (data === 'support' || data === 'help') {
+        bot.editMessageText(`📞 پشتیبانی: @${ADMIN_USERNAME}`, { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] } }).catch(() => {});
     }
     else if (data === 'free_test') {
-        bot.editMessageText("⚡️ در حال حاضر تست رایگان فعال نمی‌باشد.", {
-            chat_id: chatId, message_id: messageId,
-            reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]] }
-        }).catch(() => {});
+        const testProd = db.products.find(p => p.isTest);
+        const freeConf = db.configs.find(c => c.productId === testProd.id && !c.sold);
+        if (!freeConf) return bot.answerCallbackQuery(query.id, { text: "❌ تست رایگان موجود نیست.", show_alert: true });
+        freeConf.sold = true;
+        freeConf.soldTo = chatId;
+        bot.editMessageText(`⚡️ کانفیگ تست رایگان:\n\n\`${freeConf.config}\``, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: "🏠 منوی اصلی", callback_data: "main_menu" }]] } }).catch(() => {});
     }
 });
 
-// ================= دریافت پیام‌های متنی (ثبت کانفیگ توسط ادمین) =================
-
+// مدیریت پیام‌های متنی (ثبت کانفیگ و ارسال رسید)
 bot.on('message', async (msg) => {
     if (!msg.text) return;
     const chatId = msg.chat.id;
-    
-    if (adminState[chatId] && adminState[chatId].action === "waiting_for_config") {
-        if (!isOwner(msg)) {
-            delete adminState[chatId];
-            return;
-        }
+    const state = adminState[chatId];
+    if (!state) return;
 
+    if (state.action === "waiting_for_config") {
+        if (!isOwner(msg)) return delete adminState[chatId];
         if (msg.text.trim() === "لغو") {
             delete adminState[chatId];
-            return bot.sendMessage(chatId, "❌ عملیات لغو شد.", { reply_markup: configAdminKeyboard() });
+            return bot.sendMessage(chatId, "❌ لغو شد.");
         }
-
-        const productId = adminState[chatId].productId;
-        const configText = msg.text.trim();
-
         db.configs.push({
             id: db.configs.length + 1,
-            productId: productId,
-            config: configText,
+            productId: 2, // پیش‌فرض روی محصول دوم
+            config: msg.text.trim(),
             sold: false,
             soldTo: null
         });
-
         delete adminState[chatId];
-        return bot.sendMessage(chatId, "✅ کانفیگ با موفقیت در انبار ذخیره شد!", { reply_markup: configAdminKeyboard() });
+        return bot.sendMessage(chatId, "✅ کانفیگ با موفقیت در انبار ذخیره شد.");
+    }
+
+    if (state.action === "waiting_for_receipt") {
+        db.receiptRequests.push({
+            id: db.receiptRequests.length + 1,
+            chatId: chatId,
+            amount: msg.text.trim()
+        });
+        delete adminState[chatId];
+        return bot.sendMessage(chatId, "✅ رسید شما برای مدیریت ارسال شد.");
     }
 });
+    
