@@ -5,6 +5,8 @@ import * as db from "./database.js";
 dotenv.config();
 
 const TOKEN = process.env.BOT_TOKEN;
+// تنظیم آیدی مالک یا نام کاربری آن (در صورت نیاز به چک کردن با username یا ID)
+const OWNER_USERNAME = "ARENAM_10";
 const OWNER_ID = Number(process.env.OWNER_ID);
 const STORE_NAME = process.env.STORE_NAME || "LEX VIP";
 
@@ -17,12 +19,12 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 const userState = {};
 
-// تابع ساخت منوی شیشه‌ای (خرید و مدیریت در سطرهای جداگانه و بزرگ، بقیه دو ستونی)
-function getInlineMenu(userId) {
-    const isOwner = userId === OWNER_ID;
+// تابع ساخت منوی اصلی شیشه‌ای (خرید و مدیریت در سطرهای جداگانه، بقیه دو ستونی)
+function getInlineMenu(userId, username) {
+    const isOwner = (userId === OWNER_ID) || (username === OWNER_USERNAME);
     const keyboard = [];
 
-    // اگر کاربر ادمین باشد، دکمه مدیریت در یک سطر جداگانه و بالا قرار می‌گیرد
+    // اگر کاربر ادمین/مالک باشد، دکمه مدیریت در یک سطر جداگانه و بالا قرار می‌گیرد
     if (isOwner) {
         keyboard.push([{ text: "🔐 مدیریت ربات", callback_data: "menu_admin" }]);
     }
@@ -57,6 +59,44 @@ function getInlineMenu(userId) {
     };
 }
 
+// تابع ساخت پنل جامع مدیریت ادمین (دقیقاً مطابق تصویر ارسالی)
+function getAdminPanelKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: "🛒 مدیریت اشتراک", callback_data: "admin_sub_management" },
+                    { text: "📦 سوابق اشتراک‌ها", callback_data: "admin_sub_history" }
+                ],
+                [
+                    { text: "📁 رسیدها", callback_data: "admin_receipts" },
+                    { text: "💰 شارژ کیف پول", callback_data: "admin_charge_wallet" }
+                ],
+                [
+                    { text: "💬 پیام مشتریان", callback_data: "admin_messages" },
+                    { text: "📊 آمار", callback_data: "admin_stats" }
+                ],
+                [
+                    { text: "🔒 عضویت اجباری", callback_data: "admin_forcesub" },
+                    { text: "💳 تنظیمات پرداخت", callback_data: "admin_payment_settings" }
+                ],
+                [
+                    { text: "🗑 حذف پیام", callback_data: "admin_delete_msg" },
+                    { text: "📢 ارسال همگانی", callback_data: "admin_broadcast" }
+                ],
+                [
+                    { text: "👤 گزینه‌های مشتریان", callback_data: "admin_customer_options" },
+                    { text: "📌 سنجاق پیام", callback_data: "admin_pin_msg" }
+                ],
+                [
+                    { text: "🔄 استارت مالک", callback_data: "admin_owner_start" },
+                    { text: "🔙 گزینه‌های اصلی", callback_data: "menu_home" }
+                ]
+            ]
+        }
+    };
+}
+
 // دکمه بازگشت شیشه‌ای
 function getInlineBack() {
     return {
@@ -68,9 +108,21 @@ function getInlineBack() {
     };
 }
 
+// دکمه بازگشت به پنل مدیریت
+function getAdminBack() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "🔙 بازگشت به مدیریت", callback_data: "menu_admin" }]
+            ]
+        }
+    };
+}
+
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
+    const username = msg.from.username;
     const user = msg.from;
 
     delete userState[userId];
@@ -79,22 +131,24 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(
         chatId,
         `✨ به پنل اختصاصی ${STORE_NAME} خوش آمدید.\n\nلطفاً از گزینه‌های زیر انتخاب کنید:`,
-        getInlineMenu(userId)
+        getInlineMenu(userId, username)
     );
 });
 
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
+    const username = msg.from.username;
     const text = msg.text;
 
     if (!text) return;
 
     db.addUser(msg.from);
 
+    const isOwner = (userId === OWNER_ID) || (username === OWNER_USERNAME);
     const state = userState[userId];
+
     if (state) {
-        // ثبت رسید
         if (state.action === "waiting_receipt") {
             const orderId = state.orderId;
             let receiptValue = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.text;
@@ -102,7 +156,7 @@ bot.on("message", async (msg) => {
             db.setReceipt(orderId, receiptValue);
             delete userState[userId];
 
-            bot.sendMessage(chatId, "✔️ رسید شما با موفقیت ثبت شد و جهت بررسی به ادمین ارسال گردید.", getInlineMenu(userId));
+            bot.sendMessage(chatId, "✔️ رسید شما با موفقیت ثبت شد و جهت بررسی به ادمین ارسال گردید.", getInlineMenu(userId, username));
 
             const orderInfo = db.getOrder(orderId);
             const ownerMsg = `🔔 **سفارش جدید ثبت شد!**\n\n` +
@@ -130,15 +184,14 @@ bot.on("message", async (msg) => {
             return;
         }
 
-        // درخواست نمایندگی
         if (state.action === "waiting_agency_request") {
             if (text === "انصراف") {
                 delete userState[userId];
-                return bot.sendMessage(chatId, "❌ درخواست نمایندگی لغو شد.", getInlineMenu(userId));
+                return bot.sendMessage(chatId, "❌ درخواست نمایندگی لغو شد.", getInlineMenu(userId, username));
             }
 
             delete userState[userId];
-            bot.sendMessage(chatId, "✔️ درخواست و اطلاعات شما برای مدیریت ارسال شد.", getInlineMenu(userId));
+            bot.sendMessage(chatId, "✔️ درخواست و اطلاعات شما برای مدیریت ارسال شد.", getInlineMenu(userId, username));
 
             const agencyMsg = `🤝 **درخواست نمایندگی جدید:**\n\n` +
                 `👤 کاربر: @${msg.from.username || "ندارد"} (${msg.from.first_name})\n` +
@@ -150,7 +203,7 @@ bot.on("message", async (msg) => {
         }
 
         // بخش ادمین برای افزودن اشتراک
-        if (userId === OWNER_ID) {
+        if (isOwner) {
             if (state.action === "add_title") {
                 state.title = text;
                 state.action = "add_category";
@@ -189,7 +242,24 @@ bot.on("message", async (msg) => {
                 db.addConfig(state);
                 delete userState[userId];
 
-                return bot.sendMessage(chatId, "✔️ محصول جدید با موفقیت اضافه شد.", getInlineMenu(userId));
+                return bot.sendMessage(chatId, "✔️ محصول جدید با موفقیت اضافه شد.", getAdminPanelKeyboard());
+            }
+
+            // ارسال همگانی
+            if (state.action === "broadcast_text") {
+                delete userState[userId];
+                bot.sendMessage(chatId, "📢 ارسال همگانی پیام آغاز شد...", getAdminPanelKeyboard());
+                const allUsers = db.getAllUsers ? db.getAllUsers() : [];
+                let count = 0;
+                for (const u of allUsers) {
+                    try {
+                        await bot.sendMessage(u.user_id, text);
+                        count++;
+                    } catch (e) {
+                        // احتمال مسدود بودن ربات توسط کاربر
+                    }
+                }
+                return bot.sendMessage(chatId, `✔️ پیام همگانی با موفقیت به ${count} کاربر ارسال شد.`);
             }
         }
     }
@@ -198,7 +268,9 @@ bot.on("message", async (msg) => {
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const userId = query.from.id;
+    const username = query.from.username;
     const data = query.data;
+    const isOwner = (userId === OWNER_ID) || (username === OWNER_USERNAME);
 
     try {
         if (data === "menu_home") {
@@ -207,7 +279,7 @@ bot.on("callback_query", async (query) => {
             return bot.editMessageText(`✨ به پنل اختصاصی ${STORE_NAME} خوش آمدید.\n\nلطفاً از گزینه‌های زیر انتخاب کنید:`, {
                 chat_id: chatId,
                 message_id: query.message.message_id,
-                ...getInlineMenu(userId)
+                ...getInlineMenu(userId, username)
             });
         }
 
@@ -304,28 +376,167 @@ bot.on("callback_query", async (query) => {
 
         if (data === "menu_support") {
             bot.answerCallbackQuery(query.id);
-            return bot.editMessageText("☎️ راه ارتباط با پشتیبانی:\n\nآیدی پشتیبان: `@ARENAM_10`\n\nلطفاً پیش از ارسال پیام، راهنمای اتصال را مطالعه کنید.", {
+            return bot.editMessageText(`☎️ راه ارتباط با پشتیبانی:\n\nآیدی پشتیبان: \`@${OWNER_USERNAME}\`\n\nلطفاً پیش از ارسال پیام، راهنمای اتصال را مطالعه کنید.`, {
                 chat_id: chatId,
                 message_id: query.message.message_id,
+                parse_mode: "Markdown",
                 ...getInlineBack()
             });
         }
 
-        if (data === "menu_admin" && userId === OWNER_ID) {
+        // پنل مدیریت اصلی ادمین
+        if (data === "menu_admin" && isOwner) {
             bot.answerCallbackQuery(query.id);
-            return bot.editMessageText("🔐 بخش مدیریت کل سیستم:", {
+            return bot.editMessageText("🛠 **پنل مدیریت ربات**\n\nگزینه موردنظر را انتخاب کنید:", {
                 chat_id: chatId,
                 message_id: query.message.message_id,
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            { text: "➕ تعریف اشتراک جدید", callback_data: "admin_add" },
-                            { text: "📊 آمار و گزارشات", callback_data: "admin_stats" }
-                        ],
-                        [{ text: "🔙 بازگشت به منو", callback_data: "menu_home" }]
-                    ]
-                }
+                parse_mode: "Markdown",
+                ...getAdminPanelKeyboard()
             });
+        }
+
+        // زیرمنوهای پنل مدیریت ادمین
+        if (isOwner) {
+            if (data === "admin_sub_management") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("🛒 مدیریت اشتراک‌ها:\nبرای افزودن اشتراک جدید کلیک کنید:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "➕ تعریف اشتراک جدید", callback_data: "admin_add" }],
+                            [{ text: "🔙 بازگشت به مدیریت", callback_data: "menu_admin" }]
+                        ]
+                    }
+                });
+            }
+
+            if (data === "admin_sub_history") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("📦 سوابق کامل اشتراک‌های فروخته شده و ثبت‌شده در سیستم:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_receipts") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("📁 لیست رسیدهای پرداختی اخیر کاربران:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_charge_wallet") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("💰 بخش شارژ کیف پول دستی کاربران:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_messages") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("💬 صندوق پیام‌های دریافتی از مشتریان:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_stats") {
+                const stats = db.getStats();
+                const statsText = `📊 **آمار کامل سیستم:**\n\n` +
+                    `👥 کل کاربران: ${stats.users}\n` +
+                    `📦 کل محصولات: ${stats.configs}\n` +
+                    `🛒 کل سفارشات: ${stats.orders}\n` +
+                    `💰 مجموع درآمد: ${stats.revenue} تومان`;
+
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText(statsText, {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    parse_mode: "Markdown",
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_forcesub") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("🔒 تنظیمات عضویت اجباری در کانال:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_payment_settings") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("💳 تنظیمات درگاه و شماره کارت پرداخت:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_delete_msg") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("🗑 ابزار حذف پیام‌های ربات:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_broadcast") {
+                userState[userId] = { action: "broadcast_text" };
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("📢 لطفاً پیام خود را برای ارسال همگانی به همه کاربران ارسال کنید:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_customer_options") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("👤 تنظیمات و گزینه‌های مربوط به مشتریان:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_pin_msg") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("📌 ابزار سنجاق کردن پیام در کانال یا ربات:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_owner_start") {
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("🔄 ربات استارت خورد (وضعیت آپدیت شد).", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "admin_add") {
+                userState[userId] = { action: "add_title" };
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("➕ عنوان محصول را وارد کنید:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
         }
 
         if (data === "cat_all" || data.startsWith("cat_")) {
@@ -379,7 +590,7 @@ bot.on("callback_query", async (query) => {
             });
         }
 
-        if (data.startsWith("approve_") && userId === OWNER_ID) {
+        if (data.startsWith("approve_") && isOwner) {
             const orderId = parseInt(data.split("_")[1]);
             const order = db.getOrder(orderId);
 
@@ -402,7 +613,7 @@ bot.on("callback_query", async (query) => {
             });
         }
 
-        if (data.startsWith("reject_") && userId === OWNER_ID) {
+        if (data.startsWith("reject_") && isOwner) {
             const orderId = parseInt(data.split("_")[1]);
             db.updateOrderStatus(orderId, "rejected");
 
@@ -437,36 +648,9 @@ bot.on("callback_query", async (query) => {
             });
         }
 
-        if (data === "admin_add" && userId === OWNER_ID) {
-            userState[userId] = { action: "add_title" };
-            bot.answerCallbackQuery(query.id);
-            return bot.editMessageText("➕ عنوان محصول را وارد کنید:", {
-                chat_id: chatId,
-                message_id: query.message.message_id,
-                ...getInlineBack()
-            });
-        }
-
-        if (data === "admin_stats" && userId === OWNER_ID) {
-            const stats = db.getStats();
-            const statsText = `📊 **آمار سیستم:**\n\n` +
-                `👥 کاربران: ${stats.users}\n` +
-                `📦 کل محصولات: ${stats.configs}\n` +
-                `🛒 سفارشات: ${stats.orders}\n` +
-                `💰 مجموع درآمد: ${stats.revenue} تومان`;
-
-            bot.answerCallbackQuery(query.id);
-            return bot.editMessageText(statsText, {
-                chat_id: chatId,
-                message_id: query.message.message_id,
-                parse_mode: "Markdown",
-                ...getInlineBack()
-            });
-        }
-
     } catch (error) {
         console.error("خطا:", error);
     }
 });
 
-console.log("🤖 ربات با چیدمان جدید کلیدها آپدیت شد.");
+console.log("🤖 ربات با پنل کامل مدیریت و تنظیمات مالک فعال شد.");
