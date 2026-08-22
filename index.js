@@ -5,7 +5,7 @@ const OWNER_USERNAME = "ARENAM_10";
 
 const bot = new TelegramBot(token, { polling: true });
 
-// دیتابیس موقت ربات
+// دیتابیس موقت ربات با تنظیمات کانال شما
 const db = {
     configs: [], 
     users: new Set(),
@@ -16,18 +16,20 @@ const db = {
         cardNumber: "6219861861735792",
         cardOwner: "مزراعی",
         bankName: "بلو",
-        payGuide: "لطفا پس از واریز رسید خود را ارسال کنید"
+        payGuide: "لطفا پس از واریز رسید خود را ارسال کنید",
+        joinLockStatus: "فعال ✅",
+        channel: "@Config_Arena"
     }
 };
 
-console.log("🔥 Clean Bot without Join Lock is running successfully...");
+console.log("🔥 Config Bot with Arena Channel is running successfully...");
 
 const isOwner = (msg) => {
     const username = msg.from.username;
     return username && username.toLowerCase() === OWNER_USERNAME.toLowerCase();
 };
 
-// منوی مدیریت بدون دکمه عضویت اجباری
+// منوی مدیریت همراه با عضویت اجباری روی کانال Config_Arena
 const sendAdminPanel = (chatId, isEdit = false, messageId = null) => {
     const text = `گزینه موردنظر را انتخاب کنید.`;
     const replyMarkup = {
@@ -49,11 +51,14 @@ const sendAdminPanel = (chatId, isEdit = false, messageId = null) => {
                 { text: "💳 تنظیمات پرداخت", callback_data: "admin_pay_config" }
             ],
             [
-                { text: "📢 ارسال همگانی", callback_data: "admin_broadcast" },
-                { text: "🗑 حذف پیام", callback_data: "admin_del_broadcast" }
+                { text: "🔒 عضویت اجباری", callback_data: "admin_join_lock" },
+                { text: "📢 ارسال همگانی", callback_data: "admin_broadcast" }
             ],
             [
-                { text: "📌 سنجاق پیام", callback_data: "admin_pin_msg" },
+                { text: "🗑 حذف پیام", callback_data: "admin_del_broadcast" },
+                { text: "📌 سنجاق پیام", callback_data: "admin_pin_msg" }
+            ],
+            [
                 { text: "👤 گزینه‌های مشتریان", callback_data: "admin_client_options" }
             ],
             [
@@ -184,6 +189,18 @@ bot.on('callback_query', async (query) => {
             inline_keyboard: [
                 [{ text: "💳 شماره کارت", callback_data: "set_card" }, { text: "👤 نام صاحب کارت", callback_data: "set_owner" }],
                 [{ text: "🏛 نام بانک", callback_data: "set_bank" }, { text: "📝 متن راهنمای پرداخت", callback_data: "set_guide" }],
+                [{ text: "🔙 بازگشت به مدیریت", callback_data: "open_admin_panel" }]
+            ]
+        };
+        bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+    }
+    else if (data === 'admin_join_lock') {
+        const s = db.settings;
+        const text = `🔒 **عضویت اجباری**\n\n___________________\n\nوضعیت: ${s.joinLockStatus}\nکانال فعال: ${s.channel}`;
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: "➕ تنظیم/تغییر کانال", callback_data: "set_channel" }],
+                [{ text: "ℹ️ راهنمای تنظیم", callback_data: "guide_channel" }],
                 [{ text: "🔙 بازگشت به مدیریت", callback_data: "open_admin_panel" }]
             ]
         };
