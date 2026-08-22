@@ -17,24 +17,38 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 const userState = {};
 
-// تابع ساخت منوی شیشه‌ای درون صفحه چت
+// تابع ساخت منوی شیشه‌ای (خرید و مدیریت در سطرهای جداگانه و بزرگ، بقیه دو ستونی)
 function getInlineMenu(userId) {
     const isOwner = userId === OWNER_ID;
-    const keyboard = [
-        [{ text: "🛒 خرید اشتراک", callback_data: "menu_buy" }],
-        [{ text: "🎁 هدیه روزانه", callback_data: "menu_gift" }],
-        [{ text: "🚀 تست سرعت", callback_data: "menu_speed" }],
-        [{ text: "💳 حساب کاربری", callback_data: "menu_account" }],
-        [{ text: "📂 اشتراک‌های من", callback_data: "menu_my_subs" }],
-        [{ text: "📘 راهنمای اتصال", callback_data: "menu_guide" }],
-        [{ text: "🤝 اخذ نمایندگی", callback_data: "menu_agency" }],
-        [{ text: "🌐 معرفی به دوستان", callback_data: "menu_invite" }],
-        [{ text: "☎️ ارتباط با پشتیبانی", callback_data: "menu_support" }]
-    ];
+    const keyboard = [];
 
+    // اگر کاربر ادمین باشد، دکمه مدیریت در یک سطر جداگانه و بالا قرار می‌گیرد
     if (isOwner) {
-        keyboard.unshift([{ text: "🔐 مدیریت ربات", callback_data: "menu_admin" }]);
+        keyboard.push([{ text: "🔐 مدیریت ربات", callback_data: "menu_admin" }]);
     }
+
+    // دکمه بزرگ خرید اشتراک در یک سطر جداگانه
+    keyboard.push([{ text: "🛒 خرید اشتراک", callback_data: "menu_buy" }]);
+
+    // بقیه گزینه‌ها به صورت دو ستونی
+    keyboard.push(
+        [
+            { text: "🎁 هدیه روزانه", callback_data: "menu_gift" },
+            { text: "🚀 تست سرعت", callback_data: "menu_speed" }
+        ],
+        [
+            { text: "💳 حساب کاربری", callback_data: "menu_account" },
+            { text: "📂 اشتراک‌های من", callback_data: "menu_my_subs" }
+        ],
+        [
+            { text: "📘 راهنمای اتصال", callback_data: "menu_guide" },
+            { text: "🤝 اخذ نمایندگی", callback_data: "menu_agency" }
+        ],
+        [
+            { text: "🌐 معرفی به دوستان", callback_data: "menu_invite" },
+            { text: "☎️ ارتباط با پشتیبانی", callback_data: "menu_support" }
+        ]
+    );
 
     return {
         reply_markup: {
@@ -187,7 +201,6 @@ bot.on("callback_query", async (query) => {
     const data = query.data;
 
     try {
-        // مدیریت کلیک روی دکمه‌های شیشه‌ای منو
         if (data === "menu_home") {
             delete userState[userId];
             bot.answerCallbackQuery(query.id);
@@ -242,8 +255,10 @@ bot.on("callback_query", async (query) => {
                 parse_mode: "Markdown",
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "➕ افزایش موجودی", callback_data: "wallet_charge" }],
-                        [{ text: "🏷 ثبت کد تخفیف", callback_data: "wallet_gift" }],
+                        [
+                            { text: "➕ افزایش موجودی", callback_data: "wallet_charge" },
+                            { text: "🏷 ثبت کد تخفیف", callback_data: "wallet_gift" }
+                        ],
                         [{ text: "🔙 بازگشت به منو", callback_data: "menu_home" }]
                     ]
                 }
@@ -303,8 +318,10 @@ bot.on("callback_query", async (query) => {
                 message_id: query.message.message_id,
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "➕ تعریف اشتراک جدید", callback_data: "admin_add" }],
-                        [{ text: "📊 آمار و گزارشات", callback_data: "admin_stats" }],
+                        [
+                            { text: "➕ تعریف اشتراک جدید", callback_data: "admin_add" },
+                            { text: "📊 آمار و گزارشات", callback_data: "admin_stats" }
+                        ],
                         [{ text: "🔙 بازگشت به منو", callback_data: "menu_home" }]
                     ]
                 }
@@ -452,4 +469,4 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-console.log("🤖 ربات با منوی شیشه‌ای درون‌صفحه‌ای فعال شد.");
+console.log("🤖 ربات با چیدمان جدید کلیدها آپدیت شد.");
