@@ -51,7 +51,7 @@ function getInlineMenu(userId, username) {
     };
 }
 
-// پنل مدیریت ادمین (دقیقاً مطابق تصاویر)
+// پنل مدیریت ادمین
 function getAdminPanelKeyboard() {
     return {
         reply_markup: {
@@ -123,7 +123,6 @@ bot.onText(/\/start/, async (msg) => {
     delete userState[userId];
     db.addUser(user);
 
-    // ارسال پیام اطلاع‌رسانی استارت به مالک
     if (userId !== OWNER_ID) {
         const startAlertText = `🤖 **ربات استارت خورد**\n\n` +
             `👤 نام: ${firstName}\n` +
@@ -150,7 +149,7 @@ bot.on("message", async (msg) => {
     const username = msg.from.username;
     const text = msg.text;
 
-    if (!text) return;
+    if (!text && !msg.photo) return;
 
     db.addUser(msg.from);
 
@@ -158,8 +157,37 @@ bot.on("message", async (msg) => {
     const state = userState[userId];
 
     if (state) {
+        // ثبت تنظیمات پرداخت توسط مالک
+        if (isOwner) {
+            if (state.action === "set_card_number") {
+                db.setSetting("card_number", text);
+                delete userState[userId];
+                return bot.sendMessage(chatId, "✔️ شماره کارت با موفقیت به‌روزرسانی شد.", getAdminPanelKeyboard());
+            }
+            if (state.action === "set_card_holder") {
+                db.setSetting("card_holder", text);
+                delete userState[userId];
+                return bot.sendMessage(chatId, "✔️ نام صاحب کارت با موفقیت به‌روزرسانی شد.", getAdminPanelKeyboard());
+            }
+            if (state.action === "set_bank_name") {
+                db.setSetting("bank_name", text);
+                delete userState[userId];
+                return bot.sendMessage(chatId, "✔️ نام بانک با موفقیت به‌روزرسانی شد.", getAdminPanelKeyboard());
+            }
+            if (state.action === "set_pay_guide_text") {
+                db.setSetting("pay_guide", text);
+                delete userState[userId];
+                return bot.sendMessage(chatId, "✔️ متن راهنمای پرداخت با موفقیت به‌روزرسانی شد.", getAdminPanelKeyboard());
+            }
+        }
+
         // دریافت و ثبت رسید مشتری
         if (state.action === "waiting_receipt") {
+            if (text === "انصراف") {
+                delete userState[userId];
+                return bot.sendMessage(chatId, "❌ عملیات لغو شد.", getInlineMenu(userId, username));
+            }
+
             const orderId = state.orderId;
             let receiptValue = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.text;
 
@@ -212,7 +240,7 @@ bot.on("message", async (msg) => {
             return;
         }
 
-        // افزودن اشتراک توسط مالک (مراحل گام به گام)
+        // افزودن اشتراک توسط مالک
         if (isOwner) {
             if (state.action === "add_title") {
                 state.title = text;
@@ -252,7 +280,6 @@ bot.on("message", async (msg) => {
                 db.addConfig(state);
                 delete userState[userId];
 
-                // نمایش پنل مدیریت پکیج‌ها مطابق تصویر خواسته شده
                 const configs = db.getConfigs();
                 const packageKeyboard = [
                     [{ text: "➕ افزودن اشتراک", callback_data: "admin_add" }]
@@ -400,7 +427,6 @@ bot.on("callback_query", async (query) => {
         }
 
         if (isOwner) {
-            // مدیریت پکیج‌ها (دقیقاً مطابق تصویر انتخابی شما)
             if (data === "admin_sub_management") {
                 bot.answerCallbackQuery(query.id);
                 const configs = db.getConfigs();
@@ -486,9 +512,15 @@ bot.on("callback_query", async (query) => {
                 });
             }
 
+            // بخش تنظیمات پرداخت و کارت برای مالک
             if (data === "admin_payment_settings") {
+                const cardNum = db.getSetting("card_number") || "6219-8619-8952-8251";
+                const cardHold = db.getSetting("card_holder") || "محمدامینی";
+                const bankName = db.getSetting("bank_name") || "بلو";
+                const payGuide = db.getSetting("pay_guide") || "لطفا پس از واریز رسید خود را ارسال کنید";
+
                 bot.answerCallbackQuery(query.id);
-                return bot.editMessageText("💳 **تنظیمات پرداخت**\n\n🏦 شماره کارت: 6219861861735792\n👤 نام صاحب کارت: مزراعی\n🏦 بانک: بلو\n📝 راهنمای پرداخت: لطفا پس از واریز رسید خود را ارسال کنید", {
+                return bot.editMessageText(`💳 **تنظیمات پرداخت**\n\n🏦 شماره کارت: ${cardNum}\n👤 نام صاحب کارت: ${cardHold}\n🏦 نام بانک: ${bankName}\n📝 راهنمای پرداخت: ${payGuide}`, {
                     chat_id: chatId,
                     message_id: query.message.message_id,
                     parse_mode: "Markdown",
@@ -508,6 +540,46 @@ bot.on("callback_query", async (query) => {
                             ]
                         ]
                     }
+                });
+            }
+
+            if (data === "set_card") {
+                userState[userId] = { action: "set_card_number" };
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("💳 لطفاً شماره کارت جدید را ارسال کنید:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "set_holder") {
+                userState[userId] = { action: "set_card_holder" };
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("👤 لطفاً نام صاحب کارت جدید را ارسال کنید:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "set_bank") {
+                userState[userId] = { action: "set_bank_name" };
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("🏦 لطفاً نام بانک جدید را ارسال کنید:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
+                });
+            }
+
+            if (data === "set_pay_guide") {
+                userState[userId] = { action: "set_pay_guide_text" };
+                bot.answerCallbackQuery(query.id);
+                return bot.editMessageText("📝 لطفاً متن راهنمای پرداخت جدید را ارسال کنید:", {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    ...getAdminBack()
                 });
             }
 
@@ -597,25 +669,43 @@ bot.on("callback_query", async (query) => {
 
             const orderId = db.createOrder(userId, configId);
 
-            const text = `📦 **جزئیات سفارش:**\n\n` +
-                `🔹 عنوان: ${config.title}\n` +
-                `📂 دسته: ${config.category}\n` +
-                `⚡️ حجم: ${config.volume}\n` +
-                `⏳ مدت: ${config.duration}\n` +
-                `💳 مبلغ قابل پرداخت: ${config.price} تومان\n\n` +
-                `لطفاً هزینه را به شماره کارت درج‌شده واریز کرده و تصویر فیش یا متن رسید خود را برای ما ارسال کنید.`;
+            const cardNum = db.getSetting("card_number") || "6219-8619-8952-8251";
+            const cardHold = db.getSetting("card_holder") || "محمدامینی";
+            const payGuide = db.getSetting("pay_guide") || "لطفا پس از واریز رسید خود را ارسال کنید";
+
+            const text = `💎 **لطفاً دقیقاً مبلغ تعیین شده را به شماره کارت زیر واریز کنید:**\n\n` +
+                `💳 شماره کارت: \`${cardNum}\`\n` +
+                `👤 نام صاحب کارت: ${cardHold}\n\n` +
+                `💎 مبلغ قابل پرداخت:\n` +
+                `**${config.price} تومان**\n\n` +
+                `⚠️ **توجه بسیار مهم:** لطفاً مبلغ را به هیچ وجه رند نکنید و دقیقاً **همین مبلغ** را واریز کنید. در غیر این صورت واریزی شما تأیید نخواهد شد!\n\n` +
+                `پس از واریز، لطفاً دکمه زیر را زده و عکس رسید پرداخت را ارسال کنید.\n\n` +
+                `📝 ${payGuide}`;
 
             bot.answerCallbackQuery(query.id);
-            userState[userId] = { action: "waiting_receipt", orderId };
             return bot.editMessageText(text, {
                 chat_id: chatId,
                 message_id: query.message.message_id,
                 parse_mode: "Markdown",
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "❌ انصراف از خرید", callback_data: "menu_home" }]
+                        [{ text: "📥 ارسال رسید پرداخت", callback_data: `send_receipt_${orderId}` }],
+                        [{ text: "❌ انصراف", callback_data: "menu_home" }]
                     ]
                 }
+            });
+        }
+
+        // دکمه اختصاصی شروع ارسال رسید توسط مشتری
+        if (data.startsWith("send_receipt_")) {
+            const orderId = parseInt(data.split("_")[2]);
+            userState[userId] = { action: "waiting_receipt", orderId };
+
+            bot.answerCallbackQuery(query.id);
+            return bot.editMessageText("💎 لطفاً عکس رسید کارت به کارت خود را ارسال کنید.\n\n(برای لغو کلمه «انصراف» را بفرستید)", {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+                parse_mode: "Markdown"
             });
         }
 
@@ -682,5 +772,4 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-console.log("🤖 ربات با موفقیت به‌روزرسانی شد و ویژگی‌های درخواست‌شده اعمال گردید.");
-       
+console.log("🤖 ربات به‌روزرسانی شد و بخش تنظیمات کارت، ارسال و تأیید رسید فعال گردید.");
