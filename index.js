@@ -26,6 +26,29 @@ let db = {
     isFreeSubEnabled: true,
     freeSubConfig: 'vless://example-free-sub-link',
     isInviteSystemEnabled: true,
+    // --- نام دکمه‌ها و منوها ---
+    menuNames: {
+        buy_sub: '🛒 خرید اشتراک پرسرعت ⚡️',
+        free_sub: '🎁 اشتراک رایگان',
+        test_server: '🧪 سرور تست',
+        wallet: '💰 کیف پول من',
+        invite: '👥 زیرمجموعه‌گیری',
+        my_subs: '📱 اشتراک‌های من',
+        tutorial: '📖 آموزش اتصال',
+        support: '📞 پشتیبانی آنلاین'
+    },
+    // --- متن‌های قابل تغییر تمامی بخش‌های ربات ---
+    botTexts: {
+        start_message: '✨ **به ربات انحصاری و پرسرعت ما خوش آمدید!** 🚀\n\nلطفاً از دکمه‌های زیر برای دسترسی به بخش‌های مختلف استفاده کنید: 👇',
+        tutorial_message: '📖 **آموزش ساده اتصال:** 💡\n\n1️⃣ اپلیکیشن V2Ray (مثل v2rayNG در اندروید یا FoXray در آیفون) را نصب کنید.\n2️⃣ لینک اشتراک اختصاصی خود را از بخش «اشتراک‌های من» کپی کنید.\n3️⃣ برنامه را باز کرده، روی علامت + یا Import بزنید تا لینک اضافه شود.\n4️⃣ روی دکمه اتصال بزنید و از اینترنت آزاد لذت ببرید! 🚀',
+        support_prompt: '📞 پیام یا سوال خود را برای پشتیبانی ارسال کنید: 👇',
+        support_success: '✅ پیام شما با موفقیت به پشتیبانی ارسال شد. به زودی پاسخ می‌دهیم! 🙏',
+        store_title: '🛒 **فروشگاه اشتراک‌های پرسرعت و اختصاصی** 🚀\n\nلطفاً پلن مورد نظر خود را انتخاب کنید: 👇',
+        no_plans: '🛒 در حال حاضر هیچ پلن فعالی موجود نیست. به زودی برمی‌گردیم! 🙏',
+        wallet_title: '💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: \`{balance} تومان\`\n\n🆔 شناسه کاربری شما: \`{userId}\`',
+        invite_title: '👥 **سیستم دعوت از دوستان** 🎁\n\nبا ارسال لینک زیر به دوستانتان پاداش بگیرید:\n\`{inviteLink}\`\n\n✨ تعداد زیرمجموعه‌های شما: **{count} نفر**',
+        empty_subs: '📱 شما هنوز اشتراک فعالی ندارید. از فروشگاه تهیه کنید! 🛒'
+    },
     userWallets: {},
     pending_deposits: {},
     pending_card_purchases: {},
@@ -67,6 +90,31 @@ function loadDatabase() {
             const data = fs.readFileSync(DB_FILE, 'utf8');
             const parsed = JSON.parse(data);
             db = { ...db, ...parsed };
+            if (!db.menuNames) {
+                db.menuNames = {
+                    buy_sub: '🛒 خرید اشتراک پرسرعت ⚡️',
+                    free_sub: '🎁 اشتراک رایگان',
+                    test_server: '🧪 سرور تست',
+                    wallet: '💰 کیف پول من',
+                    invite: '👥 زیرمجموعه‌گیری',
+                    my_subs: '📱 اشتراک‌های من',
+                    tutorial: '📖 آموزش اتصال',
+                    support: '📞 پشتیبانی آنلاین'
+                };
+            }
+            if (!db.botTexts) {
+                db.botTexts = {
+                    start_message: '✨ **به ربات انحصاری و پرسرعت ما خوش آمدید!** 🚀\n\nلطفاً از دکمه‌های زیر برای دسترسی به بخش‌های مختلف استفاده کنید: 👇',
+                    tutorial_message: '📖 **آموزش ساده اتصال:** 💡\n\n1️⃣ اپلیکیشن V2Ray (مثل v2rayNG در اندروید یا FoXray در آیفون) را نصب کنید.\n2️⃣ لینک اشتراک اختصاصی خود را از بخش «اشتراک‌های من» کپی کنید.\n3️⃣ برنامه را باز کرده، روی علامت + یا Import بزنید تا لینک اضافه شود.\n4️⃣ روی دکمه اتصال بزنید و از اینترنت آزاد لذت ببرید! 🚀',
+                    support_prompt: '📞 پیام یا سوال خود را برای پشتیبانی ارسال کنید: 👇',
+                    support_success: '✅ پیام شما با موفقیت به پشتیبانی ارسال شد. به زودی پاسخ می‌دهیم! 🙏',
+                    store_title: '🛒 **فروشگاه اشتراک‌های پرسرعت و اختصاصی** 🚀\n\nلطفاً پلن مورد نظر خود را انتخاب کنید: 👇',
+                    no_plans: '🛒 در حال حاضر هیچ پلن فعالی موجود نیست. به زودی برمی‌گردیم! 🙏',
+                    wallet_title: '💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: \`{balance} تومان\`\n\n🆔 شناسه کاربری شما: \`{userId}\`',
+                    invite_title: '👥 **سیستم دعوت از دوستان** 🎁\n\nبا ارسال لینک زیر به دوستانتان پاداش بگیرید:\n\`{inviteLink}\`\n\n✨ تعداد زیرمجموعه‌های شما: **{count} نفر**',
+                    empty_subs: '📱 شما هنوز اشتراک فعالی ندارید. از فروشگاه تهیه کنید! 🛒'
+                };
+            }
         } else {
             saveDatabase();
         }
@@ -173,7 +221,6 @@ function parsePrice(priceStr) {
     return parseInt(digits, 10) || 0;
 }
 
-// تابع ثبت‌نام کاربر و ارسال آنی آیدی عددی و یوزرنیم به ادمین به محض استارت
 function trackUserAndNotifyAdmin(msg) {
     if (msg && msg.from && msg.from.id) {
         const userId = msg.from.id;
@@ -302,24 +349,25 @@ async function fetchAndParseConfig(url) {
 }
 
 function getMainKeyboard() {
+    const names = db.menuNames;
     return {
         reply_markup: {
             inline_keyboard: [
-                [{ text: '🛒 خرید اشتراک پرسرعت ⚡️', callback_data: 'buy_sub' }],
+                [{ text: names.buy_sub, callback_data: 'buy_sub' }],
                 [
-                    ...(db.isFreeSubEnabled ? [{ text: '🎁 اشتراک رایگان', callback_data: 'free_sub' }] : []),
-                    ...(db.isTestServerEnabled ? [{ text: '🧪 سرور تست', callback_data: 'test_server' }] : [])
+                    ...(db.isFreeSubEnabled ? [{ text: names.free_sub, callback_data: 'free_sub' }] : []),
+                    ...(db.isTestServerEnabled ? [{ text: names.test_server, callback_data: 'test_server' }] : [])
                 ],
                 [
-                    { text: '💰 کیف پول من', callback_data: 'wallet' },
-                    ...(db.isInviteSystemEnabled ? [{ text: '👥 زیرمجموعه‌گیری', callback_data: 'invite' }] : [])
+                    { text: names.wallet, callback_data: 'wallet' },
+                    ...(db.isInviteSystemEnabled ? [{ text: names.invite, callback_data: 'invite' }] : [])
                 ],
                 [
-                    { text: '📱 اشتراک‌های من', callback_data: 'my_subs' },
-                    { text: '📖 آموزش اتصال', callback_data: 'tutorial' }
+                    { text: names.my_subs, callback_data: 'my_subs' },
+                    { text: names.tutorial, callback_data: 'tutorial' }
                 ],
                 [
-                    { text: '📞 پشتیبانی آنلاین', callback_data: 'support' },
+                    { text: names.support, callback_data: 'support' },
                     { text: '🔄 منوی اصلی', callback_data: 'restart_bot' }
                 ]
             ]
@@ -328,7 +376,7 @@ function getMainKeyboard() {
 }
 
 async function sendMainMenu(chatId) {
-    bot.sendMessage(chatId, '✨ **به ربات انحصاری و پرسرعت ما خوش آمدید!** 🚀\n\nلطفاً از دکمه‌های زیر برای دسترسی به بخش‌های مختلف استفاده کنید: 👇', { parse_mode: 'Markdown', ...getMainKeyboard() });
+    bot.sendMessage(chatId, db.botTexts.start_message, { parse_mode: 'Markdown', ...getMainKeyboard() });
 }
 
 async function handleForceJoin(msg) {
@@ -413,6 +461,10 @@ function sendAdminPanel(chatId) {
             inline_keyboard: [
                 [
                     { text: '⚙️ مدیریت پلن‌ها', callback_data: 'admin_manage_plans' },
+                    { text: '✏️ تغییر نام دکمه‌ها', callback_data: 'admin_edit_names_menu' }
+                ],
+                [
+                    { text: '📝 تغییر متن‌های ربات', callback_data: 'admin_edit_texts_menu' },
                     { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' }
                 ],
                 [
@@ -422,6 +474,10 @@ function sendAdminPanel(chatId) {
                 [
                     { text: '📊 آمار کلی', callback_data: 'admin_stats' },
                     { text: '👥 لیست کاربران', callback_data: 'admin_users' }
+                ],
+                [
+                    { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' },
+                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' }
                 ],
                 [
                     { text: testServerStatus, callback_data: 'toggle_test_server' },
@@ -434,10 +490,6 @@ function sendAdminPanel(chatId) {
                 [
                     { text: inviteStatus, callback_data: 'toggle_invite_system' },
                     { text: forceJoinStatus, callback_data: 'admin_force_join_menu' }
-                ],
-                [
-                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' },
-                    { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' }
                 ]
             ]
         }
@@ -479,6 +531,66 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'restart_bot') {
         delete userStates[chatId];
         sendMainMenu(chatId);
+        return;
+    }
+
+    if (data === 'admin_edit_names_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        const names = db.menuNames;
+        const editNamesKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: `✏️ خرید اشتراک: ${names.buy_sub}`, callback_data: 'set_name_buy_sub' }],
+                    [{ text: `✏️ اشتراک رایگان: ${names.free_sub}`, callback_data: 'set_name_free_sub' }],
+                    [{ text: `✏️ سرور تست: ${names.test_server}`, callback_data: 'set_name_test_server' }],
+                    [{ text: `✏️ کیف پول: ${names.wallet}`, callback_data: 'set_name_wallet' }],
+                    [{ text: `✏️ زیرمجموعه‌گیری: ${names.invite}`, callback_data: 'set_name_invite' }],
+                    [{ text: `✏️ اشتراک‌های من: ${names.my_subs}`, callback_data: 'set_name_my_subs' }],
+                    [{ text: `✏️ آموزش اتصال: ${names.tutorial}`, callback_data: 'set_name_tutorial' }],
+                    [{ text: `✏️ پشتیبانی: ${names.support}`, callback_data: 'set_name_support' }],
+                    [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, '✏️ **تغییر نام دکمه‌ها و بخش‌های منوی اصلی**\nبخشی که می‌خواهید نامش را عوض کنید انتخاب کنید:', { parse_mode: 'Markdown', ...editNamesKeyboard });
+        return;
+    }
+
+    if (data.startsWith('set_name_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const key = data.replace('set_name_', '');
+        userStates[chatId] = { step: 'get_new_menu_name', targetKey: key };
+        bot.sendMessage(chatId, `✏️ نام جدید این دکمه را وارد کنید:`, { parse_mode: 'Markdown' });
+        return;
+    }
+
+    if (data === 'admin_edit_texts_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        const editTextKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '📝 متن پیام استارت / منوی اصلی', callback_data: 'set_text_start_message' }],
+                    [{ text: '📝 متن آموزش اتصال', callback_data: 'set_text_tutorial_message' }],
+                    [{ text: '📝 متن درخواست پشتیبانی', callback_data: 'set_text_support_prompt' }],
+                    [{ text: '📝 متن موفقیت ارسال پیام پشتیبانی', callback_data: 'set_text_support_success' }],
+                    [{ text: '📝 متن صفحه فروشگاه پلن‌ها', callback_data: 'set_text_store_title' }],
+                    [{ text: '📝 متن اتمام پلن‌ها / خالی بودن', callback_data: 'set_text_no_plans' }],
+                    [{ text: '📝 متن منوی کیف پول', callback_data: 'set_text_wallet_title' }],
+                    [{ text: '📝 متن منوی زیرمجموعه‌گیری', callback_data: 'set_text_invite_title' }],
+                    [{ text: '📝 متن نداشتن اشتراک فعال', callback_data: 'set_text_empty_subs' }],
+                    [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, '📝 **تغییر متن‌های بخش‌های مختلف ربات**\nمتنی که می‌خواهید ویرایش کنید را انتخاب کنید:', { parse_mode: 'Markdown', ...editTextKeyboard });
+        return;
+    }
+
+    if (data.startsWith('set_text_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const key = data.replace('set_text_', '');
+        userStates[chatId] = { step: 'get_new_bot_text', targetTextKey: key };
+        bot.sendMessage(chatId, `📝 متن جدید برای این بخش را ارسال کنید:\n\n*(متن فعلی):\n\`${db.botTexts[key] || ''}\`*`, { parse_mode: 'Markdown' });
         return;
     }
 
@@ -724,7 +836,11 @@ bot.on('callback_query', async (callbackQuery) => {
                 ]
             }
         };
-        bot.sendMessage(chatId, `💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: \`${balance.toLocaleString()} تومان\`\n\n🆔 شناسه کاربری شما: \`${userId}\``, { parse_mode: 'Markdown', ...walletKeyboard });
+        const customWalletText = (db.botTexts.wallet_title || '')
+            .replace('{balance}', balance.toLocaleString())
+            .replace('{userId}', userId);
+
+        bot.sendMessage(chatId, customWalletText, { parse_mode: 'Markdown', ...walletKeyboard });
         return;
     }
 
@@ -737,11 +853,11 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'buy_sub') {
         const availablePlans = db.customPlans.filter(p => p.links && p.links.length > 0);
         if (availablePlans.length === 0) {
-            bot.sendMessage(chatId, '🛒 در حال حاضر هیچ پلن فعالی موجود نیست. به زودی برمی‌گردیم! 🙏');
+            bot.sendMessage(chatId, db.botTexts.no_plans);
             return;
         }
 
-        let planText = '🛒 **فروشگاه اشتراک‌های پرسرعت و اختصاصی** 🚀\n\nلطفاً پلن مورد نظر خود را انتخاب کنید: 👇';
+        let planText = db.botTexts.store_title;
         const planButtons = availablePlans.map(p => [
             { text: `🌐 ${p.name} - ${p.volume} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
         ]);
@@ -923,18 +1039,13 @@ bot.on('callback_query', async (callbackQuery) => {
             });
             bot.sendMessage(chatId, subText, { parse_mode: 'Markdown' });
         } else {
-            bot.sendMessage(chatId, '📱 شما هنوز اشتراک فعالی ندارید. از فروشگاه تهیه کنید! 🛒');
+            bot.sendMessage(chatId, db.botTexts.empty_subs);
         }
         return;
     }
 
     if (data === 'tutorial') {
-        const tutorialText = `📖 **آموزش ساده اتصال:** 💡\n\n` +
-                             `1️⃣ اپلیکیشن V2Ray (مثل v2rayNG در اندروید یا FoXray در آیفون) را نصب کنید.\n` +
-                             `2️⃣ لینک اشتراک اختصاصی خود را از بخش «اشتراک‌های من» کپی کنید.\n` +
-                             `3️⃣ برنامه را باز کرده، روی علامت + یا Import بزنید تا لینک اضافه شود.\n` +
-                             `4️⃣ روی دکمه اتصال بزنید و از اینترنت آزاد لذت ببرید! 🚀`;
-        bot.sendMessage(chatId, tutorialText, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' });
         return;
     }
 
@@ -945,13 +1056,17 @@ bot.on('callback_query', async (callbackQuery) => {
         }
         const userRefCount = db.referals[userId] || 0;
         const inviteLink = `https://t.me/${bot.options.username}?start=${chatId}`;
-        bot.sendMessage(chatId, `👥 **سیستم دعوت از دوستان** 🎁\n\nبا ارسال لینک زیر به دوستانتان پاداش بگیرید:\n\`${inviteLink}\`\n\n✨ تعداد زیرمجموعه‌های شما: **${userRefCount} نفر**`, { parse_mode: 'Markdown' });
+        const customInviteText = (db.botTexts.invite_title || '')
+            .replace('{inviteLink}', inviteLink)
+            .replace('{count}', userRefCount);
+
+        bot.sendMessage(chatId, customInviteText, { parse_mode: 'Markdown' });
         return;
     }
 
     if (data === 'support') {
         userStates[chatId] = { awaiting_support_message: true };
-        bot.sendMessage(chatId, '📞 پیام یا سوال خود را برای پشتیبانی ارسال کنید: 👇');
+        bot.sendMessage(chatId, db.botTexts.support_prompt);
         return;
     }
 
@@ -973,6 +1088,27 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
         const state = userStates[chatId];
+
+        if (state.step === 'get_new_menu_name') {
+            const targetKey = state.targetKey;
+            db.menuNames[targetKey] = text.trim();
+            delete userStates[chatId];
+            saveDatabase();
+            bot.sendMessage(chatId, `✅ نام دکمه با موفقیت به:\n\`${text.trim()}\`\nتغییر یافت! 🎉`, { parse_mode: 'Markdown' });
+            sendAdminPanel(chatId);
+            return;
+        }
+
+        if (state.step === 'get_new_bot_text') {
+            const targetKey = state.targetTextKey;
+            db.botTexts[targetKey] = text.trim();
+            delete userStates[chatId];
+            saveDatabase();
+            bot.sendMessage(chatId, `✅ متن این بخش با موفقیت آپدیت شد! 📝✨`, { parse_mode: 'Markdown' });
+            sendAdminPanel(chatId);
+            return;
+        }
+
         if (state.step === 'get_new_channel_username') {
             db.CHANNEL_USERNAME = text.trim();
             delete userStates[chatId];
@@ -1138,7 +1274,7 @@ bot.on('message', async (msg) => {
 
     if (userStates[chatId] && userStates[chatId].awaiting_support_message) {
         delete userStates[chatId];
-        bot.sendMessage(chatId, '✅ پیام شما با موفقیت به پشتیبانی ارسال شد. به زودی پاسخ می‌دهیم! 🙏');
+        bot.sendMessage(chatId, db.botTexts.support_success);
         bot.sendMessage(ADMIN_CHAT_ID, `💬 **پیام جدید پشتیبانی از کاربر:**\n🆔 آیدی: \`${chatId}\`\n\n${text}`);
         return;
     }
@@ -1342,4 +1478,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با موفقیت آپدیت و بدون بخش حساب کاربری فعال شد.');
+console.log('🤖 ربات با موفقیت آپدیت شد و قابلیت تغییر تمامی متن‌ها اضافه گردید.');
