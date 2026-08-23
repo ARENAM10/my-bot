@@ -729,7 +729,7 @@ bot.on('message', async (msg) => {
                 return;
             }
             userStates[chatId] = { step: 'admin_get_charge_amount', targetChargeUserId: targetId };
-            bot.sendMessage(chatId, `✅ کاربر با آیدی \`${targetId}\` شناسایی شد.\n\nلطفاً **مبلغ شارژ** (به تومان، مثلاً `50000`) را وارد کنید:`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `✅ کاربر با آیدی \`${targetId}\` شناسایی شد.\n\nلطفاً **مبلغ شارژ** (به تومان، مثلاً \`50000\`) را وارد کنید:`, { parse_mode: 'Markdown' });
             return;
         } else if (state.step === 'admin_get_charge_amount') {
             const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
