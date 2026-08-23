@@ -11,11 +11,12 @@ const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
 // دیتابیس‌های موقت در حافظه ربات
-const userStates = {};       // ذخیره وضعیت موقت کاربران (مثل انتظار برای رسید)
-const userSubscriptions = {}; // ذخیره اطلاعات اشتراک فعال کاربران { chatId: { planName, expiryDate } }
+const userStates = {};       // ذخیره وضعیت موقت کاربران
+const userSubscriptions = {}; // ذخیره اطلاعات اشتراک کاربران
+const userWallets = {};      // ذخیره موجودی کیف پول کاربران { chatId: موجودی }
 
 app.get('/', (req, res) => {
-    res.send('Bot is active with Subscriptions Management!');
+    res.send('Bot is active with Wallet & Subscription Management!');
 });
 
 app.listen(PORT, () => {
@@ -133,7 +134,7 @@ bot.on('callback_query', (callbackQuery) => {
 
     bot.answerCallbackQuery(callbackQuery.id);
 
-    // تایید یا رد رسید از طرف ادمین (همراه با فعالسازی واقعی اشتراک)
+    // تایید یا رد رسید از طرف ادمین
     if (data.startsWith('approve_') || data.startsWith('reject_')) {
         if (!isAdmin(callbackQuery)) {
             bot.sendMessage(chatId, '❌ دسترسی غیرمجاز!');
@@ -143,26 +144,32 @@ bot.on('callback_query', (callbackQuery) => {
         const parts = data.split('_');
         const action = parts[0];
         const targetUserId = parts[1];
-        const planType = parts[2]; // پلن انتخابی کاربر
+        const planType = parts[2];
 
         if (action === 'approve') {
-            // محاسبه تاریخ انقضا بر اساس پلن
-            const daysToAdd = planType === 'plan_3m' ? 90 : 30; // ۳ ماهه یا ۱ ماهه
+            const daysToAdd = planType === 'plan_3m' ? 90 : 30;
             const expiryDate = new Date();
             expiryDate.setDate(expiryDate.getDate() + daysToAdd);
 
-            // ذخیره اشتراک کاربر
             userSubscriptions[targetUserId] = {
                 planName: planType === 'plan_3m' ? 'اشتراک ۳ ماهه' : 'اشتراک ۱ ماهه',
                 expiryDate: expiryDate.toLocaleDateString('fa-IR')
             };
 
-            bot.sendMessage(targetUserId, '✅ پرداخت و رسید شما توسط مدیریت تایید شد! اشتراک شما با موفقیت فعال گردید. 🎉\n\nمی‌توانید از بخش "اشتراک‌های من" وضعیت خود را چک کنید.');
+            bot.sendMessage(targetUserId, '✅ پرداخت و رسید شما توسط مدیریت تایید شد! اشتراک شما با موفقیت فعال گردید. 🎉');
             bot.sendMessage(chatId, `✅ رسید کاربر با آیدی ${targetUserId} تایید و اشتراک فعال شد.`);
         } else {
-            bot.sendMessage(targetUserId, '❌ متأسفانه رسید پرداخت شما توسط مدیریت رد شد. لطفاً با پشتیبانی در ارتباط باشید.');
+            bot.sendMessage(targetUserId, '❌ متأسفانه رسید پرداخت شما توسط مدیریت رد شد.');
             bot.sendMessage(chatId, `❌ رسید کاربر با آیدی ${targetUserId} رد شد.`);
         }
+        return;
+    }
+
+    // دکمه‌های پنل ادمین
+    if (data === 'admin_charge_wallet') {
+        if (!isAdmin(callbackQuery)) return;
+        userStates[chatId] = { step: 'get_charge_user_id' };
+        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً آیدی عددی کاربر مورد نظر را ارسال کنید:');
         return;
     }
 
@@ -196,25 +203,37 @@ bot.on('callback_query', (callbackQuery) => {
             `لطفاً مبلغ را به کارت زیر واریز کنید:\n` +
             `\`6037-9971-xxxx-xxxx\`\n` +
             `به نام: مالک ربات\n\n` +
-            `📸 **سپس عکس رسید واریز را همینجا بفرستید تا برای بررسی ارسال شود.**`;
+            `📸 **سپس عکس رسید واریز را همینجا بفرستید.**`;
             
         bot.sendMessage(chatId, cardInfo, { parse_mode: 'Markdown' });
         return;
     }
 
-    // بخش اشتراک‌های من
+    // بخش کیف پول کاربر
+    if (data === 'wallet') {
+        const balance = userWallets[chatId] || 0;
+        const walletKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '➕ افزایش موجودی (ارسال رسید)', callback_data: 'buy_sub' }],
+                    [{ text: '🔙 بازگشت به منو', callback_data: 'back_to_main' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, `💰 **کیف پول شما:**\n\nموجودی فعلی: \`${balance.toLocaleString()} تومان\``, {
+            parse_mode: 'Markdown',
+            ...walletKeyboard
+        });
+        return;
+    }
+
     if (data === 'my_subs') {
         const sub = userSubscriptions[chatId];
         if (sub) {
             bot.sendMessage(chatId, `📱 **اشتراک فعال شما:**\n\n📦 نوع پلن: ${sub.planName}\n⏳ تاریخ انقضا: ${sub.expiryDate}\n\nوضعیت: متصل و فعال ✅`);
         } else {
-            bot.sendMessage(chatId, '📱 شما در حال حاضر هیچ اشتراک فعالی ندارید.\n\nمی‌توانید از بخش "خرید اشتراک" اقدام کنید.');
+            bot.sendMessage(chatId, '📱 شما در حال حاضر هیچ اشتراک فعالی ندارید.');
         }
-        return;
-    }
-
-    if (data === 'wallet') {
-        bot.sendMessage(chatId, '💰 کیف پول شما:\nموجودی فعلی: ۰ تومان');
         return;
     }
 
@@ -226,7 +245,42 @@ bot.on('callback_query', (callbackQuery) => {
     bot.sendMessage(chatId, 'این بخش در حال راه‌اندازی است...');
 });
 
-// دریافت عکس رسید و ارسال دکمه حاوی اطلاعات پلن به ادمین
+// مدیریت پیام‌های متنی (برای فرآیند شارژ دستی کیف پول توسط ادمین)
+bot.on('message', (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+
+    if (!text || text.startsWith('/') || text === '💻 پنل مدیریت') return;
+
+    // اگر ادمین در حال وارد کردن آیدی کاربر برای شارژ کیف پول باشد
+    if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
+        if (userStates[chatId].step === 'get_charge_user_id') {
+            const targetUser = text.trim();
+            userStates[chatId] = { step: 'get_charge_amount', targetUser: targetUser };
+            bot.sendMessage(chatId, `✅ آیدی کاربر (${targetUser}) ثبت شد.\n\nحالا **مبلغ شارژ** (به تومان) را وارد کنید:`);
+            return;
+        } else if (userStates[chatId].step === 'get_charge_amount') {
+            const amount = parseInt(text.trim());
+            const targetUser = userStates[chatId].targetUser;
+
+            if (isNaN(amount)) {
+                bot.sendMessage(chatId, '❌ لطفاً یک عدد معتبر برای مبلغ وارد کنید.');
+                return;
+            }
+
+            // افزایش موجودی کیف پول کاربر
+            userWallets[targetUser] = (userWallets[targetUser] || 0) + amount;
+            
+            bot.sendMessage(chatId, `🎉 کیف پول کاربر ${targetUser} به مبلغ ${amount.toLocaleString()} تومان شارژ شد.`);
+            bot.sendMessage(targetUser, `💰 کیف پول شما توسط مدیریت به مبلغ **${amount.toLocaleString()} تومان** شارژ شد. 🎉`, { parse_mode: 'Markdown' });
+
+            delete userStates[chatId];
+            return;
+        }
+    }
+});
+
+// دریافت عکس رسید
 bot.on('photo', (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -238,7 +292,7 @@ bot.on('photo', (msg) => {
         const plan = userStates[chatId].selected_plan;
         const planTitle = plan === 'plan_3m' ? 'اشتراک ۳ ماهه' : 'اشتراک ۱ ماهه';
 
-        bot.sendMessage(chatId, '✅ رسید شما دریافت شد و برای بررسی نهایی به مدیریت ارسال گردید.');
+        bot.sendMessage(chatId, '✅ رسید شما دریافت شد و برای بررسی به مدیریت ارسال گردید.');
         delete userStates[chatId];
 
         const caption = `🔔 **رسید جدید پرداخت!**\n\n` +
@@ -270,4 +324,4 @@ process.on('uncaughtException', (err) => {
     console.log('خطای مدیریت شده:', err.message);
 });
 
-console.log('🤖 ربات با سیستم مدیریت اشتراک‌ها فعال شد...');
+console.log('🤖 ربات با سیستم کامل کیف پول و شارژ دستی فعال شد...');
