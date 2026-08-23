@@ -10,16 +10,21 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
+const CHANNEL_USERNAME = '@YourChannelUsername'; // <--- یوزرنیم کانال خودتان
+let isForceJoinEnabled = false; // <--- وضعیت اولیه جوین اجباری (پیش‌فرض خاموش)
+
 const userStates = {};       
 const userSubscriptions = {}; 
 const userWallets = {};      
 const allUsers = new Set();  
+const referals = {};         
 
 let paymentCardNumber = '6037-9971-xxxx-xxxx'; 
 let paymentCardOwner = 'مالک ربات';
+const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
-    res.send('Bot is running smoothly with advanced state management!');
+    res.send('Bot is running with toggleable Force Join!');
 });
 
 app.listen(PORT, () => {
@@ -39,11 +44,21 @@ function trackUser(msg) {
     }
 }
 
-bot.onText(/\/start/, (msg) => {
-    trackUser(msg);
-    const chatId = msg.chat.id;
-    delete userStates[chatId];
+// تابع بررسی عضویت کانال
+async function checkMembership(userId) {
+    if (!CHANNEL_USERNAME || CHANNEL_USERNAME === '@YourChannelUsername') return true;
+    try {
+        const chatMember = await bot.getChatMember(CHANNEL_USERNAME, userId);
+        const status = chatMember.status;
+        return ['creator', 'administrator', 'member'].includes(status);
+    } catch (error) {
+        console.error('خطا در بررسی عضویت کانال:', error.message);
+        return true; 
+    }
+}
 
+// تابع ارسال منوی اصلی ربات
+async function sendMainMenu(chatId) {
     const inlineKeyboard = {
         reply_markup: {
             inline_keyboard: [
@@ -59,12 +74,59 @@ bot.onText(/\/start/, (msg) => {
                 ],
                 [{ text: '🤝 درخواست نمایندگی', callback_data: 'agency' }],
                 [
-                    { text: '👥 دعوت دوستان', callback_data: 'invite' },
+                    { text: '👥 دعوت دوستان (زیرمجموعه‌گیری)', callback_data: 'invite' },
                     { text: '📞 پشتیبانی', callback_data: 'support' }
                 ]
             ]
         }
     };
+    bot.sendMessage(chatId, 'سلام! به ربات خوش آمدید. لطفاً گزینه مورد نظر خود را انتخاب کنید: 👇', inlineKeyboard);
+}
+
+// تابع بررسی جوین اجباری (فقط وقتی روشن است فعال می‌شود)
+async function handleForceJoin(msg) {
+    trackUser(msg);
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+
+    if (isAdmin(msg)) return true; // ادمین رد می‌شود
+    if (!isForceJoinEnabled) return true; // اگر خاموش بود، همه رد می‌شوند
+
+    const isMember = await checkMembership(userId);
+    if (!isMember) {
+        const joinKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '📢 عضویت در کانال ربات', url: `https://t.me/${CHANNEL_USERNAME.replace('@', '')}` }],
+                    [{ text: '✅ عضو شدم، بررسی کن', callback_data: 'check_membership' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, `⚠️ برای استفاده از ربات، ابتدا باید در کانال ما عضو شوید:\n\n${CHANNEL_USERNAME}\n\nپس از عضویت، روی دکمه زیر کلیک کنید 👇`, joinKeyboard);
+        return false;
+    }
+    return true;
+}
+
+bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    delete userStates[chatId];
+
+    const canProceed = await handleForceJoin(msg);
+    if (!canProceed) return;
+
+    const refId = match ? match[1] : null; 
+
+    if (refId && refId !== chatId.toString()) {
+        if (!userWallets[`referred_${chatId}`]) {
+            userWallets[`referred_${chatId}`] = true; 
+            userWallets[refId] = (userWallets[refId] || 0) + REWARD_AMOUNT;
+            referals[refId] = (referals[refId] || 0) + 1;
+
+            bot.sendMessage(refId, `🎉 یک نفر با لینک دعوت شما وارد ربات شد!\n\nمبلغ ${REWARD_AMOUNT.toLocaleString()} تومان به عنوان پاداش به کیف پول شما اضافه شد. 💰`, { parse_mode: 'Markdown' })
+                .catch(() => {});
+        }
+    }
 
     if (isAdmin(msg)) {
         const adminReplyKeyboard = {
@@ -77,10 +139,10 @@ bot.onText(/\/start/, (msg) => {
         bot.sendMessage(chatId, '👑 خوش آمدید مالک عزیز! پنل مدیریت فعال شد.', adminReplyKeyboard);
     }
 
-    bot.sendMessage(chatId, 'سلام! به ربات خوش آمدید. لطفاً گزینه مورد نظر خود را انتخاب کنید: 👇', inlineKeyboard);
+    sendMainMenu(chatId);
 });
 
-bot.onText(/💻 پنل مدیریت|\/panel/, (msg) => {
+bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
     trackUser(msg);
     const chatId = msg.chat.id;
     if (!isAdmin(msg)) {
@@ -88,9 +150,11 @@ bot.onText(/💻 پنل مدیریت|\/panel/, (msg) => {
         return;
     }
     sendAdminPanel(chatId);
-}; // اصلاحیه پرانتز در ادامه متن
+});
 
 function sendAdminPanel(chatId) {
+    const forceJoinStatusText = isForceJoinEnabled ? '🟢 جوین اجباری: روشن' : '🔴 جوین اجباری: خاموش';
+    
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
@@ -111,10 +175,11 @@ function sendAdminPanel(chatId) {
                     { text: '💬 پیام مشتریان', callback_data: 'admin_user_messages' }
                 ],
                 [
-                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' },
-                    { text: '📌 سنجاق پیام', callback_data: 'admin_pin_msg' }
+                    { text: forceJoinStatusText, callback_data: 'toggle_force_join' },
+                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' }
                 ],
                 [
+                    { text: '📌 سنجاق پیام', callback_data: 'admin_pin_msg' },
                     { text: '🗑 حذف پیام آخر', callback_data: 'admin_delete_msg' }
                 ]
             ]
@@ -127,14 +192,38 @@ function sendAdminPanel(chatId) {
     });
 }
 
-bot.on('callback_query', (callbackQuery) => {
+bot.on('callback_query', async (callbackQuery) => {
     const msg = callbackQuery.message;
     const data = callbackQuery.data;
     const chatId = msg.chat.id;
+    const userId = callbackQuery.from.id;
 
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // دکمه تغییر وضعیت جوین اجباری توسط ادمین
+    if (data === 'toggle_force_join') {
+        if (!isAdmin(callbackQuery)) return;
+        isForceJoinEnabled = !isForceJoinEnabled; // تغییر وضعیت
+        const statusMsg = isForceJoinEnabled ? '🟢 جوین اجباری با موفقیت **روشن** شد.' : '🔴 جوین اجباری با موفقیت **خاموش** شد.';
+        bot.sendMessage(chatId, statusMsg, { parse_mode: 'Markdown' });
+        
+        // به‌روزرسانی پنل مدیریت
+        sendAdminPanel(chatId);
+        return;
+    }
+
+    if (data === 'check_membership') {
+        const isMember = await checkMembership(userId);
+        if (isMember) {
+            bot.sendMessage(chatId, '✅ عضویت شما تایید شد! حالا می‌توانید از ربات استفاده کنید.');
+            sendMainMenu(chatId);
+        } else {
+            bot.sendMessage(chatId, '❌ شما هنوز در کانال عضو نشده‌اید. لطفاً ابتدا در کانال جوین شوید و دوباره روی دکمه بررسی کلیک کنید.');
+        }
+        return;
+    }
 
     if (data.startsWith('admin_') || data.startsWith('approve_') || data.startsWith('reject_')) {
         if (!isAdmin(callbackQuery)) {
@@ -185,10 +274,9 @@ bot.on('callback_query', (callbackQuery) => {
         return;
     }
 
-    // --- گام سوم: استارت بخش ارسال همگانی پیشرفته ---
     if (data === 'admin_broadcast') {
         userStates[chatId] = { step: 'get_broadcast_content' };
-        bot.sendMessage(chatId, '📢 **ارسال پیام همگانی پیشرفته**\n\nلطفاً متن، عکس (به همراه کپشن) یا پیام مورد نظر خود را بفرستید تا برای تمام کاربران ارسال شود:\n\n(برای لغو کلمه `انصراف` را بفرستید)', { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, '📢 **ارسال پیام همگانی پیشرفته**\n\nلطفاً متن، عکس یا پیام خود را بفرستید (برای لغو کلمه `انصراف` را بفرستید):', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -285,7 +373,10 @@ bot.on('callback_query', (callbackQuery) => {
     }
 
     if (data === 'invite') {
-        bot.sendMessage(chatId, '👥 لینک دعوت شما:\nhttps://t.me/' + bot.options.username + '?start=' + chatId);
+        const userRefCount = referals[chatId] || 0;
+        const inviteLink = `https://t.me/${bot.options.username}?start=${chatId}`;
+        const inviteText = `👥 **سیستم دعوت دوستان (زیرمجموعه‌گیری)**\n\nبا ارسال لینک زیر به دوستانتان، به ازای هر نفری که وارد ربات شود، **${REWARD_AMOUNT.toLocaleString()} تومان** پاداش به کیف پول خود دریافت کنید! 🎁\n\n📊 تعداد زیرمجموعه‌های شما: **${userRefCount} نفر**\n\n🔗 لینک دعوت اختصاصی شما:\n\`${inviteLink}\``;
+        bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' });
         return;
     }
 
@@ -302,7 +393,7 @@ bot.on('callback_query', (callbackQuery) => {
     }
 });
 
-bot.on('message', (msg) => {
+bot.on('message', async (msg) => {
     trackUser(msg);
     const chatId = msg.chat.id;
     const text = msg.text;
@@ -321,7 +412,6 @@ bot.on('message', (msg) => {
         return;
     }
 
-    // --- پردازش ارسال همگانی پیشرفته (متن یا عکس) ---
     if (chatId === ADMIN_CHAT_ID && userStates[chatId] && userStates[chatId].step === 'get_broadcast_content') {
         if (text && text.toLowerCase() === 'انصراف') {
             delete userStates[chatId];
@@ -330,7 +420,7 @@ bot.on('message', (msg) => {
         }
 
         delete userStates[chatId];
-        bot.sendMessage(chatId, '⏳ در حال ارسال همگانی به تمام کاربران... لطفاً صبور باشید.');
+        bot.sendMessage(chatId, '⏳ در حال ارسال همگانی به تمام کاربران...');
 
         let successCount = 0;
         let failCount = 0;
@@ -351,7 +441,7 @@ bot.on('message', (msg) => {
         });
 
         Promise.all(promises).then(() => {
-            bot.sendMessage(ADMIN_CHAT_ID, `📊 **گزارش ارسال همگانی:**\n\n👥 کل کاربران: ${totalUsers}\n✅ ارسال موفق: ${successCount}\n❌ ارسال ناموفق (بلاک‌شده): ${failCount}`, { parse_mode: 'Markdown' });
+            bot.sendMessage(ADMIN_CHAT_ID, `📊 **گزارش ارسال همگانی:**\n\n👥 کل کاربران: ${totalUsers}\n✅ ارسال موفق: ${successCount}\n❌ ارسال ناموفق: ${failCount}`, { parse_mode: 'Markdown' });
         });
         return;
     }
@@ -404,16 +494,15 @@ bot.on('message', (msg) => {
     }
 });
 
-bot.on('photo', (msg) => {
+bot.on('photo', async (msg) => {
     trackUser(msg);
     const chatId = msg.chat.id;
     
-    // اگر ادمین در حال ارسال عکس همگانی بود، توابع دیگر تداخل پیدا نکنند
     if (chatId === ADMIN_CHAT_ID && userStates[chatId] && userStates[chatId].step === 'get_broadcast_content') {
-        return; // توسط هندلر پیام مدیریت می‌شود
+        return; 
     }
 
-    const userId = msg.from.id;
+    constuserId = msg.from.id;
     const username = msg.from.username ? '@' + msg.from.username : 'ندارد';
     const name = msg.from.first_name || 'کاربر';
 
@@ -456,4 +545,4 @@ process.on('uncaughtException', (err) => {
     console.error('خطا:', err);
 });
 
-console.log('🤖 ربات با قابلیت ارسال همگانی پیشرفته اجرا شد.');
+console.log('🤖 ربات با قابلیت مدیریت جوین اجباری اجرا شد.');
