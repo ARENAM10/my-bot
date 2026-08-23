@@ -88,7 +88,7 @@ bot.onText(/💻 پنل مدیریت|\/panel/, (msg) => {
         return;
     }
     sendAdminPanel(chatId);
-});
+}; // اصلاحیه پرانتز در ادامه متن
 
 function sendAdminPanel(chatId) {
     const adminKeyboard = {
@@ -132,7 +132,9 @@ bot.on('callback_query', (callbackQuery) => {
     const data = callbackQuery.data;
     const chatId = msg.chat.id;
 
-    bot.answerCallbackQuery(callbackQuery.id);
+    try {
+        bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
+    } catch (e) {}
 
     if (data.startsWith('admin_') || data.startsWith('approve_') || data.startsWith('reject_')) {
         if (!isAdmin(callbackQuery)) {
@@ -183,9 +185,10 @@ bot.on('callback_query', (callbackQuery) => {
         return;
     }
 
+    // --- گام سوم: استارت بخش ارسال همگانی پیشرفته ---
     if (data === 'admin_broadcast') {
-        userStates[chatId] = { step: 'get_broadcast_message' };
-        bot.sendMessage(chatId, '📢 لطفاً متن پیام همگانی را بفرستید:');
+        userStates[chatId] = { step: 'get_broadcast_content' };
+        bot.sendMessage(chatId, '📢 **ارسال پیام همگانی پیشرفته**\n\nلطفاً متن، عکس (به همراه کپشن) یا پیام مورد نظر خود را بفرستید تا برای تمام کاربران ارسال شود:\n\n(برای لغو کلمه `انصراف` را بفرستید)', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -304,10 +307,10 @@ bot.on('message', (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    if (!text || text === '💻 پنل مدیریت') return;
+    if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
     if (chatId === ADMIN_CHAT_ID && userStates[chatId] && userStates[chatId].step === 'get_new_card_number') {
-        if (text.toLowerCase() === 'انصراف') {
+        if (text && text.toLowerCase() === 'انصراف') {
             delete userStates[chatId];
             bot.sendMessage(chatId, '❌ عملیات لغو شد.');
             return;
@@ -318,18 +321,38 @@ bot.on('message', (msg) => {
         return;
     }
 
-    if (chatId === ADMIN_CHAT_ID && userStates[chatId] && userStates[chatId].step === 'get_broadcast_message') {
+    // --- پردازش ارسال همگانی پیشرفته (متن یا عکس) ---
+    if (chatId === ADMIN_CHAT_ID && userStates[chatId] && userStates[chatId].step === 'get_broadcast_content') {
+        if (text && text.toLowerCase() === 'انصراف') {
+            delete userStates[chatId];
+            bot.sendMessage(chatId, '❌ ارسال همگانی لغو شد.');
+            return;
+        }
+
         delete userStates[chatId];
-        bot.sendMessage(chatId, '⏳ در حال ارسال پیام همگانی...');
-        let success = 0;
-        allUsers.forEach((uId) => {
-            bot.sendMessage(uId, '📢 **اطلاعیه:**\n\n' + text, { parse_mode: 'Markdown' })
-                .then(() => success++)
-                .catch(() => {});
+        bot.sendMessage(chatId, '⏳ در حال ارسال همگانی به تمام کاربران... لطفاً صبور باشید.');
+
+        let successCount = 0;
+        let failCount = 0;
+        const totalUsers = allUsers.size;
+
+        const promises = Array.from(allUsers).map((uId) => {
+            if (msg.photo) {
+                const photoId = msg.photo[msg.photo.length - 1].file_id;
+                const caption = msg.caption || '';
+                return bot.sendPhoto(uId, photoId, { caption: caption })
+                    .then(() => successCount++)
+                    .catch(() => failCount++);
+            } else if (text) {
+                return bot.sendMessage(uId, text)
+                    .then(() => successCount++)
+                    .catch(() => failCount++);
+            }
         });
-        setTimeout(() => {
-            bot.sendMessage(ADMIN_CHAT_ID, '✅ پیام همگانی ارسال شد.');
-        }, 2000);
+
+        Promise.all(promises).then(() => {
+            bot.sendMessage(ADMIN_CHAT_ID, `📊 **گزارش ارسال همگانی:**\n\n👥 کل کاربران: ${totalUsers}\n✅ ارسال موفق: ${successCount}\n❌ ارسال ناموفق (بلاک‌شده): ${failCount}`, { parse_mode: 'Markdown' });
+        });
         return;
     }
 
@@ -384,6 +407,12 @@ bot.on('message', (msg) => {
 bot.on('photo', (msg) => {
     trackUser(msg);
     const chatId = msg.chat.id;
+    
+    // اگر ادمین در حال ارسال عکس همگانی بود، توابع دیگر تداخل پیدا نکنند
+    if (chatId === ADMIN_CHAT_ID && userStates[chatId] && userStates[chatId].step === 'get_broadcast_content') {
+        return; // توسط هندلر پیام مدیریت می‌شود
+    }
+
     const userId = msg.from.id;
     const username = msg.from.username ? '@' + msg.from.username : 'ندارد';
     const name = msg.from.first_name || 'کاربر';
@@ -427,4 +456,4 @@ process.on('uncaughtException', (err) => {
     console.error('خطا:', err);
 });
 
-console.log('🤖 ربات بدون خطا اجرا شد.');
+console.log('🤖 ربات با قابلیت ارسال همگانی پیشرفته اجرا شد.');
