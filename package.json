@@ -1,15 +1,13 @@
 {
-  "name": "arena-config-bot",
+  "name": "telegram-bot",
   "version": "1.0.0",
-  "description": "Telegram Config Store Bot",
+  "description": "Telegram Bot for Railway",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
-    "dotenv": "^16.4.7",
     "node-telegram-bot-api": "^0.66.0"
   }
 }
