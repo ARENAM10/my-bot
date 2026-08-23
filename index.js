@@ -11,12 +11,12 @@ const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
 // دیتابیس‌های موقت در حافظه ربات
-const userStates = {};       // ذخیره وضعیت موقت کاربران
+const userStates = {};       // ذخیره وضعیت موقت کاربران (مثل انتظار برای رسید یا پیام پشتیبانی)
 const userSubscriptions = {}; // ذخیره اطلاعات اشتراک کاربران
-const userWallets = {};      // ذخیره موجودی کیف پول کاربران { chatId: موجودی }
+const userWallets = {};      // ذخیره موجودی کیف پول کاربران
 
 app.get('/', (req, res) => {
-    res.send('Bot is active with Wallet & Subscription Management!');
+    res.send('Bot is active with Support & Full Management!');
 });
 
 app.listen(PORT, () => {
@@ -165,11 +165,17 @@ bot.on('callback_query', (callbackQuery) => {
         return;
     }
 
-    // دکمه‌های پنل ادمین
+    // شارژ دستی کیف پول از طریق پنل ادمین
     if (data === 'admin_charge_wallet') {
         if (!isAdmin(callbackQuery)) return;
         userStates[chatId] = { step: 'get_charge_user_id' };
         bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً آیدی عددی کاربر مورد نظر را ارسال کنید:');
+        return;
+    }
+
+    if (data === 'admin_user_messages') {
+        if (!isAdmin(callbackQuery)) return;
+        bot.sendMessage(chatId, '💬 **بخش پیام مشتریان**\n\nبرای پاسخ به هر پیام، کافی است روی پیام ارسالی کاربر در همین پی‌وی **Reply (پاسخ)** دهید و متن خود را ارسال کنید.');
         return;
     }
 
@@ -209,7 +215,20 @@ bot.on('callback_query', (callbackQuery) => {
         return;
     }
 
-    // بخش کیف پول کاربر
+    // بخش پشتیبانی (درخواست ارسال پیام به ادمین)
+    if (data === 'support') {
+        userStates[chatId] = { awaiting_support_message: true };
+        const cancelKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '❌ انصراف', callback_data: 'back_to_main' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, '📞 **ارتباط با پشتیبانی**\n\nلطفاً پیام، سوال یا مشکل خود را ارسال کنید تا برای مدیریت ارسال شود:', cancelKeyboard);
+        return;
+    }
+
     if (data === 'wallet') {
         const balance = userWallets[chatId] || 0;
         const walletKeyboard = {
@@ -238,6 +257,7 @@ bot.on('callback_query', (callbackQuery) => {
     }
 
     if (data === 'back_to_main') {
+        delete userStates[chatId];
         bot.sendMessage(chatId, 'به منوی اصلی بازگشتید.');
         return;
     }
@@ -245,14 +265,29 @@ bot.on('callback_query', (callbackQuery) => {
     bot.sendMessage(chatId, 'این بخش در حال راه‌اندازی است...');
 });
 
-// مدیریت پیام‌های متنی (برای فرآیند شارژ دستی کیف پول توسط ادمین)
+// مدیریت پیام‌های متنی (کیف پول، پشتیبانی و ریپلای ادمین)
 bot.on('message', (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    if (!text || text.startsWith('/') || text === '💻 پنل مدیریت') return;
+    if (!text || text === '💻 پنل مدیریت') return;
 
-    // اگر ادمین در حال وارد کردن آیدی کاربر برای شارژ کیف پول باشد
+    // ۱. اگر ادمین به پیامی در پی‌وی خودش Reply داد (پاسخ به کاربر)
+    if (chatId === ADMIN_CHAT_ID && msg.reply_to_message) {
+        const repliedText = msg.reply_to_message.caption || msg.reply_to_message.text || '';
+        
+        // استخراج آیدی عددی کاربر از متن پیام ارسالی قبلی
+        const match = repliedText.match(/آیدی عددی: `(\d+)`/) || repliedText.match(/از طرف کاربر.*?\((\d+)\)/);
+        
+        if (match && match[1]) {
+            const targetUserId = match[1];
+            bot.sendMessage(targetUserId, `💬 **پاسخ پشتیبانی:**\n\n${text}`);
+            bot.sendMessage(ADMIN_CHAT_ID, `✅ پاسخ شما با موفقیت به کاربر ارسال شد.`);
+            return;
+        }
+    }
+
+    // ۲. فرآیند شارژ دستی کیف پول توسط ادمین
     if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
         if (userStates[chatId].step === 'get_charge_user_id') {
             const targetUser = text.trim();
@@ -264,19 +299,37 @@ bot.on('message', (msg) => {
             const targetUser = userStates[chatId].targetUser;
 
             if (isNaN(amount)) {
-                bot.sendMessage(chatId, '❌ لطفاً یک عدد معتبر برای مبلغ وارد کنید.');
+                bot.sendMessage(chatId, '❌ لطفاً یک عدد معتبر وارد کنید.');
                 return;
             }
 
-            // افزایش موجودی کیف پول کاربر
             userWallets[targetUser] = (userWallets[targetUser] || 0) + amount;
-            
             bot.sendMessage(chatId, `🎉 کیف پول کاربر ${targetUser} به مبلغ ${amount.toLocaleString()} تومان شارژ شد.`);
             bot.sendMessage(targetUser, `💰 کیف پول شما توسط مدیریت به مبلغ **${amount.toLocaleString()} تومان** شارژ شد. 🎉`, { parse_mode: 'Markdown' });
 
             delete userStates[chatId];
             return;
         }
+    }
+
+    // ۳. ارسال پیام پشتیبانی از طرف کاربر عادی به ادمین
+    if (userStates[chatId] && userStates[chatId].awaiting_support_message) {
+        const userId = msg.from.id;
+        const username = msg.from.username ? `@${msg.from.username}` : 'ندارد';
+        const name = msg.from.first_name || 'کاربر';
+
+        delete userStates[chatId];
+        bot.sendMessage(chatId, '✅ پیام شما با موفقیت به پشتیبانی ارسال شد. به زودی پاسخ خود را دریافت خواهید کرد.');
+
+        const supportText = `💬 **پیام جدید از طرف مشتری!**\n\n` +
+            `👤 نام: ${name}\n` +
+            `🆔 یوزرنیم: ${username}\n` +
+            `🔢 آیدی عددی: \`${userId}\`\n\n` +
+            `📝 متن پیام:\n${text}\n\n` +
+            `*(برای پاسخ به این کاربر، روی همین پیام Reply کنید)*`;
+
+        bot.sendMessage(ADMIN_CHAT_ID, supportText, { parse_mode: 'Markdown' });
+        return;
     }
 });
 
@@ -292,14 +345,15 @@ bot.on('photo', (msg) => {
         const plan = userStates[chatId].selected_plan;
         const planTitle = plan === 'plan_3m' ? 'اشتراک ۳ ماهه' : 'اشتراک ۱ ماهه';
 
-        bot.sendMessage(chatId, '✅ رسید شما دریافت شد و برای بررسی به مدیریت ارسال گردید.');
+        bot.sendMessage(chatId, '✅ رسید شما دریافت شد و برای بررسی نهایی به مدیریت ارسال گردید.');
         delete userStates[chatId];
 
         const caption = `🔔 **رسید جدید پرداخت!**\n\n` +
             `👤 نام: ${name}\n` +
             `🆔 یوزرنیم: ${username}\n` +
             `🔢 آیدی عددی: \`${userId}\`\n` +
-            `📦 پلن انتخابی: ${planTitle}`;
+            `📦 پلن انتخابی: ${planTitle}\n\n` +
+            `*(برای پاسخ یا تایید، از دکمه‌های زیر یا ریپلای استفاده کنید)*`;
 
         const adminActionKeyboard = {
             reply_markup: {
@@ -324,4 +378,4 @@ process.on('uncaughtException', (err) => {
     console.log('خطای مدیریت شده:', err.message);
 });
 
-console.log('🤖 ربات با سیستم کامل کیف پول و شارژ دستی فعال شد...');
+console.log('🤖 ربات با سیستم پشتیبانی و چت دوطرفه فعال شد...');
