@@ -13,16 +13,14 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
-// --- مسیر دقیق فایل و ساخت پوشه در صورت عدم وجود ---
+// --- مسیر دقیق فایل دیتابیس روی هارد ---
 const DB_FILE = '/app/data/database.json';
 
 function ensureDirectoryExistence(filePath) {
     const dirname = path.dirname(filePath);
-    if (fs.existsSync(dirname)) {
-        return true;
-    }
+    if (fs.existsSync(dirname)) return true;
     ensureDirectoryExistence(dirname);
-    fs.mkdirSync(dirname);
+    fs.mkdirSync(dirname, { recursive: true });
 }
 
 let db = {
@@ -69,34 +67,41 @@ let db = {
     paymentCardNumber: '6037-9971-xxxx-xxxx'
 };
 
+// بارگذاری کامل و ایمن اطلاعات از روی هارد
 function loadDatabase() {
     try {
         if (fs.existsSync(DB_FILE)) {
             const data = fs.readFileSync(DB_FILE, 'utf8');
             const parsed = JSON.parse(data);
             db = { ...db, ...parsed };
+            console.log('✅ دیتابیس با موفقیت و به‌طور کامل از روی هارد بازیابی شد.');
+        } else {
+            console.log('⚠️ فایل دیتابیس یافت نشد، ایجاد فایل جدید...');
+            saveDatabase();
         }
     } catch (e) {
-        console.log('Error loading db, using default:', e);
+        console.log('❌ خطا در خواندن دیتابیس از روی هارد:', e);
     }
 }
 
+// ذخیره آنی و همگام‌سازی روی هارد
 function saveDatabase() {
     try {
         ensureDirectoryExistence(DB_FILE);
         fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
     } catch (e) {
-        console.log('Error saving db:', e);
+        console.log('❌ خطا در ذخیره‌سازی روی هارد:', e);
     }
 }
 
+// بارگذاری اولیه هنگام استارت ربات
 loadDatabase();
 
 const userStates = {};       
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
-    res.send('Bot is running smoothly with Persistent Storage!');
+    res.send('Bot is running and synced with persistent storage!');
 });
 
 app.listen(PORT, () => {
@@ -125,9 +130,9 @@ function trackUser(msg) {
 
         if (!db.allUsers.includes(userId)) {
             db.allUsers.push(userId);
-            db.usersDetailMap[userId] = { name, username, joinedAt: new Date().toLocaleString('fa-IR') };
-            saveDatabase();
         }
+        db.usersDetailMap[userId] = { name, username, joinedAt: db.usersDetailMap[userId]?.joinedAt || new Date().toLocaleString('fa-IR') };
+        saveDatabase();
     }
 }
 
@@ -234,6 +239,7 @@ async function handleForceJoin(msg) {
 }
 
 bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
+    loadDatabase(); // همگام‌سازی فوری اطلاعات هنگام استارت کاربر
     const chatId = msg.chat.id;
     delete userStates[chatId];
 
@@ -269,6 +275,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
 });
 
 bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
+    loadDatabase();
     trackUser(msg);
     const chatId = msg.chat.id;
     if (!isAdmin(msg)) {
@@ -326,6 +333,7 @@ function sendAdminPanel(chatId) {
 }
 
 bot.on('callback_query', async (callbackQuery) => {
+    loadDatabase(); // بارگذاری کامل اطلاعات هارد در هر کلیک برای جلوگیری از گم شدن داده‌ها
     const msg = callbackQuery.message;
     const data = callbackQuery.data;
     const chatId = msg.chat.id;
@@ -771,9 +779,8 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- اصلاح‌شده برای نمایش دقیق و سریع اشتراک‌ها بدون ارسال پیام‌های تکراری ---
+    // --- نمایش دقیق و سریع اشتراک‌ها از دیتابیس هارد ---
     if (data === 'my_subs') {
-        loadDatabase(); // بارگذاری مجدد جهت اطمینان از همگام‌سازی با فایل دیتابیس
         const subs = db.userSubscriptions[chatId];
         
         if (subs && Array.isArray(subs) && subs.length > 0) {
@@ -836,6 +843,7 @@ bot.on('callback_query', async (callbackQuery) => {
 });
 
 bot.on('message', async (msg) => {
+    loadDatabase();
     trackUser(msg);
     const chatId = msg.chat.id;
     const text = msg.text;
@@ -985,6 +993,7 @@ bot.on('message', async (msg) => {
 });
 
 bot.on('photo', async (msg) => {
+    loadDatabase();
     trackUser(msg);
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1076,6 +1085,7 @@ bot.on('photo', async (msg) => {
 });
 
 bot.on('callback_query', async (callbackQuery) => {
+    loadDatabase();
     const data = callbackQuery.data;
     const chatId = callbackQuery.message.chat.id;
 
@@ -1179,4 +1189,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با سیستم بروزرسانی سریع و رفع مشکل پیام‌های تکراری اجرا شد.');
+console.log('🤖 ربات با سیستم بازیابی کامل و همگام‌سازی لحظه‌ای هارد اجرا شد.');
