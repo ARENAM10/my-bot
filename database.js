@@ -26,13 +26,21 @@ db.serialize(() => {
         duration TEXT,
         usersCount TEXT,
         type TEXT,
-        config TEXT,
         status INTEGER DEFAULT 1
+    )`);
+
+    // جدول انبار کانفیگ‌ها (برای تخصیص خودکار)
+    db.run(`CREATE TABLE IF NOT EXISTS config_pool (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        productId TEXT,
+        config TEXT,
+        status INTEGER DEFAULT 0
     )`);
 
     db.run(`CREATE TABLE IF NOT EXISTS orders (
         orderId TEXT PRIMARY KEY,
         userId TEXT,
+        productId TEXT,
         subName TEXT,
         price INTEGER,
         status TEXT,
