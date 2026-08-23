@@ -14,7 +14,7 @@ let botTexts = {
     buyMenuText: "محصول مورد نظر را انتخاب کنید: 💎"
 };
 
-// ساختار حرفه‌ای اشتراک‌ها مطابق درخواست شما
+// لیست اشتراک‌ها با جزئیات کامل مطابق ساختار شما
 let subscriptionsList = [
     {
         id: "sub_1",
@@ -24,8 +24,8 @@ let subscriptionsList = [
         duration: "۳۰ روز",
         usersCount: "۱ کاربر",
         type: "Gaming",
-        config: "vless://example-config-1...",
-        status: true // true مخفف 🟢 فعال و false مخفف 🔴 غیرفعال
+        config: "vless://acc-uuid-1111-gaming-config...",
+        status: true
     },
     {
         id: "sub_2",
@@ -35,10 +35,14 @@ let subscriptionsList = [
         duration: "۶۰ روز",
         usersCount: "نامحدود",
         type: "General",
-        config: "vmess://example-config-2...",
+        config: "vmess://acc-uuid-2222-general-config...",
         status: true
     }
 ];
+
+// دیتابیس موقت سفارش‌ها و اشتراک‌های فعال کاربران
+const orders = {}; // کلید: orderId
+const userActiveSubs = {}; // کلید: userId (آرایه‌ای از اشتراک‌های فعال کاربر)
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
@@ -148,20 +152,19 @@ bot.on("callback_query", async (query) => {
     await bot.answerCallbackQuery(query.id).catch(() => {});
     if (!userState[userId]) userState[userId] = { step: null };
 
-    // --- مدیریت حرفه‌ای اشتراک‌ها ---
+    // مدیریت اشتراک‌ها توسط ادمین
     if (data === "adm_manage_subs") {
         if (!isAdmin(query.from)) return;
-        bot.sendMessage(chatId, `🛒 **بخش مدیریت اشتراک‌ها**\n\nگزینه مورد نظر را انتخاب کنید:`, {
+        bot.sendMessage(chatId, `🛒 **بخش مدیریت اشتراک‌ها**`, {
             reply_markup: {
                 inline_keyboard: [
                     [{ text: "📋 لیست اشتراک‌ها", callback_data: "sub_list" }],
                     [{ text: "➕ افزودن اشتراک", callback_data: "sub_add" }],
                     [{ text: "✏️ ویرایش اشتراک", callback_data: "sub_edit_menu" }, { text: "🗑 حذف اشتراک", callback_data: "sub_del_menu" }],
-                    [{ text: "🔴/🟢 تغییر وضعیت فعال/غیرفعال", callback_data: "sub_status_menu" }],
-                    [{ text: "🔙 بازگشت به پنل اصلی", callback_data: "adm_back_main" }]
+                    [{ text: "🔴/🟢 فعال/غیرفعال", callback_data: "sub_status_menu" }],
+                    [{ text: "🔙 بازگشت", callback_data: "adm_back_main" }]
                 ]
-            },
-            parse_mode: "Markdown"
+            }
         });
         return;
     }
@@ -189,44 +192,31 @@ bot.on("callback_query", async (query) => {
     if (data === "sub_add") {
         if (!isAdmin(query.from)) return;
         userState[userId].step = "sub_add_name";
-        bot.sendMessage(chatId, `➕ **مرحله ۱ از ۷:**\nنام اشتراک را وارد کنید (مثلا: نامحدود ماهانه):`);
+        bot.sendMessage(chatId, `➕ **مرحله ۱ از ۷:** نام اشتراک را وارد کنید:`);
         return;
     }
 
     if (data === "sub_edit_menu") {
         if (!isAdmin(query.from)) return;
-        if (subscriptionsList.length === 0) {
-            bot.sendMessage(chatId, "⚠️ اشتراکی برای ویرایش وجود ندارد.");
-            return;
-        }
         let buttons = subscriptionsList.map(s => [{ text: `✏️ ویرایش: ${s.name}`, callback_data: `edit_sub_${s.id}` }]);
         buttons.push([{ text: "🔙 بازگشت", callback_data: "adm_manage_subs" }]);
-        bot.sendMessage(chatId, "لطفاً اشتراکی که می‌خواهید ویرایش کنید را انتخاب کنید:", {
-            reply_markup: { inline_keyboard: buttons }
-        });
+        bot.sendMessage(chatId, "اشتراک مورد نظر برای ویرایش را انتخاب کنید:", { reply_markup: { inline_keyboard: buttons } });
         return;
     }
 
     if (data.startsWith("edit_sub_")) {
         if (!isAdmin(query.from)) return;
-        const subId = data.replace("edit_sub_", "");
-        userState[userId].editingSubId = subId;
+        userState[userId].editingSubId = data.replace("edit_sub_", "");
         userState[userId].step = "sub_edit_new_name";
-        bot.sendMessage(chatId, `✏️ نام جدید برای اشتراک را وارد کنید:`);
+        bot.sendMessage(chatId, `✏️ نام جدید اشتراک را وارد کنید:`);
         return;
     }
 
     if (data === "sub_del_menu") {
         if (!isAdmin(query.from)) return;
-        if (subscriptionsList.length === 0) {
-            bot.sendMessage(chatId, "⚠️ اشتراکی وجود ندارد.");
-            return;
-        }
         let buttons = subscriptionsList.map(s => [{ text: `🗑 حذف: ${s.name}`, callback_data: `del_sub_${s.id}` }]);
         buttons.push([{ text: "🔙 بازگشت", callback_data: "adm_manage_subs" }]);
-        bot.sendMessage(chatId, "لطفاً اشتراک مورد نظر برای حذف را انتخاب کنید:", {
-            reply_markup: { inline_keyboard: buttons }
-        });
+        bot.sendMessage(chatId, "اشتراک مورد نظر برای حذف را انتخاب کنید:", { reply_markup: { inline_keyboard: buttons } });
         return;
     }
 
@@ -234,45 +224,122 @@ bot.on("callback_query", async (query) => {
         if (!isAdmin(query.from)) return;
         const subId = data.replace("del_sub_", "");
         subscriptionsList = subscriptionsList.filter(s => s.id !== subId);
-        bot.sendMessage(chatId, "✅ اشتراک مورد نظر با موفقیت حذف شد.");
+        bot.sendMessage(chatId, "✅ اشتراک حذف شد.");
         return;
     }
 
     if (data === "sub_status_menu") {
         if (!isAdmin(query.from)) return;
-        if (subscriptionsList.length === 0) {
-            bot.sendMessage(chatId, "⚠️ اشتراکی وجود ندارد.");
-            return;
-        }
-        let buttons = subscriptionsList.map(s => [{ text: `${s.status ? "🟢 فعال (کلیک برای غیرفعال‌سازی)" : "🔴 غیرفعال (کلیک برای فعال‌سازی)"} - ${s.name}`, callback_data: `toggle_status_${s.id}` }]);
+        let buttons = subscriptionsList.map(s => [{ text: `${s.status ? "🟢 فعال" : "🔴 غیرفعال"} - ${s.name}`, callback_data: `toggle_status_${s.id}` }]);
         buttons.push([{ text: "🔙 بازگشت", callback_data: "adm_manage_subs" }]);
-        bot.sendMessage(chatId, "وضعیت کدام اشتراک را می‌خواهید تغییر دهید؟", {
-            reply_markup: { inline_keyboard: buttons }
-        });
+        bot.sendMessage(chatId, "تغییر وضعیت اشتراک:", { reply_markup: { inline_keyboard: buttons } });
         return;
     }
 
     if (data.startsWith("toggle_status_")) {
         if (!isAdmin(query.from)) return;
-        const subId = data.replace("toggle_status_", "");
-        const sub = subscriptionsList.find(s => s.id === subId);
+        const sub = subscriptionsList.find(s => s.id === data.replace("toggle_status_", ""));
         if (sub) {
             sub.status = !sub.status;
-            bot.sendMessage(chatId, `✅ وضعیت اشتراک «${sub.name}» به ${sub.status ? "🟢 فعال" : "🔴 غیرفعال"} تغییر یافت.`);
+            bot.sendMessage(chatId, `✅ وضعیت به ${sub.status ? "🟢 فعال" : "🔴 غیرفعال"} تغییر یافت.`);
         }
         return;
     }
 
-    // --- سایر بخش‌های مدیریت ---
+    // --- فلوچارت پرداخت و تأیید سفارش توسط مالک ---
+    if (data.startsWith("pay_card_")) {
+        const subId = data.replace("pay_card_", "");
+        const sub = subscriptionsList.find(s => s.id === subId);
+        if (!sub) return;
+
+        // 📦 ایجاد Order
+        const orderId = "ord_" + Date.now();
+        orders[orderId] = {
+            userId: userId,
+            subId: sub.id,
+            subName: sub.name,
+            price: sub.price,
+            volume: sub.volume,
+            duration: sub.duration,
+            usersCount: sub.usersCount,
+            type: sub.type,
+            config: sub.config,
+            status: "PendingPayment"
+        };
+
+        userState[userId].currentOrderId = orderId;
+        userState[userId].step = "waiting_for_receipt";
+
+        sendActivityLog(query.from, `سفارش جدید با کد ${orderId} برای اشتراک «${sub.name}» ایجاد کرد.`);
+
+        bot.sendMessage(chatId, 
+            `📦 **سفارش شما ایجاد شد (کد: \`${orderId}\`)**\n\n` +
+            `💳 لطفاً مبلغ **${sub.price.toLocaleString()} تومان** را به کارت زیر واریز نمایید:\n\n` +
+            `شماره کارت: \`${paymentConfig.cardNumber}\`\n` +
+            `به نام: ${paymentConfig.cardHolder}\n\n` +
+            `📸 **حالا عکس رسید یا کد پیگیری واریز را برای ربات ارسال کنید.**`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
+    // 👑 تأیید مالک (تایید فیش و تکمیل Order و ارسال کانفیگ)
+    if (data.startsWith("approve_order_")) {
+        if (!isAdmin(query.from)) return;
+        const orderId = data.replace("approve_order_", "");
+        const order = orders[orderId];
+
+        if (!order) {
+            bot.sendMessage(chatId, "⚠️ سفارش مورد نظر یافت نشد یا منقضی شده است.");
+            return;
+        }
+
+        order.status = "Completed"; // ✅ تکمیل Order
+
+        // ذخیره در اشتراک‌های کاربر
+        if (!userActiveSubs[order.userId]) userActiveSubs[order.userId] = [];
+        userActiveSubs[order.userId].push({
+            name: order.subName,
+            volume: order.volume,
+            duration: order.duration,
+            usersCount: order.usersCount,
+            type: order.type,
+            config: order.config,
+            date: new Date().toLocaleDateString('fa-IR')
+        });
+
+        // 🔗 اختصاص کانفیگ و 📊 استخراج حجم و زمان، سپس 📨 ارسال برای کاربر
+        const successMsg = `🎉 **پرداخت و سفارش شما تایید شد! اشتراک شما فعال گردید.**\n\n` +
+                           `🏷 نام اشتراک: ${order.subName}\n` +
+                           `📦 حجم اختصاص‌یافته: ${order.volume}\n` +
+                           `⏳ مدت زمان: ${order.duration}\n` +
+                           `👥 تعداد کاربر: ${order.usersCount}\n` +
+                           `🎮 نوع سرور: ${order.type}\n\n` +
+                           `🔗 **کانفیگ اختصاصی شما:**\n\`${order.config}\`\n\n` +
+                           `📖 از بخش «آموزش اتصال» می‌توانید نحوه راه‌اندازی را مطالعه کنید.`;
+
+        bot.sendMessage(order.userId, successMsg, { parse_mode: "Markdown", ...persistentKeyboard }).catch(() => {});
+        bot.sendMessage(chatId, `✅ سفارش ${orderId} با موفقیت تایید و کانفیگ به کاربر ارسال شد.`);
+        return;
+    }
+
+    if (data.startsWith("reject_order_")) {
+        if (!isAdmin(query.from)) return;
+        const orderId = data.replace("reject_order_", "");
+        const order = orders[orderId];
+        if (order) {
+            order.status = "Rejected";
+            bot.sendMessage(order.userId, `❌ فیش واریزی سفارش ${orderId} توسط مدیریت رد شد. لطفا با پشتیبانی در ارتباط باشید.`).catch(() => {});
+        }
+        bot.sendMessage(chatId, `❌ سفارش رد شد.`);
+        return;
+    }
+
+    // تنظیمات دیگر پنل ادمین
     if (data === "adm_payment_settings") {
         if (!isAdmin(query.from)) return;
         bot.sendMessage(chatId, `💳 شماره کارت: \`${paymentConfig.cardNumber}\`\nنام صاحب کارت: ${paymentConfig.cardHolder}`, {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "✏️ تغییر کارت", callback_data: "adm_edit_card" }],
-                    [{ text: "🔙 بازگشت", callback_data: "adm_back_main" }]
-                ]
-            },
+            reply_markup: { inline_keyboard: [[{ text: "✏️ تغییر کارت", callback_data: "adm_edit_card" }], [{ text: "🔙 بازگشت", callback_data: "adm_back_main" }]] },
             parse_mode: "Markdown"
         });
         return;
@@ -294,9 +361,7 @@ bot.on("callback_query", async (query) => {
 
     if (data === "adm_stats") {
         if (!isAdmin(query.from)) return;
-        let totalMoney = 0;
-        Object.values(userBalances).forEach(b => totalMoney += b);
-        bot.sendMessage(chatId, `📊 **آمار:**\n👥 کل کاربران: **${allUsers.size} نفر**\n💰 مجموع موجودی کیف پول‌ها: **${totalMoney.toLocaleString()} تومان**`, { parse_mode: "Markdown" });
+        bot.sendMessage(chatId, `📊 **آمار ربات:**\n👥 کل کاربران: **${allUsers.size} نفر**`, { parse_mode: "Markdown" });
         return;
     }
 
@@ -318,35 +383,9 @@ bot.on("callback_query", async (query) => {
         openAdminPanel(chatId, query.from);
         return;
     }
-
-    if (data.startsWith("approve_")) {
-        if (!isAdmin(query.from)) return;
-        const [, targetUserId, amountStr] = data.split("_");
-        const amount = parseInt(amountStr);
-        if (!userBalances[targetUserId]) userBalances[targetUserId] = 0;
-        userBalances[targetUserId] += amount;
-        bot.sendMessage(targetUserId, `✅ پرداخت شما به مبلغ ${amount.toLocaleString()} تومان تایید و کیف پول شما شارژ شد! 🎉`);
-        bot.sendMessage(chatId, `✅ فیش تایید شد.`);
-        return;
-    }
-
-    if (data.startsWith("reject_")) {
-        if (!isAdmin(query.from)) return;
-        const [, targetUserId] = data.split("_");
-        bot.sendMessage(targetUserId, `❌ فیش واریزی شما رد شد.`);
-        bot.sendMessage(chatId, `❌ فیش رد شد.`);
-        return;
-    }
-
-    if (data.startsWith("pay_card_")) {
-        const amount = data.split("_")[2];
-        userState[userId].step = "waiting_for_receipt";
-        userState[userId].amount = amount;
-        bot.sendMessage(chatId, `💳 مبلغ: 💎 **${parseInt(amount).toLocaleString()} تومان**\nشماره کارت: \`${paymentConfig.cardNumber}\`\nبه نام: ${paymentConfig.cardHolder}\n\nمبلغ را واریز کرده و رسید بفرستید.`, { parse_mode: "Markdown" });
-    }
 });
 
-// مدیریت مرحله‌ای پیام‌ها و ویزارد افزودن اشتراک
+// مدیریت پیام‌ها و ویزاردها
 bot.on("message", (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
@@ -363,54 +402,54 @@ bot.on("message", (msg) => {
     }
 
     if (isAdmin(msg.from)) {
-        // ویزارد مرحله‌به‌مرحله افزودن اشتراک جدید
+        // ویزارد افزودن اشتراک
         if (currentState === "sub_add_name") {
             userState[userId].newSub = { id: "sub_" + Date.now(), name: text, status: true };
             userState[userId].step = "sub_add_price";
-            bot.sendMessage(chatId, `💵 **مرحله ۲ از ۷:**\nقیمت اشتراک را به تومان وارد کنید (فقط عدد):`);
+            bot.sendMessage(chatId, `💵 قیمت اشتراک را به تومان وارد کنید:`);
             return;
         }
         if (currentState === "sub_add_price") {
             const price = parseInt(text);
-            if (isNaN(price)) { bot.sendMessage(chatId, "⚠️ لطفاً عدد معتبر وارد کنید:"); return; }
+            if (isNaN(price)) { bot.sendMessage(chatId, "⚠️ قیمت معتبر وارد کنید:"); return; }
             userState[userId].newSub.price = price;
             userState[userId].step = "sub_add_volume";
-            bot.sendMessage(chatId, `📦 **مرحله ۳ از ۷:**\nحجم اشتراک را وارد کنید (مثلا: 50 GB یا نامحدود):`);
+            bot.sendMessage(chatId, `📦 حجم اشتراک (مثلا 50 GB):`);
             return;
         }
         if (currentState === "sub_add_volume") {
             userState[userId].newSub.volume = text;
             userState[userId].step = "sub_add_duration";
-            bot.sendMessage(chatId, `⏳ **مرحله ۴ از ۷:**\nمدت زمان اشتراک را وارد کنید (مثلا: ۳۰ روز):`);
+            bot.sendMessage(chatId, `⏳ مدت زمان (مثلا ۳۰ روز):`);
             return;
         }
         if (currentState === "sub_add_duration") {
             userState[userId].newSub.duration = text;
             userState[userId].step = "sub_add_users";
-            bot.sendMessage(chatId, `👥 **مرحله ۵ از ۷:**\nتعداد کاربر مجاز را وارد کنید (مثلا: ۲ کاربر):`);
+            bot.sendMessage(chatId, `👥 تعداد کاربر (مثلا ۱ کاربر):`);
             return;
         }
         if (currentState === "sub_add_users") {
             userState[userId].newSub.usersCount = text;
             userState[userId].step = "sub_add_type";
-            bot.sendMessage(chatId, `🏷 **مرحله ۶ از ۷:**\nنوع اشتراک را وارد کنید (مثلا: Gaming):`);
+            bot.sendMessage(chatId, `🏷 نوع اشتراک (مثلا Gaming):`);
             return;
         }
         if (currentState === "sub_add_type") {
             userState[userId].newSub.type = text;
             userState[userId].step = "sub_add_config";
-            bot.sendMessage(chatId, `🔗 **مرحله ۷ از ۷:**\nلینک کانفیگ مربوطه را وارد کنید:`);
+            bot.sendMessage(chatId, `🔗 لینک کانفیگ مربوطه:`);
             return;
         }
         if (currentState === "sub_add_config") {
             userState[userId].newSub.config = text;
             subscriptionsList.push(userState[userId].newSub);
             userState[userId].step = null;
-            bot.sendMessage(chatId, `✅ اشتراک جدید با تمام جزئیات با موفقیت ساخته و اضافه شد! 🎉`);
+            bot.sendMessage(chatId, `✅ اشتراک جدید با موفقیت اضافه شد!`);
             return;
         }
 
-        // ویزارد ویرایش اشتراک
+        // ویرایش اشتراک
         if (currentState === "sub_edit_new_name") {
             userState[userId].editName = text;
             userState[userId].step = "sub_edit_new_price";
@@ -423,9 +462,7 @@ bot.on("message", (msg) => {
             if (sub && !isNaN(price)) {
                 sub.name = userState[userId].editName;
                 sub.price = price;
-                bot.sendMessage(chatId, `✅ اشتراک با موفقیت ویرایش شد!`);
-            } else {
-                bot.sendMessage(chatId, `⚠️ خطا در ویرایش.`);
+                bot.sendMessage(chatId, `✅ اشتراک ویرایش شد!`);
             }
             userState[userId].step = null;
             return;
@@ -469,7 +506,7 @@ bot.on("message", (msg) => {
         if (currentState === "waiting_for_charge_id") {
             userState[userId].targetUserToCharge = text;
             userState[userId].step = "waiting_for_charge_amount";
-            bot.sendMessage(chatId, `💰 مبلغ شارژ (تومان):`);
+            bot.sendMessage(chatId, `💰 مبلغ شارژ کیف پول (تومان):`);
             return;
         }
         if (currentState === "waiting_for_charge_amount") {
@@ -484,12 +521,12 @@ bot.on("message", (msg) => {
         }
     }
 
-    // دکمه‌های منوی کاربران (فقط اشتراک‌های فعال 🟢 نمایش داده می‌شوند)
+    // 🛒 مرحله 1: 🛒 انتخاب اشتراک توسط کاربر
     if (text === "🛒 خرید اشتراک") {
         sendActivityLog(msg.from, "وارد منوی «خرید اشتراک» شد.");
         const activeSubs = subscriptionsList.filter(s => s.status === true);
         if (activeSubs.length === 0) {
-            bot.sendMessage(chatId, "⚠️ در حال حاضر هیچ اشتراک فعالی برای فروش وجود ندارد.");
+            bot.sendMessage(chatId, "⚠️ در حال حاضر هیچ اشتراک فعالی وجود ندارد.");
             return;
         }
         let replyMarkupKeys = activeSubs.map(sub => [{ text: `${sub.name} - ${sub.price.toLocaleString()} تومان` }]);
@@ -504,23 +541,19 @@ bot.on("message", (msg) => {
 
     const selectedSub = subscriptionsList.find(sub => text === `${sub.name} - ${sub.price.toLocaleString()} تومان` && sub.status === true);
     if (selectedSub) {
-        userState[userId].amount = selectedSub.price;
-        sendActivityLog(msg.from, `اشتراک «${selectedSub.name}» را انتخاب کرد.`);
+        sendActivityLog(msg.from, `اشتراک «${selectedSub.name}» را برای خرید انتخاب کرد.`);
         bot.sendMessage(chatId, 
-            `✅ شما اشتراک زیر را انتخاب کردید:\n\n` +
+            `✅ مشخصات اشتراک انتخابی:\n\n` +
             `🏷 نام: ${selectedSub.name}\n` +
             `💰 قیمت: ${selectedSub.price.toLocaleString()} تومان\n` +
             `📦 حجم: ${selectedSub.volume}\n` +
             `⏳ مدت: ${selectedSub.duration}\n` +
-            `👥 تعداد کاربر: ${selectedSub.usersCount}\n` +
-            `🎮 نوع: ${selectedSub.type}\n\n` +
+            `👥 تعداد کاربر: ${selectedSub.usersCount}\n\n` +
             `لطفاً روش پرداخت را انتخاب کنید:`, {
             reply_markup: {
-                keyboard: [
-                    [{ text: "💳 کارت به کارت" }],
-                    [{ text: "🔙 بازگشت" }]
-                ],
-                resize_keyboard: true
+                inline_keyboard: [
+                    [{ text: "💳 پرداخت کارت به کارت", callback_data: `pay_card_${selectedSub.id}` }]
+                ]
             }
         });
         return;
@@ -539,20 +572,31 @@ bot.on("message", (msg) => {
     if (text === "💳 کیف پول") {
         sendActivityLog(msg.from, "وارد بخش «کیف پول» شد.");
         const balance = userBalances[userId] || 0;
-        userState[userId].step = "waiting_for_amount";
-        bot.sendMessage(chatId, `💎 موجودی شما: ${balance.toLocaleString()} تومان\n\nمبلغ مورد نظر برای شارژ کیف پول (تومان) را وارد کنید:`, {
-            reply_markup: { keyboard: [[{ text: "انصراف" }]], resize_keyboard: true }
-        });
+        bot.sendMessage(chatId, `💎 موجودی کیف پول شما: ${balance.toLocaleString()} تومان`);
         return;
     }
+
+    // 📦 اشتراک‌های من
     if (text === "📦 اشتراک‌های من") {
         sendActivityLog(msg.from, "بخش «اشتراک‌های من» را بررسی کرد.");
-        bot.sendMessage(chatId, "📁 شما در حال حاضر اشتراک فعالی ندارید.");
+        const userSubs = userActiveSubs[userId];
+        if (!userSubs || userSubs.length === 0) {
+            bot.sendMessage(chatId, "📁 شما در حال حاضر هیچ اشتراک فعالی ندارید.");
+            return;
+        }
+        let msgText = "📦 **اشتراک‌های فعال شما:**\n\n";
+        userSubs.forEach((sub, idx) => {
+            msgText += `${idx + 1}. **${sub.name}**\n` +
+                       `   - حجم: ${sub.volume} | مدت: ${sub.duration}\n` +
+                       `   - کانفیگ: \`${sub.config}\`\n--------------------------\n`;
+        });
+        bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
         return;
     }
+
     if (text === "📖 آموزش اتصال") {
         sendActivityLog(msg.from, "بخش «آموزش اتصال» را باز کرد.");
-        bot.sendMessage(chatId, "📖 راهنمای اتصال به سرورها");
+        bot.sendMessage(chatId, "📖 راهنمای اتصال به سرورها در اپلیکیشن‌های مختلف...");
         return;
     }
     if (text === "🤝 درخواست نمایندگی") {
@@ -575,49 +619,42 @@ bot.on("message", (msg) => {
         return;
     }
 
-    if (currentState === "waiting_for_amount") {
-        if (!text || text.startsWith("/")) return;
-        const amount = parseInt(text);
-        if (isNaN(amount) || amount <= 0) {
-            bot.sendMessage(chatId, "⚠️ لطفاً یک مبلغ معتبر وارد کنید:");
-            return;
-        }
-        userState[userId].amount = amount;
-        userState[userId].step = null;
-        sendActivityLog(msg.from, `مبلغ ${amount} تومان را برای شارژ کیف پول وارد کرد.`);
-        bot.sendMessage(chatId, `💎 مبلغ ${amount.toLocaleString()} تومان ثبت شد. روش پرداخت را انتخاب کنید:`, {
-            reply_markup: { keyboard: [[{ text: "💳 کارت به کارت" }], [{ text: "انصراف" }]], resize_keyboard: true }
-        });
-        return;
-    }
-
-    if (text === "💳 کارت به کارت") {
-        const amount = userState[userId].amount || 50000;
-        userState[userId].step = "waiting_for_receipt";
-        sendActivityLog(msg.from, `درخواست کارت به کارت برای مبلغ ${amount} تومان داد.`);
-        bot.sendMessage(chatId, `💳 مبلغ: 💎 **${parseInt(amount).toLocaleString()} تومان**\nشماره کارت: \`${paymentConfig.cardNumber}\`\nبه نام: ${paymentConfig.cardHolder}\n\nمبلغ را واریز کرده و رسید بفرستید.`, { parse_mode: "Markdown" });
-        return;
-    }
-
+    // 📸 مرحله 5 و 6: ارسال رسید و ارسال برای تایید مالک
     if (currentState === "waiting_for_receipt") {
-        const amount = userState[userId].amount || 50000;
-        if (photo || text) {
-            sendActivityLog(msg.from, `رسید پرداخت به مبلغ ${amount} تومان را ارسال کرد.`);
-            const userInfo = `👤 کاربر: [${msg.from.first_name || "کاربر"}](tg://user?id=${userId}) (ID: \`${userId}\`)\n💰 مبلغ: ${parseInt(amount).toLocaleString()} تومان`;
+        const orderId = userState[userId].currentOrderId;
+        const order = orders[orderId];
+
+        if (order && (photo || text)) {
+            sendActivityLog(msg.from, `رسید پرداخت سفارش ${orderId} را ارسال کرد.`);
+            order.status = "PendingApproval";
+
+            const userInfo = `👤 کاربر: [${msg.from.first_name || "کاربر"}](tg://user?id=${userId}) (ID: \`${userId}\`)\n` +
+                             `📦 سفارش: \`${orderId}\`\n` +
+                             `🏷 اشتراک: ${order.subName}\n` +
+                             `💰 مبلغ: ${order.price.toLocaleString()} تومان`;
+
             const adminKeyboard = {
                 reply_markup: {
-                    inline_keyboard: [[{ text: "✅ تایید و شارژ", callback_data: `approve_${userId}_${amount}` }, { text: "❌ رد فیش", callback_data: `reject_${userId}` }]]
+                    inline_keyboard: [
+                        [
+                            { text: "✅ تأیید و ارسال کانفیگ", callback_data: `approve_order_${orderId}` },
+                            { text: "❌ رد سفارش", callback_data: `reject_order_${orderId}` }
+                        ]
+                    ]
                 },
                 parse_mode: "Markdown"
             };
 
             if (photo) {
-                bot.sendPhoto(ADMIN_CHAT_ID, photo[photo.length - 1].file_id, { caption: `📥 **فیش واریزی جدید**\n\n${userInfo}`, ...adminKeyboard }).catch(() => {});
+                bot.sendPhoto(ADMIN_CHAT_ID, photo[photo.length - 1].file_id, {
+                    caption: `📥 **فیش واریزی جدید (در انتظار تایید مالک)**\n\n${userInfo}`,
+                    ...adminKeyboard
+                }).catch(() => {});
             } else if (text) {
-                bot.sendMessage(ADMIN_CHAT_ID, `📥 **کد پیگیری جدید**\n\n${userInfo}\n📝 متن: ${text}`, adminKeyboard).catch(() => {});
+                bot.sendMessage(ADMIN_CHAT_ID, `📥 **رسید متنی جدید (در انتظار تایید مالک)**\n\n${userInfo}\n📝 متن: ${text}`, adminKeyboard).catch(() => {});
             }
 
-            bot.sendMessage(chatId, "✅ فیش شما برای پشتیبانی ارسال شد.", persistentKeyboard);
+            bot.sendMessage(chatId, "✅ فیش و رسید شما ثبت و برای مالک ارسال شد. پس از تایید، کانفیگ شما به همراه جزئیات حجم و زمان ارسال خواهد شد.", persistentKeyboard);
             userState[userId].step = null;
         }
     }
