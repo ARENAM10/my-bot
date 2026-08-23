@@ -8,12 +8,14 @@ const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 const ADMIN_USERNAME = 'arenam_10';
-const ADMIN_CHAT_ID = 8923324852; // آیدی عددی ثابت شما به عنوان ادمین
+const ADMIN_CHAT_ID = 8923324852;
 
-const userStates = {};
+// دیتابیس‌های موقت در حافظه ربات
+const userStates = {};       // ذخیره وضعیت موقت کاربران (مثل انتظار برای رسید)
+const userSubscriptions = {}; // ذخیره اطلاعات اشتراک فعال کاربران { chatId: { planName, expiryDate } }
 
 app.get('/', (req, res) => {
-    res.send('Bot is active with Fixed Admin Chat ID!');
+    res.send('Bot is active with Subscriptions Management!');
 });
 
 app.listen(PORT, () => {
@@ -131,17 +133,32 @@ bot.on('callback_query', (callbackQuery) => {
 
     bot.answerCallbackQuery(callbackQuery.id);
 
-    // تایید یا رد رسید از طرف ادمین
+    // تایید یا رد رسید از طرف ادمین (همراه با فعالسازی واقعی اشتراک)
     if (data.startsWith('approve_') || data.startsWith('reject_')) {
         if (!isAdmin(callbackQuery)) {
             bot.sendMessage(chatId, '❌ دسترسی غیرمجاز!');
             return;
         }
 
-        const targetUserId = data.split('_')[1];
-        if (data.startsWith('approve_')) {
-            bot.sendMessage(targetUserId, '✅ پرداخت و رسید شما توسط مدیریت تایید شد! اشتراک شما فعال گردید. 🎉');
-            bot.sendMessage(chatId, `✅ رسید کاربر با آیدی ${targetUserId} با موفقیت تایید شد.`);
+        const parts = data.split('_');
+        const action = parts[0];
+        const targetUserId = parts[1];
+        const planType = parts[2]; // پلن انتخابی کاربر
+
+        if (action === 'approve') {
+            // محاسبه تاریخ انقضا بر اساس پلن
+            const daysToAdd = planType === 'plan_3m' ? 90 : 30; // ۳ ماهه یا ۱ ماهه
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + daysToAdd);
+
+            // ذخیره اشتراک کاربر
+            userSubscriptions[targetUserId] = {
+                planName: planType === 'plan_3m' ? 'اشتراک ۳ ماهه' : 'اشتراک ۱ ماهه',
+                expiryDate: expiryDate.toLocaleDateString('fa-IR')
+            };
+
+            bot.sendMessage(targetUserId, '✅ پرداخت و رسید شما توسط مدیریت تایید شد! اشتراک شما با موفقیت فعال گردید. 🎉\n\nمی‌توانید از بخش "اشتراک‌های من" وضعیت خود را چک کنید.');
+            bot.sendMessage(chatId, `✅ رسید کاربر با آیدی ${targetUserId} تایید و اشتراک فعال شد.`);
         } else {
             bot.sendMessage(targetUserId, '❌ متأسفانه رسید پرداخت شما توسط مدیریت رد شد. لطفاً با پشتیبانی در ارتباط باشید.');
             bot.sendMessage(chatId, `❌ رسید کاربر با آیدی ${targetUserId} رد شد.`);
@@ -185,6 +202,17 @@ bot.on('callback_query', (callbackQuery) => {
         return;
     }
 
+    // بخش اشتراک‌های من
+    if (data === 'my_subs') {
+        const sub = userSubscriptions[chatId];
+        if (sub) {
+            bot.sendMessage(chatId, `📱 **اشتراک فعال شما:**\n\n📦 نوع پلن: ${sub.planName}\n⏳ تاریخ انقضا: ${sub.expiryDate}\n\nوضعیت: متصل و فعال ✅`);
+        } else {
+            bot.sendMessage(chatId, '📱 شما در حال حاضر هیچ اشتراک فعالی ندارید.\n\nمی‌توانید از بخش "خرید اشتراک" اقدام کنید.');
+        }
+        return;
+    }
+
     if (data === 'wallet') {
         bot.sendMessage(chatId, '💰 کیف پول شما:\nموجودی فعلی: ۰ تومان');
         return;
@@ -198,7 +226,7 @@ bot.on('callback_query', (callbackQuery) => {
     bot.sendMessage(chatId, 'این بخش در حال راه‌اندازی است...');
 });
 
-// دریافت عکس رسید از کاربر و ارسال مستقیم به پی‌وی ادمین ثابت
+// دریافت عکس رسید و ارسال دکمه حاوی اطلاعات پلن به ادمین
 bot.on('photo', (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -208,6 +236,7 @@ bot.on('photo', (msg) => {
     if (userStates[chatId] && userStates[chatId].awaiting_receipt) {
         const photoId = msg.photo[msg.photo.length - 1].file_id;
         const plan = userStates[chatId].selected_plan;
+        const planTitle = plan === 'plan_3m' ? 'اشتراک ۳ ماهه' : 'اشتراک ۱ ماهه';
 
         bot.sendMessage(chatId, '✅ رسید شما دریافت شد و برای بررسی نهایی به مدیریت ارسال گردید.');
         delete userStates[chatId];
@@ -216,14 +245,14 @@ bot.on('photo', (msg) => {
             `👤 نام: ${name}\n` +
             `🆔 یوزرنیم: ${username}\n` +
             `🔢 آیدی عددی: \`${userId}\`\n` +
-            `📦 پلن انتخابی: ${plan}`;
+            `📦 پلن انتخابی: ${planTitle}`;
 
         const adminActionKeyboard = {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '✅ تایید و فعالسازی', callback_data: `approve_${userId}` },
-                        { text: '❌ رد رسید', callback_data: `reject_${userId}` }
+                        { text: '✅ تایید و فعالسازی', callback_data: `approve_${userId}_${plan}` },
+                        { text: '❌ رد رسید', callback_data: `reject_${userId}_${plan}` }
                     ]
                 ]
             }
@@ -241,4 +270,4 @@ process.on('uncaughtException', (err) => {
     console.log('خطای مدیریت شده:', err.message);
 });
 
-console.log('🤖 ربات با سیستم ثابت و دقیق ادمین استارت شد...');
+console.log('🤖 ربات با سیستم مدیریت اشتراک‌ها فعال شد...');
