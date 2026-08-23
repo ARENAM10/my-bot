@@ -11,7 +11,8 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
-const CHANNEL_USERNAME = '@YourChannelUsername'; 
+// تنظیمات کانال و جوین اجباری
+let CHANNEL_USERNAME = '@YourChannelUsername'; 
 let isForceJoinEnabled = false; 
 
 let isTestServerEnabled = true;     
@@ -54,7 +55,7 @@ let customPlans = [
 ]; 
 
 let paymentCardNumber = '6037-9971-xxxx-xxxx'; 
-let paymentCardOwner = 'مالک ربات';
+let paymentCardOwner = 'نام و فامیل شما'; // <-- نام و نام خانوادگی شما برای کارت به کارت
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
@@ -249,7 +250,7 @@ bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
 });
 
 function sendAdminPanel(chatId) {
-    const forceJoinStatus = isForceJoinEnabled ? '🟢 جوین اجباری: روشن' : '🔴 جوین اجباری: خاموش';
+    const forceJoinStatus = isForceJoinEnabled ? `🟢 جوین اجباری: روشن (${CHANNEL_USERNAME})` : '🔴 جوین اجباری: خاموش';
     const testServerStatus = isTestServerEnabled ? '🟢 سرور تست: روشن' : '🔴 سرور تست: خاموش';
     const inviteStatus = isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
     
@@ -273,7 +274,7 @@ function sendAdminPanel(chatId) {
                     { text: inviteStatus, callback_data: 'toggle_invite_system' }
                 ],
                 [
-                    { text: forceJoinStatus, callback_data: 'toggle_force_join' },
+                    { text: forceJoinStatus, callback_data: 'admin_force_join_menu' },
                     { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' }
                 ],
                 [
@@ -305,11 +306,34 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    if (data === 'admin_force_join_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        const statusText = isForceJoinEnabled ? '🟢 روشن' : '🔴 خاموش';
+        const fjMenu = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: `وضعیت: ${statusText} (تغییر وضعیت)`, callback_data: 'toggle_force_join' }],
+                    [{ text: `✏️ تنظیم/تغییر کانال (فعلی: ${CHANNEL_USERNAME})`, callback_data: 'set_channel_username' }],
+                    [{ text: '🔙 بازگشت', callback_data: 'admin_back_to_panel' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, '📢 **مدیریت کانال و جوین اجباری**\nاز دکمه‌های زیر استفاده کنید:', { parse_mode: 'Markdown', ...fjMenu });
+        return;
+    }
+
     if (data === 'toggle_force_join') {
         if (!isAdmin(callbackQuery)) return;
         isForceJoinEnabled = !isForceJoinEnabled;
         bot.sendMessage(chatId, `جوین اجباری ${isForceJoinEnabled ? 'روشن' : 'خاموش'} شد.`);
         sendAdminPanel(chatId);
+        return;
+    }
+
+    if (data === 'set_channel_username') {
+        if (!isAdmin(callbackQuery)) return;
+        userStates[chatId] = { step: 'get_new_channel_username' };
+        bot.sendMessage(chatId, '📢 لطفاً آیدی کانال خود را با فرمت صحیح (مثلاً `@MyChannel`) ارسال کنید:', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -722,6 +746,13 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
         const state = userStates[chatId];
+        if (state.step === 'get_new_channel_username') {
+            CHANNEL_USERNAME = text.trim();
+            delete userStates[chatId];
+            bot.sendMessage(chatId, `✅ آیدی کانال جوین اجباری با موفقیت به \`${CHANNEL_USERNAME}\` تغییر یافت.`, { parse_mode: 'Markdown' });
+            sendAdminPanel(chatId);
+            return;
+        }
         if (state.step === 'admin_get_charge_user_id') {
             const targetId = parseInt(text.trim(), 10);
             if (!targetId || isNaN(targetId)) {
