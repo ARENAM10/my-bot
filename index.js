@@ -2,19 +2,28 @@ const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// توکن ربات شما
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
-// --- فایل دیتابیس محلی برای ذخیره دائمی اطلاعات روی هارد Mount شده ---
+// --- مسیر دقیق فایل و ساخت پوشه در صورت عدم وجود ---
 const DB_FILE = '/app/data/database.json';
+
+function ensureDirectoryExistence(filePath) {
+    const dirname = path.dirname(filePath);
+    if (fs.existsSync(dirname)) {
+        return true;
+    }
+    ensureDirectoryExistence(dirname);
+    fs.mkdirSync(dirname);
+}
 
 let db = {
     CHANNEL_USERNAME: '@YourChannelUsername',
@@ -31,7 +40,7 @@ let db = {
     usersDetailMap: {},
     receiptsHistory: [],
     referals: {},
-    userSubscriptions: {},
+    userSubscriptions: {}, // ذخیره به صورت آرایه برای هر کاربر (چندین اشتراک)
     allSubscriptionsHistory: [],
     customPlans: [
         { 
@@ -60,7 +69,6 @@ let db = {
     paymentCardNumber: '6037-9971-xxxx-xxxx'
 };
 
-// تابع بارگیری اطلاعات از فایل
 function loadDatabase() {
     try {
         if (fs.existsSync(DB_FILE)) {
@@ -73,9 +81,9 @@ function loadDatabase() {
     }
 }
 
-// تابع ذخیره فوری اطلاعات در فایل
 function saveDatabase() {
     try {
+        ensureDirectoryExistence(DB_FILE);
         fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
     } catch (e) {
         console.log('Error saving db:', e);
@@ -694,7 +702,11 @@ bot.on('callback_query', async (callbackQuery) => {
             purchaseDate: currentDateStr
         };
 
-        db.userSubscriptions[chatId] = subObj;
+        // --- اصلاح ذخیره چند اشتراک (اضافه شدن به آرایه اشتراک‌های کاربر) ---
+        if (!db.userSubscriptions[chatId]) {
+            db.userSubscriptions[chatId] = [];
+        }
+        db.userSubscriptions[chatId].push(subObj);
         db.allSubscriptionsHistory.push(subObj);
 
         db.receiptsHistory.push({
@@ -770,12 +782,27 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'my_subs') {
-        const sub = db.userSubscriptions[chatId];
-        if (sub) {
-            let subText = `📱 **اشتراک فعال شما:**\n\n📦 پلن: ${sub.planName}\n⏳ انقضا: ${sub.expiryDate}\n🌐 حجم: ${sub.volume || 'نامحدود'}\n\n🔗 **لینک اشتراک:**\n\`${sub.configLink}\``;
-            bot.sendMessage(chatId, subText, { parse_mode: 'Markdown' });
+        const subs = db.userSubscriptions[chatId];
+        if (subs && Array.isArray(subs) && subs.length > 0) {
+            let subText = `📱 **لیست اشتراک‌های فعال شما (${subs.length} عدد):**\n\n`;
+            subs.forEach((sub, idx) => {
+                subText += `🔹 **اشتراک شماره ${idx + 1}**\n` +
+                           `📦 پلن: ${sub.planName}\n` +
+                           `⏳ انقضا: ${sub.expiryDate}\n` +
+                           `🌐 حجم: ${sub.volume || 'نامحدود'}\n` +
+                           `🔗 **لینک اشتراک:**\n\`${sub.configLink}\`\n\n`;
+            });
+
+            if (subText.length > 4000) {
+                const chunks = subText.match(/[\s\S]{1,4000}/g);
+                for (const chunk of chunks) {
+                    await bot.sendMessage(chatId, chunk, { parse_mode: 'Markdown' });
+                }
+            } else {
+                bot.sendMessage(chatId, subText, { parse_mode: 'Markdown' });
+            }
         } else {
-            bot.sendMessage(chatId, '📱 اشتراک فعالی ندارید.');
+            bot.sendMessage(chatId, '📱 شما هنوز اشتراک فعالی ندارید.');
         }
         return;
     }
@@ -1129,7 +1156,11 @@ bot.on('callback_query', async (callbackQuery) => {
                     purchaseDate: currentDateStr
                 };
 
-                db.userSubscriptions[targetUserId] = subObj;
+                // --- ذخیره در لیست آرایه اشتراک‌ها برای تایید کارت به کارت ---
+                if (!db.userSubscriptions[targetUserId]) {
+                    db.userSubscriptions[targetUserId] = [];
+                }
+                db.userSubscriptions[targetUserId].push(subObj);
                 db.allSubscriptionsHistory.push(subObj);
 
                 delete db.pending_card_purchases[cardKey];
@@ -1161,4 +1192,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با سیستم ذخیره‌سازی دائمی اطلاعات (Persistent Storage) اجرا شد.');
+console.log('🤖 ربات با سیستم ذخیره‌سازی دائمی و مدیریت چند اشتراک اجرا شد.');
