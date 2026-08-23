@@ -1,7 +1,7 @@
 import TelegramBot from "node-telegram-bot-api";
 
 const TOKEN = "8850301156:AAGXFnSqSwyGbvPtucnkZdXhkLWIQi2GpWo";
-const ADMIN_USERNAME = "ARENAM_10"; // یوزرنیم مالک بدون @
+const ADMIN_CHAT_ID = "8923324852"; // <--- آیدی عددی دقیق مالک
 const CARD_NUMBER = "6037-9971-xxxx-xxxx"; // شماره کارت شما
 const CARD_HOLDER = "نام صاحب کارت";       // نام صاحب کارت
 
@@ -31,13 +31,12 @@ bot.onText(/\/start/, (msg) => {
     });
 });
 
-// دستور اختصاصی مالک /admin
+// دستور اختصاصی مالک /admin با آیدی عددی جدید
 bot.onText(/\/admin/, (msg) => {
     const chatId = msg.chat.id;
-    const username = msg.from.username;
+    const userId = msg.from.id.toString();
 
-    // بررسی اینکه آیا فرستنده مالک است یا خیر
-    if (!username || username.toLowerCase() !== ADMIN_USERNAME.toLowerCase()) {
+    if (userId !== ADMIN_CHAT_ID) {
         bot.sendMessage(chatId, "❌ شما دسترسی به پنل مدیریت ندارید.");
         return;
     }
@@ -60,8 +59,7 @@ bot.onText(/\/admin/, (msg) => {
 // مدیریت کلیک روی دکمه‌ها
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
-    const userId = query.from.id;
-    const username = query.from.username;
+    const userId = query.from.id.toString();
     const data = query.data;
 
     await bot.answerCallbackQuery(query.id).catch(() => {});
@@ -70,7 +68,7 @@ bot.on("callback_query", async (query) => {
 
     // بخش پنل ادمین
     if (data.startsWith("adm_")) {
-        if (!username || username.toLowerCase() !== ADMIN_USERNAME.toLowerCase()) {
+        if (userId !== ADMIN_CHAT_ID) {
             bot.sendMessage(chatId, "❌ دسترسی غیرمجاز.");
             return;
         }
@@ -89,7 +87,7 @@ bot.on("callback_query", async (query) => {
 
     // تایید پرداخت توسط ادمین
     if (data.startsWith("approve_")) {
-        if (!username || username.toLowerCase() !== ADMIN_USERNAME.toLowerCase()) return;
+        if (userId !== ADMIN_CHAT_ID) return;
         const parts = data.split("_");
         const targetUserId = parts[1];
         const amount = parseInt(parts[2]);
@@ -104,7 +102,7 @@ bot.on("callback_query", async (query) => {
 
     // رد فیش توسط ادمین
     if (data.startsWith("reject_")) {
-        if (!username || username.toLowerCase() !== ADMIN_USERNAME.toLowerCase()) return;
+        if (userId !== ADMIN_CHAT_ID) return;
         const targetUserId = data.split("_")[1];
 
         bot.sendMessage(targetUserId, `❌ فیش واریزی شما توسط پشتیبانی رد شد. لطفاً با پشتیبانی در ارتباط باشید.`);
@@ -162,10 +160,10 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-// مدیریت پیام‌ها و ارسال فیش به ادمین بر اساس یوزرنیم
-bot.on("message", async (msg) => {
+// مدیریت پیام‌ها و ارسال فیش به آیدی ادمین
+bot.on("message", (msg) => {
     const chatId = msg.chat.id;
-    const userId = msg.from.id;
+    const userId = msg.from.id.toString();
     const text = msg.text;
     const photo = msg.photo;
 
@@ -205,12 +203,9 @@ bot.on("message", async (msg) => {
         if (photo || text) {
             const userInfo = `👤 کاربر: [${msg.from.first_name}](tg://user?id=${userId}) (ID: \`${userId}\`)\n💰 مبلغ: ${parseInt(amount).toLocaleString()} تومان`;
 
-            // ارسال به چتِ مالک با استفاده از یوزرنیم (تلگرام به صورت اتوماتیک @username رو به چت آیدی تبدیل می‌کنه)
-            const adminTarget = `@${ADMIN_USERNAME}`;
-
             if (photo) {
                 const fileId = photo[photo.length - 1].file_id;
-                bot.sendPhoto(adminTarget, fileId, {
+                bot.sendPhoto(ADMIN_CHAT_ID, fileId, {
                     caption: `📥 **فیش واریزی جدید**\n\n${userInfo}`,
                     parse_mode: "Markdown",
                     reply_markup: {
@@ -221,11 +216,9 @@ bot.on("message", async (msg) => {
                             ]
                         ]
                     }
-                }).catch((err) => {
-                    console.log("خطا در ارسال فیش به ادمین:", err.message);
-                });
+                }).catch((err) => console.log("خطا در ارسال فیش:", err.message));
             } else if (text) {
-                bot.sendMessage(adminTarget, `📥 **کد پیگیری / رسید متنی جدید**\n\n${userInfo}\n📝 متن: ${text}`, {
+                bot.sendMessage(ADMIN_CHAT_ID, `📥 **کد پیگیری / رسید متنی جدید**\n\n${userInfo}\n📝 متن: ${text}`, {
                     parse_mode: "Markdown",
                     reply_markup: {
                         inline_keyboard: [
@@ -235,9 +228,7 @@ bot.on("message", async (msg) => {
                             ]
                         ]
                     }
-                }).catch((err) => {
-                    console.log("خطا در ارسال رسید به ادمین:", err.message);
-                });
+                }).catch((err) => console.log("خطا در ارسال رسید:", err.message));
             }
 
             bot.sendMessage(chatId, "✅ فیش شما برای پشتیبانی ارسال شد. پس از تایید، حساب شما شارژ خواهد شد.");
