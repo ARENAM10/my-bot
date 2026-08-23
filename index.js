@@ -1,14 +1,16 @@
 import TelegramBot from "node-telegram-bot-api";
 
 const TOKEN = "8850301156:AAGXFnSqSwyGbvPtucnkZdXhkLWIQi2GpWo";
-const ADMIN_CHAT_ID = "YOUR_ADMIN_ID_HERE"; // <--- آیدی عددی خودت رو اینجا بذار
+const ADMIN_USERNAME = "ARENAM_10"; // یوزرنیم مالک بدون @
 const CARD_NUMBER = "6037-9971-xxxx-xxxx"; // شماره کارت شما
 const CARD_HOLDER = "نام صاحب کارت";       // نام صاحب کارت
 
 const bot = new TelegramBot(TOKEN, { polling: true });
-const userState = {};
 
-// دستور /start و نمایش منوی شیشه‌ای دقیقاً مشابه عکس
+const userState = {};
+const userBalances = {}; // موجودی کیف پول کاربران
+
+// دستور /start برای کاربران عادی
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -29,34 +31,107 @@ bot.onText(/\/start/, (msg) => {
     });
 });
 
-// مدیریت کلیک روی دکمه‌های شیشه‌ای
+// دستور اختصاصی مالک /admin
+bot.onText(/\/admin/, (msg) => {
+    const chatId = msg.chat.id;
+    const username = msg.from.username;
+
+    // بررسی اینکه آیا فرستنده مالک است یا خیر
+    if (!username || username.toLowerCase() !== ADMIN_USERNAME.toLowerCase()) {
+        bot.sendMessage(chatId, "❌ شما دسترسی به پنل مدیریت ندارید.");
+        return;
+    }
+
+    bot.sendMessage(chatId, `🎛 **پنل مدیریت ربات**\n\nگزینه مورد نظر را انتخاب کنید:`, {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "🛒 مدیریت اشتراک", callback_data: "adm_manage_sub" }, { text: "📦 سوابق اشتراک‌ها", callback_data: "adm_history" }],
+                [{ text: "💰 شارژ کیف پول", callback_data: "adm_charge" }, { text: "📁 رسیدها", callback_data: "adm_receipts" }],
+                [{ text: "👥 کاربران", callback_data: "adm_users" }, { text: "📊 آمار", callback_data: "adm_stats" }],
+                [{ text: "💳 تنظیمات پرداخت", callback_data: "adm_payment" }, { text: "💬 پیام مشتریان", callback_data: "adm_messages" }],
+                [{ text: "📢 ارسال همگانی", callback_data: "adm_broadcast" }],
+                [{ text: "🔙 بازگشت به منوی اصلی", callback_data: "back_to_main" }]
+            ]
+        },
+        parse_mode: "Markdown"
+    });
+});
+
+// مدیریت کلیک روی دکمه‌ها
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const userId = query.from.id;
+    const username = query.from.username;
     const data = query.data;
 
     await bot.answerCallbackQuery(query.id).catch(() => {});
 
     if (!userState[userId]) userState[userId] = { step: null };
 
+    // بخش پنل ادمین
+    if (data.startsWith("adm_")) {
+        if (!username || username.toLowerCase() !== ADMIN_USERNAME.toLowerCase()) {
+            bot.sendMessage(chatId, "❌ دسترسی غیرمجاز.");
+            return;
+        }
+
+        if (data === "adm_manage_sub") bot.sendMessage(chatId, "🛒 مدیریت اشتراک‌ها و سرورها");
+        else if (data === "adm_history") bot.sendMessage(chatId, "📦 سوابق کل اشتراک‌های فروخته شده");
+        else if (data === "adm_charge") bot.sendMessage(chatId, "💰 بخش شارژ دستی کیف پول کاربران");
+        else if (data === "adm_receipts") bot.sendMessage(chatId, "📁 لیست فیش‌ها و رسیدهای در انتظار بررسی");
+        else if (data === "adm_users") bot.sendMessage(chatId, "👥 آمار کاربران ربات");
+        else if (data === "adm_stats") bot.sendMessage(chatId, "📊 آمار کلی درآمد و فروش");
+        else if (data === "adm_payment") bot.sendMessage(chatId, "💳 تنظیمات شماره کارت و درگاه");
+        else if (data === "adm_messages") bot.sendMessage(chatId, "💬 لیست پیام‌های پشتیبانی");
+        else if (data === "adm_broadcast") bot.sendMessage(chatId, "📢 ارسال پیام همگانی به همه کاربران");
+        return;
+    }
+
+    // تایید پرداخت توسط ادمین
+    if (data.startsWith("approve_")) {
+        if (!username || username.toLowerCase() !== ADMIN_USERNAME.toLowerCase()) return;
+        const parts = data.split("_");
+        const targetUserId = parts[1];
+        const amount = parseInt(parts[2]);
+
+        if (!userBalances[targetUserId]) userBalances[targetUserId] = 0;
+        userBalances[targetUserId] += amount;
+
+        bot.sendMessage(targetUserId, `✅ پرداخت شما به مبلغ ${amount.toLocaleString()} تومان تایید و حساب شما شارژ شد! 🎉`);
+        bot.sendMessage(chatId, `✅ فیش کاربر تایید شد و مبلغ ${amount.toLocaleString()} تومان به حسابش واریز گردید.`);
+        return;
+    }
+
+    // رد فیش توسط ادمین
+    if (data.startsWith("reject_")) {
+        if (!username || username.toLowerCase() !== ADMIN_USERNAME.toLowerCase()) return;
+        const targetUserId = data.split("_")[1];
+
+        bot.sendMessage(targetUserId, `❌ فیش واریزی شما توسط پشتیبانی رد شد. لطفاً با پشتیبانی در ارتباط باشید.`);
+        bot.sendMessage(chatId, `❌ فیش کاربر رد شد.`);
+        return;
+    }
+
+    // بخش کاربران عادی
     if (data === "buy_sub") {
-        bot.sendMessage(chatId, "🛒 بخش خرید اشتراک (در قدم‌های بعدی تکمیل می‌شود)");
+        bot.sendMessage(chatId, "🛒 بخش خرید اشتراک");
     } 
     else if (data === "speed_test") {
-        bot.sendMessage(chatId, "🚀 ابزار تست سرعت و سرورهای مناسب (به زودی)");
+        bot.sendMessage(chatId, "🚀 ابزار تست سرعت سرورها");
     }
     else if (data === "daily_gift") {
-        bot.sendMessage(chatId, "🎁 هدیه روزانه شما (به زودی)");
+        bot.sendMessage(chatId, "🎁 هدیه روزانه شما");
     }
     else if (data === "account") {
+        const balance = userBalances[userId] || 0;
         userState[userId].step = "waiting_for_amount";
-        bot.sendMessage(chatId, "💳 لطفاً مبلغ مورد نظر برای شارژ حساب (به تومان) را وارد کنید:\n\n(برای لغو کلمه «انصراف» را بفرستید)");
+        bot.sendMessage(chatId, `💳 حساب کاربری شما\n\n💰 موجودی کیف پول: ${balance.toLocaleString()} تومان\n\nلطفاً مبلغ مورد نظر برای شارژ حساب (به تومان) را وارد کنید:\n\n(برای لغو کلمه «انصراف» را بفرستید)`);
     } 
     else if (data === "my_subs") {
         bot.sendMessage(chatId, "📁 شما در حال حاضر اشتراک فعالی ندارید.");
     }
     else if (data === "guide") {
-        bot.sendMessage(chatId, "📖 راهنمای اتصال به کانفیگ‌ها (به زودی)");
+        bot.sendMessage(chatId, "📖 راهنمای اتصال");
     }
     else if (data === "agency") {
         bot.sendMessage(chatId, "🤝 شرایط اخذ نمایندگی");
@@ -64,11 +139,11 @@ bot.on("callback_query", async (query) => {
     else if (data === "invite") {
         bot.sendMessage(chatId, "🌐 لینک معرفی به دوستان");
     }
-    else if (data === "support" || data === "back_to_menu") {
-        // بازگشت به منوی اصلی یا پشتیبانی
-        if (data === "support") {
-            bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @ARENAM_10");
-        }
+    else if (data === "support") {
+        bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @ARENAM_10");
+    }
+    else if (data === "back_to_main") {
+        bot.sendMessage(chatId, `✨ به پنل اختصاصی ARENA CONFIG خوش آمدید.`);
     }
 
     if (data.startsWith("pay_card_")) {
@@ -81,14 +156,14 @@ bot.on("callback_query", async (query) => {
             `مبلغ: **${parseInt(amount).toLocaleString()} تومان**\n` +
             `شماره کارت: \`${CARD_NUMBER}\`\n` +
             `به نام: ${CARD_HOLDER}\n\n` +
-            `لطفاً پس از واریز وجه، **عکس فیش واریزی** یا **کد پیگیری** را همینجا بفرستید تا حساب شما شارژ شود.`,
+            `لطفاً پس از واریز وجه، **عکس فیش واریزی** یا **کد پیگیری** را همینجا بفرستید.`,
             { parse_mode: "Markdown" }
         );
     }
 });
 
-// مدیریت پیام‌های متنی و عکس‌های ارسالی کاربران
-bot.on("message", (msg) => {
+// مدیریت پیام‌ها و ارسال فیش به ادمین بر اساس یوزرنیم
+bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const text = msg.text;
@@ -103,13 +178,12 @@ bot.on("message", (msg) => {
         return;
     }
 
-    // مرحله دریافت مبلغ
     if (currentState === "waiting_for_amount") {
         if (!text || text.startsWith("/")) return;
         const amount = parseInt(text);
         
         if (isNaN(amount) || amount <= 0) {
-            bot.sendMessage(chatId, "⚠️ لطفاً یک مبلغ معتبر به صورت عدد (تومان) وارد کنید:\n(یا کلمه «انصراف» را بفرستید)");
+            bot.sendMessage(chatId, "⚠️ لطفاً یک مبلغ معتبر به صورت عدد (تومان) وارد کنید:");
             return;
         }
 
@@ -125,17 +199,18 @@ bot.on("message", (msg) => {
             }
         });
     }
-
-    // مرحله دریافت فیش یا رسید از کاربر
     else if (currentState === "waiting_for_receipt") {
         const amount = userState[userId].amount;
 
         if (photo || text) {
             const userInfo = `👤 کاربر: [${msg.from.first_name}](tg://user?id=${userId}) (ID: \`${userId}\`)\n💰 مبلغ: ${parseInt(amount).toLocaleString()} تومان`;
 
+            // ارسال به چتِ مالک با استفاده از یوزرنیم (تلگرام به صورت اتوماتیک @username رو به چت آیدی تبدیل می‌کنه)
+            const adminTarget = `@${ADMIN_USERNAME}`;
+
             if (photo) {
                 const fileId = photo[photo.length - 1].file_id;
-                bot.sendPhoto(ADMIN_CHAT_ID, fileId, {
+                bot.sendPhoto(adminTarget, fileId, {
                     caption: `📥 **فیش واریزی جدید**\n\n${userInfo}`,
                     parse_mode: "Markdown",
                     reply_markup: {
@@ -146,9 +221,11 @@ bot.on("message", (msg) => {
                             ]
                         ]
                     }
+                }).catch((err) => {
+                    console.log("خطا در ارسال فیش به ادمین:", err.message);
                 });
             } else if (text) {
-                bot.sendMessage(ADMIN_CHAT_ID, `📥 **کد پیگیری / رسید متنی جدید**\n\n${userInfo}\n📝 متن: ${text}`, {
+                bot.sendMessage(adminTarget, `📥 **کد پیگیری / رسید متنی جدید**\n\n${userInfo}\n📝 متن: ${text}`, {
                     parse_mode: "Markdown",
                     reply_markup: {
                         inline_keyboard: [
@@ -158,10 +235,12 @@ bot.on("message", (msg) => {
                             ]
                         ]
                     }
+                }).catch((err) => {
+                    console.log("خطا در ارسال رسید به ادمین:", err.message);
                 });
             }
 
-            bot.sendMessage(chatId, "✅ فیش شما با موفقیت برای پشتیبانی ارسال شد. پس از بررسی و تایید، حساب شما شارژ خواهد شد.");
+            bot.sendMessage(chatId, "✅ فیش شما برای پشتیبانی ارسال شد. پس از تایید، حساب شما شارژ خواهد شد.");
             userState[userId].step = null;
         }
     }
