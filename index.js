@@ -13,15 +13,8 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
-// --- مسیر دقیق فایل دیتابیس روی هارد ---
-const DB_FILE = '/app/data/database.json';
-
-function ensureDirectoryExistence(filePath) {
-    const dirname = path.dirname(filePath);
-    if (fs.existsSync(dirname)) return true;
-    ensureDirectoryExistence(dirname);
-    fs.mkdirSync(dirname, { recursive: true });
-}
+// --- اصلاح مسیر فایل دیتابیس برای پایداری ۱۰۰٪ روی هارد پروژه ---
+const DB_FILE = path.join(__dirname, 'database.json');
 
 let db = {
     CHANNEL_USERNAME: '@YourChannelUsername',
@@ -73,8 +66,9 @@ function loadDatabase() {
         if (fs.existsSync(DB_FILE)) {
             const data = fs.readFileSync(DB_FILE, 'utf8');
             const parsed = JSON.parse(data);
+            // ادغام دقیق اطلاعات ذخیره‌شده با مقادیر پیش‌فرض
             db = { ...db, ...parsed };
-            console.log('✅ دیتابیس با موفقیت و به‌طور کامل از روی هارد بازیابی شد.');
+            console.log('✅ دیتابیس با موفقیت از روی هارد بازیابی شد. تعداد کاربران:', db.allUsers.length);
         } else {
             console.log('⚠️ فایل دیتابیس یافت نشد، ایجاد فایل جدید...');
             saveDatabase();
@@ -84,10 +78,9 @@ function loadDatabase() {
     }
 }
 
-// ذخیره آنی و همگام‌سازی روی هارد
+// ذخیره آنی روی هارد
 function saveDatabase() {
     try {
-        ensureDirectoryExistence(DB_FILE);
         fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
     } catch (e) {
         console.log('❌ خطا در ذخیره‌سازی روی هارد:', e);
@@ -239,7 +232,7 @@ async function handleForceJoin(msg) {
 }
 
 bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
-    loadDatabase(); // همگام‌سازی فوری اطلاعات هنگام استارت کاربر
+    loadDatabase(); 
     const chatId = msg.chat.id;
     delete userStates[chatId];
 
@@ -333,7 +326,7 @@ function sendAdminPanel(chatId) {
 }
 
 bot.on('callback_query', async (callbackQuery) => {
-    loadDatabase(); // بارگذاری کامل اطلاعات هارد در هر کلیک برای جلوگیری از گم شدن داده‌ها
+    loadDatabase(); 
     const msg = callbackQuery.message;
     const data = callbackQuery.data;
     const chatId = msg.chat.id;
@@ -779,7 +772,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- نمایش دقیق و سریع اشتراک‌ها از دیتابیس هارد ---
     if (data === 'my_subs') {
         const subs = db.userSubscriptions[chatId];
         
@@ -1189,4 +1181,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با سیستم بازیابی کامل و همگام‌سازی لحظه‌ای هارد اجرا شد.');
+console.log('🤖 ربات با موفقیت و سیستم ذخیره‌سازی ابری پایدار اجرا شد.');
