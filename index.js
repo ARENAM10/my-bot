@@ -1,8 +1,8 @@
 import TelegramBot from "node-telegram-bot-api";
 
 const TOKEN = "8850301156:AAGXFnSqSwyGbvPtucnkZdXhkLWIQi2GpWo";
-const ADMIN_USERNAME = "ARENAM_10"; // یوزرنیم مالک بدون @
-const ADMIN_CHAT_ID = "8923324852";  // آیدی عددی مالک
+const ADMIN_USERNAME = "ARENAM_10";
+const ADMIN_CHAT_ID = "8923324852";
 const CARD_NUMBER = "6037-9971-xxxx-xxxx"; 
 const CARD_HOLDER = "نام صاحب کارت";       
 
@@ -11,7 +11,15 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const userState = {};
 const userBalances = {};
 
-// دستور /start - پاک کردن کامل دکمه‌های پایین و نمایش منوی شیشه‌ای اصلی
+// تابع کمکی برای تشخیص صددرصدی مالک
+function isAdmin(user) {
+    if (!user) return false;
+    const username = user.username ? user.username.toLowerCase() : "";
+    const userId = user.id ? user.id.toString() : "";
+    return username === ADMIN_USERNAME.toLowerCase() || userId === ADMIN_CHAT_ID;
+}
+
+// دستور /start (پاکسازی کامل دکمه‌های پایینی و نمایش منوی شیشه‌ای)
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -19,7 +27,6 @@ bot.onText(/\/start/, (msg) => {
 
     bot.sendMessage(chatId, `✨ به پنل اختصاصی ARENA CONFIG خوش آمدید.\n\nلطفاً از گزینه‌های زیر انتخاب کنید:`, {
         reply_markup: {
-            // این بخش دکمه‌های شیشه‌ای بالا هست
             inline_keyboard: [
                 [{ text: "🛒 خرید اشتراک", callback_data: "buy_sub" }],
                 [{ text: "🚀 تست سرعت", callback_data: "speed_test" }, { text: "🎁 هدیه روزانه", callback_data: "daily_gift" }],
@@ -27,20 +34,17 @@ bot.onText(/\/start/, (msg) => {
                 [{ text: "📖 راهنمای اتصال", callback_data: "guide" }, { text: "🤝 اخذ نمایندگی", callback_data: "agency" }],
                 [{ text: "🌐 معرفی به دوستان", callback_data: "invite" }, { text: "📞 ارتباط با پشتیبانی", callback_data: "support" }]
             ],
-            // این دستور به طور آمرانه دکمه‌های پایین (مستطیلی) را از صفحه پاک می‌کند
+            // این دستور به طور قطعی دکمه‌های مستطیلی پایین را از صفحه پاک می‌کند
             remove_keyboard: true 
         }
     });
 });
 
-// دستور اختصاصی پنل مدیریت برای مالک
+// دستور اختصاصی پنل مدیریت
 bot.onText(/\/admin/, (msg) => {
     const chatId = msg.chat.id;
-    const username = msg.from.username;
-    const userId = msg.from.id.toString();
 
-    // بررسی مالک بودن بر اساس یوزرنیم یا آیدی عددی
-    if (username !== ADMIN_USERNAME && userId !== ADMIN_CHAT_ID) {
+    if (!isAdmin(msg.from)) {
         bot.sendMessage(chatId, "❌ شما دسترسی به پنل مدیریت ندارید.");
         return;
     }
@@ -60,10 +64,9 @@ bot.onText(/\/admin/, (msg) => {
     });
 });
 
-// مدیریت کلیک روی تمام دکمه‌های شیشه‌ای
+// مدیریت کلیک دکمه‌ها
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
-    const username = query.from.username;
     const userId = query.from.id.toString();
     const data = query.data;
 
@@ -71,34 +74,32 @@ bot.on("callback_query", async (query) => {
 
     if (!userState[userId]) userState[userId] = { step: null };
 
-    const isAdmin = (username === ADMIN_USERNAME || userId === ADMIN_CHAT_ID);
-
-    // بخش پنل ادمین
+    // بخش ادمین
     if (data.startsWith("adm_")) {
-        if (!isAdmin) {
+        if (!isAdmin(query.from)) {
             bot.sendMessage(chatId, "❌ دسترسی غیرمجاز.");
             return;
         }
 
         const adminResponses = {
-            "adm_manage_sub": "🛒 بخش مدیریت اشتراک‌ها و سرورها فعال است.",
-            "adm_history": "📦 سوابق کل اشتراک‌های فروخته شده.",
-            "adm_charge": "💰 بخش شارژ دستی کیف پول کاربران.",
-            "adm_receipts": "📁 لیست فیش‌ها و رسیدهای در انتظار بررسی.",
-            "adm_users": "👥 لیست و آمار کاربران ربات.",
-            "adm_stats": "📊 آمار کلی درآمد و فروش.",
-            "adm_payment": "💳 تنظیمات شماره کارت و درگاه پرداخت.",
-            "adm_messages": "💬 لیست پیام‌های پشتیبانی دریافتی.",
-            "adm_broadcast": "📢 ارسال پیام همگانی به تمام کاربران ربات."
+            "adm_manage_sub": "🛒 بخش مدیریت اشتراک‌ها و سرورها",
+            "adm_history": "📦 سوابق کل اشتراک‌های فروخته شده",
+            "adm_charge": "💰 بخش شارژ دستی کیف پول کاربران",
+            "adm_receipts": "📁 لیست فیش‌ها و رسیدهای در انتظار بررسی",
+            "adm_users": "👥 لیست و آمار کاربران ربات",
+            "adm_stats": "📊 آمار کلی درآمد و فروش",
+            "adm_payment": "💳 تنظیمات شماره کارت و درگاه پرداخت",
+            "adm_messages": "💬 لیست پیام‌های پشتیبانی دریافتی",
+            "adm_broadcast": "📢 ارسال پیام همگانی به تمام کاربران"
         };
 
         bot.sendMessage(chatId, adminResponses[data] || "بخش مدیریت");
         return;
     }
 
-    // تایید پرداخت توسط ادمین
+    // تایید فیش توسط ادمین
     if (data.startsWith("approve_")) {
-        if (!isAdmin) return;
+        if (!isAdmin(query.from)) return;
         const [, targetUserId, amountStr] = data.split("_");
         const amount = parseInt(amountStr);
 
@@ -112,7 +113,7 @@ bot.on("callback_query", async (query) => {
 
     // رد فیش توسط ادمین
     if (data.startsWith("reject_")) {
-        if (!isAdmin) return;
+        if (!isAdmin(query.from)) return;
         const [, targetUserId] = data.split("_");
 
         bot.sendMessage(targetUserId, `❌ فیش واریزی شما توسط پشتیبانی رد شد. لطفاً با پشتیبانی در ارتباط باشید.`);
@@ -206,7 +207,6 @@ bot.on("message", (msg) => {
                 parse_mode: "Markdown"
             };
 
-            // ارسال فیش به آیدی عددی مالک
             if (photo) {
                 const fileId = photo[photo.length - 1].file_id;
                 bot.sendPhoto(ADMIN_CHAT_ID, fileId, {
