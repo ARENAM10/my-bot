@@ -10,8 +10,8 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
-const CHANNEL_USERNAME = '@YourChannelUsername'; // <--- یوزرنیم کانال خودتان
-let isForceJoinEnabled = false; // <--- وضعیت اولیه جوین اجباری (پیش‌فرض خاموش)
+const CHANNEL_USERNAME = '@YourChannelUsername'; 
+let isForceJoinEnabled = false; 
 
 const userStates = {};       
 const userSubscriptions = {}; 
@@ -24,7 +24,7 @@ let paymentCardOwner = 'مالک ربات';
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
-    res.send('Bot is running with toggleable Force Join!');
+    res.send('Bot is running with Config Delivery System!');
 });
 
 app.listen(PORT, () => {
@@ -44,7 +44,6 @@ function trackUser(msg) {
     }
 }
 
-// تابع بررسی عضویت کانال
 async function checkMembership(userId) {
     if (!CHANNEL_USERNAME || CHANNEL_USERNAME === '@YourChannelUsername') return true;
     try {
@@ -57,7 +56,6 @@ async function checkMembership(userId) {
     }
 }
 
-// تابع ارسال منوی اصلی ربات
 async function sendMainMenu(chatId) {
     const inlineKeyboard = {
         reply_markup: {
@@ -83,14 +81,13 @@ async function sendMainMenu(chatId) {
     bot.sendMessage(chatId, 'سلام! به ربات خوش آمدید. لطفاً گزینه مورد نظر خود را انتخاب کنید: 👇', inlineKeyboard);
 }
 
-// تابع بررسی جوین اجباری (فقط وقتی روشن است فعال می‌شود)
 async function handleForceJoin(msg) {
     trackUser(msg);
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
-    if (isAdmin(msg)) return true; // ادمین رد می‌شود
-    if (!isForceJoinEnabled) return true; // اگر خاموش بود، همه رد می‌شوند
+    if (isAdmin(msg)) return true; 
+    if (!isForceJoinEnabled) return true; 
 
     const isMember = await checkMembership(userId);
     if (!isMember) {
@@ -202,14 +199,11 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // دکمه تغییر وضعیت جوین اجباری توسط ادمین
     if (data === 'toggle_force_join') {
         if (!isAdmin(callbackQuery)) return;
-        isForceJoinEnabled = !isForceJoinEnabled; // تغییر وضعیت
+        isForceJoinEnabled = !isForceJoinEnabled; 
         const statusMsg = isForceJoinEnabled ? '🟢 جوین اجباری با موفقیت **روشن** شد.' : '🔴 جوین اجباری با موفقیت **خاموش** شد.';
         bot.sendMessage(chatId, statusMsg, { parse_mode: 'Markdown' });
-        
-        // به‌روزرسانی پنل مدیریت
         sendAdminPanel(chatId);
         return;
     }
@@ -230,6 +224,28 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, '❌ شما دسترسی ندارید.');
             return;
         }
+    }
+
+    // تایید رسید و شروع فرآیند گرفتن اطلاعات کانفیگ از ادمین
+    if (data.startsWith('approve_') || data.startsWith('reject_')) {
+        const parts = data.split('_');
+        const action = parts[0];
+        const targetUserId = parts[1];
+        const planType = parts[2];
+
+        if (action === 'approve') {
+            // ذخیره موقت اطلاعات در استیت ادمین برای اینکه مشخص باشه داره کانفیگ رو برای چه کسی می‌فرسته
+            userStates[chatId] = {
+                step: 'get_config_link',
+                targetUserId: targetUserId,
+                planType: planType
+            };
+            bot.sendMessage(chatId, `✅ رسید تأیید شد.\n\nاکنون **لینک کانفیگ یا ساب‌لینک** را برای ارسال به کاربر وارد کنید:`, { parse_mode: 'Markdown' });
+        } else {
+            bot.sendMessage(targetUserId, '❌ متأسفانه رسید پرداخت شما توسط مدیریت رد شد.');
+            bot.sendMessage(chatId, '❌ رسید کاربر رد شد.');
+        }
+        return;
     }
 
     if (data === 'admin_pay_settings') {
@@ -285,37 +301,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data.startsWith('admin_')) {
-        bot.sendMessage(chatId, '🛠 بخش مدیریتی فعال است.');
-        return;
-    }
-
-    if (data.startsWith('approve_') || data.startsWith('reject_')) {
-        const parts = data.split('_');
-        const action = parts[0];
-        const targetUserId = parts[1];
-        const planType = parts[2];
-
-        if (action === 'approve') {
-            const daysToAdd = planType === 'plan_3m' ? 90 : 30;
-            const expiryDate = new Date();
-            expiryDate.setDate(expiryDate.getDate() + daysToAdd);
-
-            userSubscriptions[targetUserId] = {
-                planName: planType === 'plan_3m' ? 'اشتراک ۳ ماهه' : 'اشتراک ۱ ماهه',
-                expiryDate: expiryDate.toLocaleDateString('fa-IR'),
-                name: 'کاربر ربات'
-            };
-
-            bot.sendMessage(targetUserId, '✅ پرداخت و رسید شما توسط مدیریت تایید شد! اشتراک شما فعال گردید. 🎉');
-            bot.sendMessage(chatId, '✅ رسید کاربر تایید و اشتراک فعال شد.');
-        } else {
-            bot.sendMessage(targetUserId, '❌ متأسفانه رسید پرداخت شما توسط مدیریت رد شد.');
-            bot.sendMessage(chatId, '❌ رسید کاربر رد شد.');
-        }
-        return;
-    }
-
     if (data === 'buy_sub') {
         const plansKeyboard = {
             reply_markup: {
@@ -355,7 +340,11 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'my_subs') {
         const sub = userSubscriptions[chatId];
         if (sub) {
-            bot.sendMessage(chatId, '📱 اشتراک فعال: ' + sub.planName + '\n⏳ انقضا: ' + sub.expiryDate);
+            let subText = `📱 **اشتراک فعال شما:**\n\n📦 پلن: ${sub.planName}\n⏳ انقضا: ${sub.expiryDate}\n🌐 حجم: ${sub.volume || 'نامحدود/پیش‌فرض'}`;
+            if (sub.configLink) {
+                subText += `\n\n🔗 لینک کانفیگ شما:\n\`${sub.configLink}\``;
+            }
+            bot.sendMessage(chatId, subText, { parse_mode: 'Markdown' });
         } else {
             bot.sendMessage(chatId, '📱 اشتراک فعالی ندارید.');
         }
@@ -399,6 +388,57 @@ bot.on('message', async (msg) => {
     const text = msg.text;
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
+
+    // دریافت مراحل ثبت کانفیگ توسط ادمین پس از تایید رسید
+    if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
+        if (userStates[chatId].step === 'get_config_link') {
+            userStates[chatId].configLink = text.trim();
+            userStates[chatId].step = 'get_config_volume';
+            bot.sendMessage(chatId, '✅ لینک ثبت شد.\n\nحالا **حجم سرویس** را وارد کنید (مثلاً: `30 گیگ` یا `نامحدود`):', { parse_mode: 'Markdown' });
+            return;
+        } else if (userStates[chatId].step === 'get_config_volume') {
+            userStates[chatId].volume = text.trim();
+            userStates[chatId].step = 'get_config_duration';
+            bot.sendMessage(chatId, '✅ حجم ثبت شد.\n\nحالا **مدت زمان اعتبار** را وارد کنید (مثلاً: `30 روزه` یا `90 روزه`):', { parse_mode: 'Markdown' });
+            return;
+        } else if (userStates[chatId].step === 'get_config_duration') {
+            const durationText = text.trim();
+            const targetUserId = userStates[chatId].targetUserId;
+            const planType = userStates[chatId].planType;
+            const configLink = userStates[chatId].configLink;
+            const volume = userStates[chatId].volume;
+
+            const daysToAdd = planType === 'plan_3m' ? 90 : 30;
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + daysToAdd);
+            const formattedExpiry = expiryDate.toLocaleDateString('fa-IR');
+            const planName = planType === 'plan_3m' ? 'اشتراک ۳ ماهه' : 'اشتراک ۱ ماهه';
+
+            // ذخیره اطلاعات اشتراک کاربر
+            userSubscriptions[targetUserId] = {
+                planName: planName,
+                expiryDate: formattedExpiry,
+                volume: volume,
+                configLink: configLink,
+                name: 'کاربر ربات'
+            };
+
+            delete userStates[chatId];
+
+            // متن زیبایی که برای کاربر ارسال می‌شود
+            const userConfigMessage = `🎉 **پرداخت و اشتراک شما با موفقیت فعال شد!**\n\n` +
+                `📦 پلن خریداری شده: ${planName}\n` +
+                `⏳ مدت اعتبار: ${durationText} (تا تاریخ ${formattedExpiry})\n` +
+                `🌐 حجم اختصاص یافته: ${volume}\n\n` +
+                `🔗 **لینک اتصال اختصاصی شما:**\n` +
+                `\`${configLink}\`\n\n` +
+                `💡 برای اتصال، لینک بالا را کپی کرده و در برنامه مربوطه (مثل v2rayNG یا Napstermark) وارد کنید.`;
+
+            bot.sendMessage(targetUserId, userConfigMessage, { parse_mode: 'Markdown' });
+            bot.sendMessage(ADMIN_CHAT_ID, '✅ اشتراک و کانفیگ با موفقیت برای کاربر ارسال شد.');
+            return;
+        }
+    }
 
     if (chatId === ADMIN_CHAT_ID && userStates[chatId] && userStates[chatId].step === 'get_new_card_number') {
         if (text && text.toLowerCase() === 'انصراف') {
@@ -483,7 +523,7 @@ bot.on('message', async (msg) => {
     if (userStates[chatId] && userStates[chatId].awaiting_support_message) {
         const userId = msg.from.id;
         const username = msg.from.username ? '@' + msg.from.username : 'ندارد';
-        const name = msg.from.first_name || 'کاربر';
+        const name = msg.from.first_name || 'کاربر هرگز';
 
         delete userStates[chatId];
         bot.sendMessage(chatId, '✅ پیام شما به پشتیبانی ارسال شد.');
@@ -498,11 +538,11 @@ bot.on('photo', async (msg) => {
     trackUser(msg);
     const chatId = msg.chat.id;
     
-    if (chatId === ADMIN_CHAT_ID && userStates[chatId] && userStates[chatId].step === 'get_broadcast_content') {
+    if (chatId === ADMIN_CHAT_ID && userStates[chatId] && (userStates[chatId].step === 'get_broadcast_content' || userStates[chatId].step === 'get_config_link')) {
         return; 
     }
 
-    constuserId = msg.from.id;
+    const userId = msg.from.id;
     const username = msg.from.username ? '@' + msg.from.username : 'ندارد';
     const name = msg.from.first_name || 'کاربر';
 
@@ -517,7 +557,7 @@ bot.on('photo', async (msg) => {
             name: name
         };
 
-        bot.sendMessage(chatId, '✅ رسید شما دریافت شد.');
+        bot.sendMessage(chatId, '✅ رسید شما دریافت شد. به زودی پس از بررسی، کانفیگ شما ارسال خواهد شد.');
         delete userStates[chatId];
 
         const caption = '🔔 **رسید جدید پرداخت!**\n\n👤 نام: ' + name + '\n🆔 یوزرنیم: ' + username + '\n🔢 آیدی عددی: `' + userId + '`\n📦 پلن: ' + planTitle;
@@ -526,7 +566,7 @@ bot.on('photo', async (msg) => {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '✅ تایید و فعالسازی', callback_data: 'approve_' + userId + '_' + plan },
+                        { text: '✅ تایید و ارسال کانفیگ', callback_data: 'approve_' + userId + '_' + plan },
                         { text: '❌ رد رسید', callback_data: 'reject_' + userId + '_' + plan }
                     ]
                 ]
@@ -545,4 +585,4 @@ process.on('uncaughtException', (err) => {
     console.error('خطا:', err);
 });
 
-console.log('🤖 ربات با قابلیت مدیریت جوین اجباری اجرا شد.');
+console.log('🤖 ربات با سیستم تحویل خودکار کانفیگ اجرا شد.');
