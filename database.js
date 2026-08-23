@@ -24,8 +24,6 @@ db.serialize(() => {
         price INTEGER,
         volume TEXT,
         duration TEXT,
-        usersCount TEXT,
-        type TEXT,
         status INTEGER DEFAULT 1
     )`);
 
