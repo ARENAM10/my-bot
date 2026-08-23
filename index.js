@@ -1,8 +1,8 @@
 import TelegramBot from "node-telegram-bot-api";
 
 const TOKEN = "8850301156:AAGXFnSqSwyGbvPtucnkZdXhkLWIQi2GpWo";
-const ADMIN_USERNAME = "ARENAM_10";
-const ADMIN_CHAT_ID = "8923324852";
+const ADMIN_USERNAME = "amir_85m10"; // یوزرنیم جدید مالک
+const ADMIN_CHAT_ID = "8923324852";  // آیدی عددی پشتیبان
 const CARD_NUMBER = "6037-9971-xxxx-xxxx"; 
 const CARD_HOLDER = "نام صاحب کارت";       
 
@@ -11,7 +11,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const userState = {};
 const userBalances = {};
 
-// تابع بررسی ادمین
+// تابع بررسی ادمین (پشتیبانی از یوزرنیم جدید و آیدی عددی)
 function isAdmin(user) {
     if (!user) return false;
     const username = user.username ? user.username.toLowerCase() : "";
@@ -31,7 +31,7 @@ const persistentKeyboard = {
     }
 };
 
-// دستور /start (بدون منوی شیشه‌ای، فقط با دکمه‌های پایین)
+// دستور /start
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -40,7 +40,7 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(chatId, `✨ به پنل اختصاصی ARENA CONFIG خوش آمدید.\n\nلطفاً از دکمه‌های زیر انتخاب کنید:`, persistentKeyboard);
 });
 
-// دستور اختصاصی پنل مدیریت
+// دستور پنل مدیریت (مختص مالک)
 bot.onText(/\/admin/, (msg) => {
     const chatId = msg.chat.id;
 
@@ -63,7 +63,7 @@ bot.onText(/\/admin/, (msg) => {
     });
 });
 
-// مدیریت کلیک دکمه‌های پنل مدیریت
+// مدیریت کلیک دکمه‌های پنل مدیریت و پرداخت
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const userId = query.from.id.toString();
@@ -159,7 +159,7 @@ bot.on("message", (msg) => {
         return;
     }
     if (text === "📞 پشتیبانی") {
-        bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @ARENAM_10");
+        bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @amir_85m10");
         return;
     }
     if (text === "👥 دعوت دوستان") {
@@ -214,6 +214,7 @@ bot.on("message", (msg) => {
                 parse_mode: "Markdown"
             };
 
+            // ارسال فیش‌ها به ادمین (با استفاده از چت آیدی ادمین)
             if (photo) {
                 const fileId = photo[photo.length - 1].file_id;
                 bot.sendPhoto(ADMIN_CHAT_ID, fileId, {
