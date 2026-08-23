@@ -247,10 +247,8 @@ async function fetchAndParseConfig(url) {
                 validateStatus: () => true 
             });
 
-            // خواندن هدر اطلاعات اشتراک استاندارد پنل‌ها (مثل subscription-userinfo)
             const userInfoHeader = response.headers['subscription-userinfo'] || response.headers['X-Subscription-Userinfo'];
             if (userInfoHeader) {
-                // نمونه هدر: upload=123; download=456; total=10737418240; expire=1710000000
                 const parts = userInfoHeader.split(';');
                 parts.forEach(part => {
                     const [key, val] = part.trim().split('=');
@@ -274,9 +272,6 @@ async function fetchAndParseConfig(url) {
                         }
                     }
                 });
-
-                // محاسبه حجم مانده اگر کل و مصرف (آپلود + دانلود) موجود باشد
-                // توجه: اگر پنل خودش مستقیماً نفرستد، محاسبه تقریبی انجام می‌شود
             }
 
             const data = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
@@ -486,25 +481,35 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'my_account_info') {
-        const userInfo = db.usersDetailMap[userId] || db.usersDetailMap[chatId] || { 
-            name: callbackQuery.from.first_name || 'کاربر', 
-            username: callbackQuery.from.username ? `@${callbackQuery.from.username}` : 'ندارد', 
-            joinedAt: new Date().toLocaleString('fa-IR') 
-        };
-        const userWallet = db.userWallets[userId] || db.userWallets[chatId] || 0;
-        const userSubsList = db.userSubscriptions[userId] || db.userSubscriptions[chatId] || [];
-        const userReferralsCount = db.referals[userId] || db.referals[chatId] || 0;
+        // بررسی و پیدا کردن امن اطلاعات کاربر از هر دو روش (userId یا chatId)
+        const targetKey = userId || chatId;
+        
+        if (!db.usersDetailMap[targetKey]) {
+            db.usersDetailMap[targetKey] = { 
+                name: callbackQuery.from.first_name || 'کاربر', 
+                username: callbackQuery.from.username ? `@${callbackQuery.from.username}` : 'ندارد', 
+                joinedAt: new Date().toLocaleString('fa-IR') 
+            };
+            saveDatabase();
+        }
+
+        const userInfo = db.usersDetailMap[targetKey];
+        const userWallet = db.userWallets[targetKey] || db.userWallets[chatId] || 0;
+        const userSubsList = db.userSubscriptions[targetKey] || db.userSubscriptions[chatId] || [];
+        const userReferralsCount = db.referals[targetKey] || db.referals[chatId] || 0;
 
         let accountText = `👤 **اطلاعات حساب کاربری شما:**\n\n` +
-                          `📛 نام: ${userInfo.name}\n` +
-                          `🔗 یوزرنیم: ${userInfo.username}\n` +
-                          `🆔 شناسه عددی: \`${userId}\`\n` +
+                          `📛 نام: ${userInfo.name || 'بدون نام'}\n` +
+                          `🔗 یوزرنیم: ${userInfo.username || 'ندارد'}\n` +
+                          `🆔 شناسه عددی: \`${targetKey}\`\n` +
                           `💰 موجودی کیف پول: \`${userWallet.toLocaleString()} تومان\`\n` +
                           `📱 تعداد اشتراک‌های فعال: \`${userSubsList.length} عدد\`\n` +
                           `👥 تعداد زیرمجموعه‌ها: \`${userReferralsCount} نفر\`\n` +
                           `📅 تاریخ پیوستن به ربات: ${userInfo.joinedAt || 'ثبت‌نشده'}`;
 
-        bot.sendMessage(chatId, accountText, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, accountText, { parse_mode: 'Markdown' }).catch(err => {
+            console.log('خطا در ارسال اطلاعات حساب:', err.message);
+        });
         return;
     }
 
@@ -833,7 +838,6 @@ bot.on('callback_query', async (callbackQuery) => {
         delete userStates[chatId];
         saveDatabase();
 
-        // استخراج کامل جزئیات ترافیک و حجم از لینک
         const parsedData = await fetchAndParseConfig(assignedLink);
         const currentDateStr = new Date().toLocaleString('fa-IR');
         const userInfo = db.usersDetailMap[userId] || { name: 'کاربر' };
@@ -1377,3 +1381,4 @@ process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
 console.log('🤖 ربات با قابلیت خواندن کامل جزئیات ترافیک، حجم و وضعیت کانفیگ فعال شد.');
+
