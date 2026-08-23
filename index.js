@@ -13,8 +13,9 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
-// --- اصلاح مسیر فایل دیتابیس برای پایداری ۱۰۰٪ روی هارد پروژه ---
-const DB_FILE = path.join(__dirname, 'database.json');
+// --- استفاده از مسیر پایدار Volume در Railway ---
+const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
+const DB_FILE = path.join(DATA_DIR, 'database.json');
 
 let db = {
     CHANNEL_USERNAME: '@YourChannelUsername',
@@ -60,41 +61,40 @@ let db = {
     paymentCardNumber: '6037-9971-xxxx-xxxx'
 };
 
-// بارگذاری کامل و ایمن اطلاعات از روی هارد
 function loadDatabase() {
     try {
         if (fs.existsSync(DB_FILE)) {
             const data = fs.readFileSync(DB_FILE, 'utf8');
             const parsed = JSON.parse(data);
-            // ادغام دقیق اطلاعات ذخیره‌شده با مقادیر پیش‌فرض
             db = { ...db, ...parsed };
-            console.log('✅ دیتابیس با موفقیت از روی هارد بازیابی شد. تعداد کاربران:', db.allUsers.length);
+            console.log('✅ دیتابیس با موفقیت از Volume دائمی بازیابی شد. تعداد کاربران:', db.allUsers.length);
         } else {
-            console.log('⚠️ فایل دیتابیس یافت نشد، ایجاد فایل جدید...');
+            console.log('⚠️ فایل دیتابیس در Volume یافت نشد، ایجاد فایل جدید...');
             saveDatabase();
         }
     } catch (e) {
-        console.log('❌ خطا در خواندن دیتابیس از روی هارد:', e);
+        console.log('❌ خطا در خواندن دیتابیس:', e);
     }
 }
 
-// ذخیره آنی روی هارد
 function saveDatabase() {
     try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
         fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
     } catch (e) {
-        console.log('❌ خطا در ذخیره‌سازی روی هارد:', e);
+        console.log('❌ خطا در ذخیره‌سازی روی Volume:', e);
     }
 }
 
-// بارگذاری اولیه هنگام استارت ربات
 loadDatabase();
 
 const userStates = {};       
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
-    res.send('Bot is running and synced with persistent storage!');
+    res.send('Bot is running with Railway Persistent Volume!');
 });
 
 app.listen(PORT, () => {
@@ -114,18 +114,37 @@ function parsePrice(priceStr) {
     return parseInt(digits, 10) || 0;
 }
 
-function trackUser(msg) {
+function trackUser(msg, isNewStart = false) {
     if (msg && msg.from && msg.from.id) {
         const userId = msg.from.id;
         const user = msg.from;
         const name = user.first_name || 'بدون نام';
         const username = user.username ? `@${user.username}` : 'ندارد';
 
+        let isBrandNew = false;
         if (!db.allUsers.includes(userId)) {
             db.allUsers.push(userId);
+            isBrandNew = true;
         }
-        db.usersDetailMap[userId] = { name, username, joinedAt: db.usersDetailMap[userId]?.joinedAt || new Date().toLocaleString('fa-IR') };
+
+        if (!db.usersDetailMap[userId]) {
+            db.usersDetailMap[userId] = { 
+                name, 
+                username, 
+                joinedAt: new Date().toLocaleString('fa-IR') 
+            };
+            isBrandNew = true;
+        } else {
+            // آپدیت نام و یوزرنیم در صورت تغییر
+            db.usersDetailMap[userId].name = name;
+            db.usersDetailMap[userId].username = username;
+        }
         saveDatabase();
+
+        // اطلاع‌رسانی به ادمین برای کاربر جدید
+        if (isBrandNew && isNewStart && chatId !== ADMIN_CHAT_ID) {
+            bot.sendMessage(ADMIN_CHAT_ID, `👤 **کاربر جدید به ربات پیوست!**\n\n📛 نام: ${name}\n🔗 یوزرنیم: ${username}\n🆔 آیدی عددی: \`${userId}\`\n📅 تاریخ عضویت: ${db.usersDetailMap[userId].joinedAt}`, { parse_mode: 'Markdown' }).catch(() => {});
+        }
     }
 }
 
@@ -188,7 +207,10 @@ function getMainKeyboard() {
                     ...(db.isFreeSubEnabled ? [{ text: '🎁 اشتراک رایگان', callback_data: 'free_sub' }] : []),
                     ...(db.isTestServerEnabled ? [{ text: '🧪 سرور تست', callback_data: 'test_server' }] : [])
                 ],
-                [{ text: '💰 کیف پول من', callback_data: 'wallet' }],
+                [
+                    { text: '💰 کیف پول من', callback_data: 'wallet' },
+                    { text: '👤 حساب کاربری من', callback_data: 'my_account_info' }
+                ],
                 [
                     ...(db.isInviteSystemEnabled ? [{ text: '👥 دعوت دوستان (زیرمجموعه‌گیری)', callback_data: 'invite' }] : []),
                     { text: '📱 اشتراک‌های من', callback_data: 'my_subs' }
@@ -208,7 +230,7 @@ async function sendMainMenu(chatId) {
 }
 
 async function handleForceJoin(msg) {
-    trackUser(msg);
+    trackUser(msg, false);
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
@@ -235,6 +257,8 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     loadDatabase(); 
     const chatId = msg.chat.id;
     delete userStates[chatId];
+
+    trackUser(msg, true); // ثبت و اطلاع‌رسانی کاربر جدید در صورت اولین استارت
 
     const canProceed = await handleForceJoin(msg);
     if (!canProceed) return;
@@ -269,7 +293,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
 
 bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
     loadDatabase();
-    trackUser(msg);
+    trackUser(msg, false);
     const chatId = msg.chat.id;
     if (!isAdmin(msg)) {
         bot.sendMessage(chatId, '❌ شما دسترسی به این بخش ندارید.');
@@ -288,11 +312,11 @@ function sendAdminPanel(chatId) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: '⚙️ مدیریت پلن‌ها و لینک‌ها', callback_data: 'admin_manage_plans' },
+                    { text: '⚙️ مدیریت و ویرایش پلن‌ها', callback_data: 'admin_manage_plans' },
                     { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' }
                 ],
                 [
-                    { text: '💰 شارژ دستی کیف پول', callback_data: 'admin_charge_wallet' },
+                    { text: '💰 شارژ دستی کیف پول (با آیدی)', callback_data: 'admin_charge_wallet' },
                     { text: '📋 سوابق رسیدهای مالی', callback_data: 'admin_receipts' }
                 ],
                 [
@@ -339,6 +363,25 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'restart_bot') {
         delete userStates[chatId];
         sendMainMenu(chatId);
+        return;
+    }
+
+    if (data === 'my_account_info') {
+        const userInfo = db.usersDetailMap[chatId] || { name: 'نامشخص', username: 'ندارد', joinedAt: 'نامشخص' };
+        const userWallet = db.userWallets[chatId] || 0;
+        const userSubsList = db.userSubscriptions[chatId] || [];
+        const userReferralsCount = db.referals[chatId] || 0;
+
+        let accountText = `👤 **اطلاعات حساب کاربری شما:**\n\n` +
+                          `📛 نام: ${userInfo.name}\n` +
+                          `🔗 یوزرنیم: ${userInfo.username}\n` +
+                          `🆔 شناسه عددی: \`${chatId}\`\n` +
+                          `💰 موجودی کیف پول: \`${userWallet.toLocaleString()} تومان\`\n` +
+                          `📱 تعداد اشتراک‌های فعال: \`${userSubsList.length} عدد\`\n` +
+                          `👥 تعداد زیرمجموعه‌ها: \`${userReferralsCount} نفر\`\n` +
+                          `📅 تاریخ پیوستن به ربات: ${userInfo.joinedAt}`;
+
+        bot.sendMessage(chatId, accountText, { parse_mode: 'Markdown' });
         return;
     }
 
@@ -426,7 +469,7 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data.startsWith('admin_') || data.startsWith('approve_') || data.startsWith('reject_') || data.startsWith('plan_mgmt_') || data.startsWith('edit_plan_') || data.startsWith('del_plan_')) {
+    if (data.startsWith('admin_') || data.startsWith('approve_') || data.startsWith('reject_') || data.startsWith('plan_mgmt_') || data.startsWith('edit_plan_') || data.startsWith('del_plan_') || data.startsWith('edit_p_')) {
         if (!isAdmin(callbackQuery)) {
             bot.sendMessage(chatId, '❌ شما دسترسی ندارید.');
             return;
@@ -438,12 +481,12 @@ bot.on('callback_query', async (callbackQuery) => {
             reply_markup: {
                 inline_keyboard: [
                     [{ text: '➕ افزودن پلن جدید', callback_data: 'plan_mgmt_add' }],
-                    [{ text: '📋 لیست پلن‌ها و افزودن لینک', callback_data: 'plan_mgmt_list' }],
+                    [{ text: '✏️ ویرایش یا مدیریت پلن‌های موجود', callback_data: 'plan_mgmt_edit_list' }],
                     [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
                 ]
             }
         };
-        bot.sendMessage(chatId, '⚙️ **مدیریت پلن‌ها و چند کانفیگ**', { parse_mode: 'Markdown', ...plansMenuKeyboard });
+        bot.sendMessage(chatId, '⚙️ **مدیریت و ویرایش پلن‌ها و کانفیگ‌ها**', { parse_mode: 'Markdown', ...plansMenuKeyboard });
         return;
     }
 
@@ -453,25 +496,33 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data === 'plan_mgmt_list') {
+    if (data === 'plan_mgmt_edit_list') {
         if (db.customPlans.length === 0) {
             bot.sendMessage(chatId, '📦 هیچ پلنی ثبت نشده است.');
             return;
         }
 
-        let textList = '📋 **لیست پلن‌ها و تعداد کانفیگ‌های موجود:**\n\n';
+        let textList = '📋 **لیست پلن‌ها برای ویرایش یا مدیریت:**\n\n';
         const inlineBtns = [];
 
         db.customPlans.forEach((p) => {
-            textList += `▪️ **${p.name}**\n   🌐 حجم: ${p.volume} | ⏳ زمان: ${p.duration} | 💵 قیمت: ${p.price}\n   📦 تعداد کانفیگ در انبار: **${p.links.length} عدد**\n\n`;
+            textList += `▪️ **${p.name}**\n   🌐 حجم: ${p.volume} | ⏳ زمان: ${p.duration} | 💵 قیمت: ${p.price}\n   📦 تعداد کانفیگ انبار: **${p.links.length} عدد**\n\n`;
             inlineBtns.push([
-                { text: `➕ افزودن لینک به: ${p.name}`, callback_data: `add_link_${p.id}` },
-                { text: `🗑 حذف کل پلن`, callback_data: `del_plan_${p.id}` }
+                { text: `✏️ ویرایش: ${p.name}`, callback_data: `edit_p_${p.id}` },
+                { text: `➕ افزودن لینک`, callback_data: `add_link_${p.id}` },
+                { text: `🗑 حذف`, callback_data: `del_plan_${p.id}` }
             ]);
         });
 
         inlineBtns.push([{ text: '🔙 بازگشت', callback_data: 'admin_manage_plans' }]);
         bot.sendMessage(chatId, textList, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineBtns } });
+        return;
+    }
+
+    if (data.startsWith('edit_p_')) {
+        const planId = parseInt(data.split('_')[2]);
+        userStates[chatId] = { step: 'edit_plan_get_name', targetPlanId: planId };
+        bot.sendMessage(chatId, '✏️ **ویرایش پلن**\n\nلطفاً **نام جدید** پلن را وارد کنید (یا متن قبلی را دوباره بفرستید):', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -516,7 +567,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
     if (data === 'admin_charge_wallet') {
         userStates[chatId] = { step: 'admin_get_charge_user_id' };
-        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً **آیدی عددی** مشتری مورد نظر را ارسال کنید:', { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً **شناسه عددی (Chat ID)** مشتری مورد نظر را ارسال کنید:', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -612,7 +663,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
         let planText = '🛒 **لیست پلن‌های اشتراک پرسرعت:**\n\nلطفاً پلن مد نظر خود را انتخاب کنید 👇';
         const planButtons = availablePlans.map(p => [
-            { text: `🌐 ${p.volume} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
+            { text: `🌐 ${p.name} - ${p.volume} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
         ]);
         planButtons.push([{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]);
 
@@ -836,7 +887,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
 bot.on('message', async (msg) => {
     loadDatabase();
-    trackUser(msg);
+    trackUser(msg, false);
     const chatId = msg.chat.id;
     const text = msg.text;
 
@@ -871,11 +922,11 @@ bot.on('message', async (msg) => {
         if (state.step === 'admin_get_charge_user_id') {
             const targetId = parseInt(text.trim(), 10);
             if (!targetId || isNaN(targetId)) {
-                bot.sendMessage(chatId, '❌ آیدی عددی نامعتبر است. لطفاً عدد صحیح وارد کنید.');
+                bot.sendMessage(chatId, '❌ شناسه عددی نامعتبر است. لطفاً عدد صحیح وارد کنید.');
                 return;
             }
             userStates[chatId] = { step: 'admin_get_charge_amount', targetChargeUserId: targetId };
-            bot.sendMessage(chatId, `✅ کاربر با آیدی \`${targetId}\` شناسایی شد.\n\nلطفاً **مبلغ شارژ** (به تومان، مثلاً \`50000\`) را وارد کنید:`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `✅ کاربر با شناسه \`${targetId}\` شناسایی شد.\n\nلطفاً **مبلغ شارژ** (به تومان، مثلاً \`50000\`) را وارد کنید:`, { parse_mode: 'Markdown' });
             return;
         } else if (state.step === 'admin_get_charge_amount') {
             const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
@@ -888,8 +939,8 @@ bot.on('message', async (msg) => {
             delete userStates[chatId];
             saveDatabase();
 
-            bot.sendMessage(chatId, `🎉 کیف پول کاربر \`${targetId}\` به مبلغ \`${amount.toLocaleString()} تومان\` با موفقیت شارژ شد.`, { parse_mode: 'Markdown' });
-            bot.sendMessage(targetId, `🎉 **کیف پول شما توسط مدیریت شارژ شد!**\nمبلغ \`${amount.toLocaleString()} تومان\` به موجودی شما اضافه گردید.`, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `🎉 کیف پول کاربر با شناسه \`${targetId}\` به مبلغ \`${amount.toLocaleString()} تومان\` با موفقیت شارژ شد.`, { parse_mode: 'Markdown' });
+            bot.sendMessage(targetId, `🎉 **کیف پول شما توسط مدیریت شارژ شد!**\nمبلغ \`${amount.toLocaleString()} تومان\` به موجودی شما اضافه گردید.\nموجودی جدید: \`${db.userWallets[targetId].toLocaleString()} تومان\``, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
     }
@@ -911,6 +962,38 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
         const state = userStates[chatId];
+        
+        // بخش ویرایش پلن‌های موجود
+        if (state.step === 'edit_plan_get_name') {
+            state.editName = text.trim();
+            state.step = 'edit_plan_get_volume';
+            bot.sendMessage(chatId, '🌐 حجم جدید پلن را وارد کنید:');
+            return;
+        } else if (state.step === 'edit_plan_get_volume') {
+            state.editVolume = text.trim();
+            state.step = 'edit_plan_get_duration';
+            bot.sendMessage(chatId, '⏳ مدت زمان اعتبار جدید را وارد کنید:');
+            return;
+        } else if (state.step === 'edit_plan_get_duration') {
+            state.editDuration = text.trim();
+            state.step = 'edit_plan_get_price';
+            bot.sendMessage(chatId, '💵 قیمت جدید پلن را وارد کنید (مثلا 95,000 تومان):');
+            return;
+        } else if (state.step === 'edit_plan_get_price') {
+            const planId = state.targetPlanId;
+            const plan = db.customPlans.find(p => p.id === planId);
+            if (plan) {
+                plan.name = state.editName;
+                plan.volume = state.editVolume;
+                plan.duration = state.editDuration;
+                plan.price = text.trim();
+                delete userStates[chatId];
+                saveDatabase();
+                bot.sendMessage(chatId, `✅ پلن مورد نظر با موفقیت ویرایش و آپدیت شد.`);
+                return;
+            }
+        }
+
         if (state.step === 'get_extra_link_for_plan') {
             const planId = state.targetPlanId;
             const plan = db.customPlans.find(p => p.id === planId);
@@ -953,7 +1036,7 @@ bot.on('message', async (msg) => {
             });
             delete userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, `🎉 پلن ساخته شد!`);
+            bot.sendMessage(chatId, `🎉 پلن جدید با موفقیت ساخته شد!`);
             return;
         }
     }
@@ -986,7 +1069,7 @@ bot.on('message', async (msg) => {
 
 bot.on('photo', async (msg) => {
     loadDatabase();
-    trackUser(msg);
+    trackUser(msg, false);
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const userInfo = db.usersDetailMap[userId] || { name: 'کاربر' };
@@ -1181,4 +1264,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با موفقیت و سیستم ذخیره‌سازی ابری پایدار اجرا شد.');
+console.log('🤖 ربات با موفقیت به‌روزرسانی شد و در حال اجراست.');
