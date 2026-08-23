@@ -5,6 +5,7 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// توکن ربات شما
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
@@ -15,7 +16,10 @@ const ADMIN_CHAT_ID = 8923324852;
 let CHANNEL_USERNAME = '@YourChannelUsername'; 
 let isForceJoinEnabled = false; 
 
+// تنظیمات بخش‌های مختلف
 let isTestServerEnabled = true;     
+let isFreeSubEnabled = true;
+let freeSubConfig = 'vless://example-free-sub-link';
 let isInviteSystemEnabled = true;    
 
 const userStates = {};       
@@ -55,7 +59,7 @@ let customPlans = [
 ]; 
 
 let paymentCardNumber = '6037-9971-xxxx-xxxx'; 
-let paymentCardOwner = 'نام و فامیل شما'; // <-- نام و نام خانوادگی شما برای کارت به کارت
+let paymentCardOwner = 'نام و فامیل شما'; 
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
@@ -158,7 +162,7 @@ function getMainKeyboard() {
             inline_keyboard: [
                 [{ text: '🛒 خرید اشتراک پرسرعت', callback_data: 'buy_sub' }],
                 [
-                    { text: '🎁 اشتراک رایگان', callback_data: 'free_sub' },
+                    ...(isFreeSubEnabled ? [{ text: '🎁 اشتراک رایگان', callback_data: 'free_sub' }] : []),
                     ...(isTestServerEnabled ? [{ text: '🧪 سرور تست', callback_data: 'test_server' }] : [])
                 ],
                 [{ text: '💰 کیف پول من', callback_data: 'wallet' }],
@@ -252,6 +256,7 @@ bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
 function sendAdminPanel(chatId) {
     const forceJoinStatus = isForceJoinEnabled ? `🟢 جوین اجباری: روشن (${CHANNEL_USERNAME})` : '🔴 جوین اجباری: خاموش';
     const testServerStatus = isTestServerEnabled ? '🟢 سرور تست: روشن' : '🔴 سرور تست: خاموش';
+    const freeSubStatus = isFreeSubEnabled ? '🟢 اشتراک رایگان: روشن' : '🔴 اشتراک رایگان: خاموش';
     const inviteStatus = isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
     
     const adminKeyboard = {
@@ -271,13 +276,14 @@ function sendAdminPanel(chatId) {
                 ],
                 [
                     { text: testServerStatus, callback_data: 'toggle_test_server' },
-                    { text: inviteStatus, callback_data: 'toggle_invite_system' }
+                    { text: freeSubStatus, callback_data: 'toggle_free_sub' }
                 ],
                 [
-                    { text: forceJoinStatus, callback_data: 'admin_force_join_menu' },
-                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' }
+                    { text: inviteStatus, callback_data: 'toggle_invite_system' },
+                    { text: forceJoinStatus, callback_data: 'admin_force_join_menu' }
                 ],
                 [
+                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' },
                     { text: '💳 تنظیمات پرداخت', callback_data: 'admin_pay_settings' }
                 ]
             ]
@@ -341,6 +347,14 @@ bot.on('callback_query', async (callbackQuery) => {
         if (!isAdmin(callbackQuery)) return;
         isTestServerEnabled = !isTestServerEnabled;
         bot.sendMessage(chatId, `🧪 بخش سرور تست با موفقیت ${isTestServerEnabled ? 'روشن' : 'خاموش'} شد.`);
+        sendAdminPanel(chatId);
+        return;
+    }
+
+    if (data === 'toggle_free_sub') {
+        if (!isAdmin(callbackQuery)) return;
+        isFreeSubEnabled = !isFreeSubEnabled;
+        bot.sendMessage(chatId, `🎁 بخش اشتراک رایگان با موفقیت ${isFreeSubEnabled ? 'روشن' : 'خاموش'} شد.`);
         sendAdminPanel(chatId);
         return;
     }
@@ -673,7 +687,11 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'free_sub') {
-        bot.sendMessage(chatId, '🎁 برای دریافت اشتراک رایگان از بخش دعوت دوستان اقدام کنید.');
+        if (!isFreeSubEnabled) {
+            bot.sendMessage(chatId, '❌ بخش اشتراک رایگان در حال حاضر غیرفعال است.');
+            return;
+        }
+        bot.sendMessage(chatId, `🎁 **اشتراک رایگان شما:**\n\n\`${freeSubConfig}\``, { parse_mode: 'Markdown' });
         return;
     }
 
