@@ -2,45 +2,50 @@ import TelegramBot from "node-telegram-bot-api";
 
 const bot = new TelegramBot("8850301156:AAGXFnSqSwyGbvPtucnkZdXhkLWIQi2GpWo", { polling: true });
 
-// حافظه موقت برای ذخیره کاربران در حال اجرا
 const usersMemory = {};
 
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const firstName = msg.from.first_name || "کاربر";
-    const username = msg.from.username || "ندارد";
 
-    // ذخیره اطلاعات کاربر در حافظه موقت
     usersMemory[userId] = {
         firstName: firstName,
-        username: username,
         joinedAt: new Date().toLocaleTimeString("fa-IR")
     };
 
-    console.log("کاربر جدید ثبت شد:", usersMemory[userId]);
-
-    bot.sendMessage(chatId, `سلام ${firstName} عزیز! 🚀\nاطلاعات شما با موفقیت ثبت شد.\nبه ربات آرنا خوش آمدید، لطفاً گزینه مد نظر را انتخاب کنید:`, {
+    // ارسال پیام همراه با کیبورد ثابت در پایین صفحه (مشابه عکس)
+    bot.sendMessage(chatId, `سلام ${firstName} عزیز! 🚀\nبه ربات آرنا خوش آمدید. لطفاً یکی از گزینه‌های زیر را انتخاب کنید:`, {
         reply_markup: {
-            inline_keyboard: [
-                [{ text: "🛒 خرید اشتراک", callback_data: "shop_catalog" }],
-                [{ text: "📦 سفارش‌های من", callback_data: "my_orders" }, { text: "📞 پشتیبانی", callback_data: "support" }]
-            ]
+            keyboard: [
+                [{ text: "🛒 خرید اشتراک" }, { text: "🎁 اشتراک رایگان" }],
+                [{ text: "👛 کیف پول" }, { text: "📦 اشتراک‌های من" }],
+                [{ text: "📞 پشتیبانی" }, { text: "👥 دعوت دوستان" }]
+            ],
+            resize_keyboard: true, // کوچک کردن دکمه‌ها برای زیبایی بیشتر
+            is_persistent: true    // همیشه پایین صفحه باز بماند
         }
     });
 });
 
-bot.on("callback_query", async (query) => {
-    const chatId = query.message.chat.id;
-    const data = query.data;
+// مدیریت کلیک روی دکمه‌های پایین صفحه (به صورت متنی)
+bot.on("message", (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
 
-    await bot.answerCallbackQuery(query.id).catch(() => {});
+    if (!text || text.startsWith("/")) return; // دستورات رو نادیده بگیر
 
-    if (data === "shop_catalog") {
-        bot.sendMessage(chatId, "🛒 بخش فروشگاه اشتراک‌ها (در قدم‌های بعدی تکمیل می‌شود)");
-    } else if (data === "my_orders") {
-        bot.sendMessage(chatId, "📦 شما هنوز سفارشی ثبت نکرده‌اید.");
-    } else if (data === "support") {
-        bot.sendMessage(chatId, "📞 پشتیبانی: @ARENAM_10");
+    if (text === "🛒 خرید اشتراک") {
+        bot.sendMessage(chatId, "🛒 بخش خرید اشتراک (در قدم‌های بعدی تکمیل می‌شود)");
+    } else if (text === "🎁 اشتراک رایگان") {
+        bot.sendMessage(chatId, "🎁 بخش سرور تست و اشتراک رایگان");
+    } else if (text === "👛 کیف پول") {
+        bot.sendMessage(chatId, "👛 موجودی کیف پول شما: 0 تومان");
+    } else if (text === "📦 اشتراک‌های من") {
+        bot.sendMessage(chatId, "📦 شما در حال حاضر اشتراک فعالی ندارید.");
+    } else if (text === "📞 پشتیبانی") {
+        bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @ARENAM_10");
+    } else if (text === "👥 دعوت دوستان") {
+        bot.sendMessage(chatId, "👥 لینک دعوت اختصاصی شما (به زودی)");
     }
 });
