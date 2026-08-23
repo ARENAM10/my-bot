@@ -11,12 +11,13 @@ const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
 // دیتابیس‌های موقت در حافظه ربات
-const userStates = {};       // ذخیره وضعیت موقت کاربران (مثل انتظار برای رسید یا پیام پشتیبانی)
+const userStates = {};       // ذخیره وضعیت موقت کاربران
 const userSubscriptions = {}; // ذخیره اطلاعات اشتراک کاربران
 const userWallets = {};      // ذخیره موجودی کیف پول کاربران
+const allUsers = new Set();  // ذخیره آیدی تمام کاربرانی که ربات را استارت زده‌اند (برای ارسال همگانی)
 
 app.get('/', (req, res) => {
-    res.send('Bot is active with Support & Full Management!');
+    res.send('Bot is active with Broadcast & Stats Management!');
 });
 
 app.listen(PORT, () => {
@@ -32,6 +33,7 @@ function isAdmin(msg) {
 // استارت ربات
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
+    allUsers.add(chatId); // ذخیره کاربر در لیست همگانی
 
     bot.sendMessage(chatId, 'در حال بارگذاری منو...', {
         reply_markup: { remove_keyboard: true }
@@ -104,14 +106,12 @@ function sendAdminPanel(chatId) {
                     { text: '💬 پیام مشتریان', callback_data: 'admin_user_messages' }
                 ],
                 [
-                    { text: '🔒 عضویت اجباری', callback_data: 'admin_force_join' },
-                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' }
-                ],
-                [
-                    { text: '🗑 حذف پیام', callback_data: 'admin_delete_msg' },
+                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' },
                     { text: '📌 سنجاق پیام', callback_data: 'admin_pin_msg' }
                 ],
-                [{ text: '👤 گزینه‌های مشتریان', callback_data: 'admin_customer_options' }],
+                [
+                    { text: '🗑 حذف پیام آخر', callback_data: 'admin_delete_msg' }
+                ],
                 [
                     { text: '🔄 استارت مالک', callback_data: 'admin_owner_start' },
                     { text: '🎛 گزینه‌های اصلی', callback_data: 'admin_main_options' }
@@ -133,6 +133,48 @@ bot.on('callback_query', (callbackQuery) => {
     const chatId = msg.chat.id;
 
     bot.answerCallbackQuery(callbackQuery.id);
+
+    // ۱. بخش آمار ربات
+    if (data === 'admin_stats') {
+        if (!isAdmin(callbackQuery)) return;
+        const totalUsersCount = allUsers.size;
+        const activeSubsCount = Object.keys(userSubscriptions).length;
+        
+        const statsText = `📊 **آمار کلی ربات:**\n\n` +
+            `👥 تعداد کل کاربران: \`${totalUsersCount}\` نفر\n` +
+            `📦 تعداد اشتراک‌های فعال: \`${activeSubsCount}\` عدد\n` +
+            `💰 موجودی کل کیف پول‌ها: محاسبه‌شده در سیستم`;
+            
+        bot.sendMessage(chatId, statsText, { parse_mode: 'Markdown' });
+        return;
+    }
+
+    // ۲. بخش ارسال همگانی
+    if (data === 'admin_broadcast') {
+        if (!isAdmin(callbackQuery)) return;
+        userStates[chatId] = { step: 'get_broadcast_message' };
+        bot.sendMessage(chatId, '📢 **ارسال پیام همگانی**\n\nلطفاً متن، عکس یا پیامی که می‌خواهید به تمام کاربران ارسال شود را بفرستید:');
+        return;
+    }
+
+    // ۳. ابزار سنجاق پیام (Pin)
+    if (data === 'admin_pin_msg') {
+        if (!isAdmin(callbackQuery)) return;
+        bot.sendMessage(chatId, '📌 برای سنجاق کردن یک پیام در گروه یا کانال، کافی است ربات را آنجا ادمین کنید و از قابلیت پین تلگرام استفاده کنید.');
+        return;
+    }
+
+    // ۴. ابزار حذف پیام
+    if (data === 'admin_delete_msg') {
+        if (!isAdmin(callbackQuery)) return;
+        try {
+            bot.deleteMessage(chatId, msg.message_id);
+            bot.sendMessage(chatId, '🗑 پیام قبلی با موفقیت حذف شد.');
+        } catch (e) {
+            bot.sendMessage(chatId, '❌ امکان حذف پیام وجود ندارد.');
+        }
+        return;
+    }
 
     // تایید یا رد رسید از طرف ادمین
     if (data.startsWith('approve_') || data.startsWith('reject_')) {
@@ -165,7 +207,6 @@ bot.on('callback_query', (callbackQuery) => {
         return;
     }
 
-    // شارژ دستی کیف پول از طریق پنل ادمین
     if (data === 'admin_charge_wallet') {
         if (!isAdmin(callbackQuery)) return;
         userStates[chatId] = { step: 'get_charge_user_id' };
@@ -175,7 +216,7 @@ bot.on('callback_query', (callbackQuery) => {
 
     if (data === 'admin_user_messages') {
         if (!isAdmin(callbackQuery)) return;
-        bot.sendMessage(chatId, '💬 **بخش پیام مشتریان**\n\nبرای پاسخ به هر پیام، کافی است روی پیام ارسالی کاربر در همین پی‌وی **Reply (پاسخ)** دهید و متن خود را ارسال کنید.');
+        bot.sendMessage(chatId, '💬 **بخش پیام مشتریان**\n\nبرای پاسخ به هر پیام، کافی است روی پیام ارسالی کاربر در همین پی‌وی **Reply (پاسخ)** دهید.');
         return;
     }
 
@@ -215,7 +256,6 @@ bot.on('callback_query', (callbackQuery) => {
         return;
     }
 
-    // بخش پشتیبانی (درخواست ارسال پیام به ادمین)
     if (data === 'support') {
         userStates[chatId] = { awaiting_support_message: true };
         const cancelKeyboard = {
@@ -265,18 +305,36 @@ bot.on('callback_query', (callbackQuery) => {
     bot.sendMessage(chatId, 'این بخش در حال راه‌اندازی است...');
 });
 
-// مدیریت پیام‌های متنی (کیف پول، پشتیبانی و ریپلای ادمین)
+// مدیریت پیام‌های متنی
 bot.on('message', (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
     if (!text || text === '💻 پنل مدیریت') return;
 
-    // ۱. اگر ادمین به پیامی در پی‌وی خودش Reply داد (پاسخ به کاربر)
+    // ۱. ارسال پیام همگانی (Broadcast) توسط ادمین
+    if (chatId === ADMIN_CHAT_ID && userStates[chatId] && userStates[chatId].step === 'get_broadcast_message') {
+        delete userStates[chatId];
+        bot.sendMessage(chatId, '⏳ در حال ارسال پیام همگانی به تمام کاربران...');
+
+        let successCount = 0;
+        let failCount = 0;
+
+        allUsers.forEach((userChatId) => {
+            bot.sendMessage(userChatId, `📢 **اطلاعیه مهم:**\n\n${text}`, { parse_mode: 'Markdown' })
+                .then(() => successCount++)
+                .catch(() => failCount++);
+        });
+
+        setTimeout(() => {
+            bot.sendMessage(ADMIN_CHAT_ID, `✅ پیام همگانی با موفقیت ارسال شد.\n\nموفق: ${successCount}\nناموفق (بلاک شده یا غیرفعال): ${failCount}`);
+        }, 2000);
+        return;
+    }
+
+    // ۲. پاسخ ادمین به پیام کاربر
     if (chatId === ADMIN_CHAT_ID && msg.reply_to_message) {
         const repliedText = msg.reply_to_message.caption || msg.reply_to_message.text || '';
-        
-        // استخراج آیدی عددی کاربر از متن پیام ارسالی قبلی
         const match = repliedText.match(/آیدی عددی: `(\d+)`/) || repliedText.match(/از طرف کاربر.*?\((\d+)\)/);
         
         if (match && match[1]) {
@@ -287,7 +345,7 @@ bot.on('message', (msg) => {
         }
     }
 
-    // ۲. فرآیند شارژ دستی کیف پول توسط ادمین
+    // ۳. شارژ کیف پول توسط ادمین
     if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
         if (userStates[chatId].step === 'get_charge_user_id') {
             const targetUser = text.trim();
@@ -312,14 +370,14 @@ bot.on('message', (msg) => {
         }
     }
 
-    // ۳. ارسال پیام پشتیبانی از طرف کاربر عادی به ادمین
+    // ۴. ارسال پیام پشتیبانی از طرف کاربر
     if (userStates[chatId] && userStates[chatId].awaiting_support_message) {
         const userId = msg.from.id;
         const username = msg.from.username ? `@${msg.from.username}` : 'ندارد';
         const name = msg.from.first_name || 'کاربر';
 
         delete userStates[chatId];
-        bot.sendMessage(chatId, '✅ پیام شما با موفقیت به پشتیبانی ارسال شد. به زودی پاسخ خود را دریافت خواهید کرد.');
+        bot.sendMessage(chatId, '✅ پیام شما با موفقیت به پشتیبانی ارسال شد.');
 
         const supportText = `💬 **پیام جدید از طرف مشتری!**\n\n` +
             `👤 نام: ${name}\n` +
@@ -352,8 +410,7 @@ bot.on('photo', (msg) => {
             `👤 نام: ${name}\n` +
             `🆔 یوزرنیم: ${username}\n` +
             `🔢 آیدی عددی: \`${userId}\`\n` +
-            `📦 پلن انتخابی: ${planTitle}\n\n` +
-            `*(برای پاسخ یا تایید، از دکمه‌های زیر یا ریپلای استفاده کنید)*`;
+            `📦 پلن انتخابی: ${planTitle}`;
 
         const adminActionKeyboard = {
             reply_markup: {
@@ -369,7 +426,7 @@ bot.on('photo', (msg) => {
         bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
             caption: caption,
             parse_mode: 'Markdown',
-            ...adminActionKeyboard
+            ...adminActionKeyword
         });
     }
 });
@@ -378,4 +435,4 @@ process.on('uncaughtException', (err) => {
     console.log('خطای مدیریت شده:', err.message);
 });
 
-console.log('🤖 ربات با سیستم پشتیبانی و چت دوطرفه فعال شد...');
+console.log('🤖 ربات با سیستم آمار و ارسال همگانی فعال شد...');
