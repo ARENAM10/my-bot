@@ -8,12 +8,12 @@ const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 const ADMIN_USERNAME = 'arenam_10';
+const ADMIN_CHAT_ID = 8923324852; // آیدی عددی ثابت شما به عنوان ادمین
 
-// دیتابیس ساده موقت در حافظه برای ذخیره وضعیت کاربران (مثل مرحله ارسال رسید)
 const userStates = {};
 
 app.get('/', (req, res) => {
-    res.send('Bot is active with Subscriptions & Wallet Logic!');
+    res.send('Bot is active with Fixed Admin Chat ID!');
 });
 
 app.listen(PORT, () => {
@@ -21,8 +21,9 @@ app.listen(PORT, () => {
 });
 
 function isAdmin(msg) {
+    const chatId = msg.chat.id;
     const username = msg.from && msg.from.username;
-    return username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase();
+    return chatId === ADMIN_CHAT_ID || (username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase());
 }
 
 // استارت ربات
@@ -130,7 +131,24 @@ bot.on('callback_query', (callbackQuery) => {
 
     bot.answerCallbackQuery(callbackQuery.id);
 
-    // مدیریت بخش ادمین
+    // تایید یا رد رسید از طرف ادمین
+    if (data.startsWith('approve_') || data.startsWith('reject_')) {
+        if (!isAdmin(callbackQuery)) {
+            bot.sendMessage(chatId, '❌ دسترسی غیرمجاز!');
+            return;
+        }
+
+        const targetUserId = data.split('_')[1];
+        if (data.startsWith('approve_')) {
+            bot.sendMessage(targetUserId, '✅ پرداخت و رسید شما توسط مدیریت تایید شد! اشتراک شما فعال گردید. 🎉');
+            bot.sendMessage(chatId, `✅ رسید کاربر با آیدی ${targetUserId} با موفقیت تایید شد.`);
+        } else {
+            bot.sendMessage(targetUserId, '❌ متأسفانه رسید پرداخت شما توسط مدیریت رد شد. لطفاً با پشتیبانی در ارتباط باشید.');
+            bot.sendMessage(chatId, `❌ رسید کاربر با آیدی ${targetUserId} رد شد.`);
+        }
+        return;
+    }
+
     if (data.startsWith('admin_')) {
         if (!isAdmin(callbackQuery)) {
             bot.sendMessage(chatId, '❌ دسترسی غیرمجاز!');
@@ -140,7 +158,6 @@ bot.on('callback_query', (callbackQuery) => {
         return;
     }
 
-    // منطق کاربران: خرید اشتراک
     if (data === 'buy_sub') {
         const plansKeyboard = {
             reply_markup: {
@@ -155,7 +172,6 @@ bot.on('callback_query', (callbackQuery) => {
         return;
     }
 
-    // انتخاب پلن خاص
     if (data.startsWith('plan_')) {
         userStates[chatId] = { awaiting_receipt: true, selected_plan: data };
         
@@ -163,14 +179,14 @@ bot.on('callback_query', (callbackQuery) => {
             `لطفاً مبلغ را به کارت زیر واریز کنید:\n` +
             `\`6037-9971-xxxx-xxxx\`\n` +
             `به نام: مالک ربات\n\n` +
-            `📸 **سپس عکس رسید واریز را همینجا بفرستید تا اشتراک شما خودکار فعال شود.**`;
+            `📸 **سپس عکس رسید واریز را همینجا بفرستید تا برای بررسی ارسال شود.**`;
             
         bot.sendMessage(chatId, cardInfo, { parse_mode: 'Markdown' });
         return;
     }
 
     if (data === 'wallet') {
-        bot.sendMessage(chatId, '💰 کیف پول شما:\nموجودی فعلی: ۰ تومان\n\nبرای افزایش موجودی می‌توانید از بخش خرید اشتراک اقدام کنید.');
+        bot.sendMessage(chatId, '💰 کیف پول شما:\nموجودی فعلی: ۰ تومان');
         return;
     }
 
@@ -182,25 +198,42 @@ bot.on('callback_query', (callbackQuery) => {
     bot.sendMessage(chatId, 'این بخش در حال راه‌اندازی است...');
 });
 
-// دریافت عکس رسید از طرف کاربر و ارسال آن برای ادمین
+// دریافت عکس رسید از کاربر و ارسال مستقیم به پی‌وی ادمین ثابت
 bot.on('photo', (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const username = msg.from.username ? `@${msg.from.username}` : 'ندارد';
     const name = msg.from.first_name || 'کاربر';
 
-    // بررسی اینکه آیا کاربر در انتظار ارسال رسید بوده یا نه
     if (userStates[chatId] && userStates[chatId].awaiting_receipt) {
         const photoId = msg.photo[msg.photo.length - 1].file_id;
-        
-        bot.sendMessage(chatId, '✅ رسید شما با موفقیت دریافت شد و برای بررسی به مدیریت ارسال گردید. لطفاً صبور باشید.');
-        
-        // پاک کردن وضعیت منتظر رسید
+        const plan = userStates[chatId].selected_plan;
+
+        bot.sendMessage(chatId, '✅ رسید شما دریافت شد و برای بررسی نهایی به مدیریت ارسال گردید.');
         delete userStates[chatId];
 
-        // پیدا کردن یا ارسال به ادمین (در اینجا به ادمین پیام می‌فرستیم - برای تست عملکرد پیام ارسال میشه)
-        // توجه: برای ارسال به یوزرنیم ادمین، ربات باید ادمین را بشناسد یا آیدی عددی او ذخیره باشد.
-        bot.sendMessage(chatId, `🔔 [گزارش سیستم]: رسید خرید کاربر ${name} (${username} با آیدی ${userId}) دریافت شد و به ادمین ارجاع داده شد.`);
+        const caption = `🔔 **رسید جدید پرداخت!**\n\n` +
+            `👤 نام: ${name}\n` +
+            `🆔 یوزرنیم: ${username}\n` +
+            `🔢 آیدی عددی: \`${userId}\`\n` +
+            `📦 پلن انتخابی: ${plan}`;
+
+        const adminActionKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ تایید و فعالسازی', callback_data: `approve_${userId}` },
+                        { text: '❌ رد رسید', callback_data: `reject_${userId}` }
+                    ]
+                ]
+            }
+        };
+
+        bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
+            caption: caption,
+            parse_mode: 'Markdown',
+            ...adminActionKeyboard
+        });
     }
 });
 
@@ -208,4 +241,4 @@ process.on('uncaughtException', (err) => {
     console.log('خطای مدیریت شده:', err.message);
 });
 
-console.log('🤖 ربات همراه با منطق خرید و دریافت رسید فعال شد...');
+console.log('🤖 ربات با سیستم ثابت و دقیق ادمین استارت شد...');
