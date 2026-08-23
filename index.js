@@ -17,10 +17,11 @@ let isForceJoinEnabled = false;
 const userStates = {};       
 const userSubscriptions = {}; 
 const userWallets = {};      
+const pending_deposits = {}; // برای ذخیره درخواست‌های شارژ کیف پول در انتظار تایید
 const allUsers = new Set();  
 const referals = {};         
 
-// لیست پلن‌ها (اکنون هر پلن می‌تواند آرایه‌ای از چند لینک/کانفیگ داشته باشد)
+// لیست پلن‌ها
 let customPlans = [
     { 
         id: 1, 
@@ -51,7 +52,7 @@ let paymentCardOwner = 'مالک ربات';
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
-    res.send('Bot is running with Multi-Config Auto Replacement!');
+    res.send('Bot is running with Professional Wallet & Multi-Config System!');
 });
 
 app.listen(PORT, () => {
@@ -63,6 +64,12 @@ function isAdmin(msgOrQuery) {
     const user = msgOrQuery.from;
     const username = user && user.username;
     return chatId === ADMIN_CHAT_ID || (username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase());
+}
+
+function parsePrice(priceStr) {
+    if (!priceStr) return 0;
+    const digits = priceStr.replace(/[^0-9]/g, '');
+    return parseInt(digits, 10) || 0;
 }
 
 function trackUser(msg) {
@@ -309,7 +316,7 @@ bot.on('callback_query', async (callbackQuery) => {
             reply_markup: {
                 inline_keyboard: [
                     [{ text: '➕ افزودن پلن جدید', callback_data: 'plan_mgmt_add' }],
-                    [{ text: '📋 لیست پلن‌ها و افزودن لینک به آن‌ها', callback_data: 'plan_mgmt_list' }],
+                    [{ text: '📋 لیست پلن‌ها و افزودن لینک', callback_data: 'plan_mgmt_list' }],
                     [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
                 ]
             }
@@ -334,7 +341,7 @@ bot.on('callback_query', async (callbackQuery) => {
         const inlineBtns = [];
 
         customPlans.forEach((p) => {
-            textList += `▪️ **${p.name}**\n   🌐 حجم: ${p.volume} | ⏳ زمان: ${p.duration} | 💵 قیمت: ${p.price}\n   📦 تعداد کانفیگ‌های موجود در انبار: **${p.links.length} عدد**\n\n`;
+            textList += `▪️ **${p.name}**\n   🌐 حجم: ${p.volume} | ⏳ زمان: ${p.duration} | 💵 قیمت: ${p.price}\n   📦 تعداد کانفیگ در انبار: **${p.links.length} عدد**\n\n`;
             inlineBtns.push([
                 { text: `➕ افزودن لینک به: ${p.name}`, callback_data: `add_link_${p.id}` },
                 { text: `🗑 حذف کل پلن`, callback_data: `del_plan_${p.id}` }
@@ -377,8 +384,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'admin_charge_wallet') {
-        userStates[chatId] = { step: 'get_charge_user_id' };
-        bot.sendMessage(chatId, '💰 آیدی عددی کاربر را وارد کنید:');
+        bot.sendMessage(chatId, '💰 برای شارژ کیف پول کاربر، در بخش کاربران یا از طریق پنل اقدام کنید.');
         return;
     }
 
@@ -418,8 +424,29 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    // ⭐ بخش کیف پول حرفه‌ای
+    if (data === 'wallet') {
+        const balance = userWallets[chatId] || 0;
+        const walletKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '➕ شارژ کیف پول (مبلغ دلخواه)', callback_data: 'wallet_deposit' }],
+                    [{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, `💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: \`${balance.toLocaleString()} تومان\`\n\nبرای افزایش موجودی، روی دکمه زیر کلیک کنید:`, { parse_mode: 'Markdown', ...walletKeyboard });
+        return;
+    }
+
+    if (data === 'wallet_deposit') {
+        userStates[chatId] = { step: 'get_wallet_deposit_amount' };
+        bot.sendMessage(chatId, '💳 **شارژ کیف پول**\n\nلطفاً مبلغ مورد نظر خود برای شارژ را (به تومان، مثلاً `50000`) وارد کنید:', { parse_mode: 'Markdown' });
+        return;
+    }
+
+    // بخش خرید و انتخاب روش پرداخت
     if (data === 'buy_sub') {
-        // فقط پلن‌هایی که حداقل یک لینک در انبار دارند نمایش داده شوند
         const availablePlans = customPlans.filter(p => p.links && p.links.length > 0);
 
         if (availablePlans.length === 0) {
@@ -446,25 +473,127 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        // برداشتن اولین لینک از صف پلن برای این خرید
-        const assignedLink = selectedPlan.links[0];
+        const priceNumber = parsePrice(selectedPlan.price);
+        const userBalance = userWallets[chatId] || 0;
+
+        const inlineBtns = [];
+        let paymentDesc = `📋 **فاکتور نهایی خرید اشتراک**\n\n` +
+                          `━━━━━━━━━━━━━━━━━━━\n` +
+                          `🏷 نام پلن: \`${selectedPlan.name}\`\n` +
+                          `🌐 حجم ترافیک: \`${selectedPlan.volume}\`\n` +
+                          `⏳ مدت زمان: \`${selectedPlan.duration}\`\n` +
+                          `💵 **مبلغ قابل پرداخت: ${selectedPlan.price}**\n` +
+                          `💰 موجودی کیف پول شما: \`${userBalance.toLocaleString()} تومان\`\n` +
+                          `━━━━━━━━━━━━━━━━━━━\n\n`;
+
+        if (userBalance >= priceNumber) {
+            paymentDesc += `✅ موجودی کیف پول شما برای پرداخت این پلن **کافی** است.`;
+            inlineBtns.push([{ text: `💳 پرداخت آنی از کیف پول (${selectedPlan.price})`, callback_data: `pay_wallet_${selectedPlan.id}` }]);
+        } else {
+            paymentDesc += `⚠️ موجودی کیف پول شما **کافی نیست**.`;
+            inlineBtns.push([{ text: `➕ شارژ کیف پول`, callback_data: 'wallet_deposit' }]);
+        }
+        inlineBtns.push([{ text: `💳 پرداخت از طریق کارت به کارت (ارسال رسید)`, callback_data: `pay_card_${selectedPlan.id}` }]);
+        inlineBtns.push([{ text: `🔙 بازگشت به لیست پلن‌ها`, callback_data: 'buy_sub' }]);
+
+        bot.sendMessage(chatId, paymentDesc, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineBtns } });
+        return;
+    }
+
+    // پرداخت آنی از کیف پول
+    if (data.startsWith('pay_wallet_')) {
+        const planId = parseInt(data.split('_')[2]);
+        const plan = customPlans.find(p => p.id === planId);
+
+        if (!plan || plan.links.length === 0) {
+            bot.sendMessage(chatId, '❌ متأسفانه این پلن تمام شده است.');
+            return;
+        }
+
+        const priceNumber = parsePrice(plan.price);
+        const userBalance = userWallets[chatId] || 0;
+
+        if (userBalance < priceNumber) {
+            bot.sendMessage(chatId, '❌ موجودی کیف پول شما برای این خرید کافی نیست.');
+            return;
+        }
+
+        // کسر مبلغ از کیف پول
+        userWallets[chatId] -= priceNumber;
+
+        // برداشتن لینک از انبار (جایگزینی خودکار)
+        const assignedLink = plan.links.shift();
+        delete userStates[chatId];
+
+        const parsedData = await fetchAndParseConfig(assignedLink);
+
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + 30);
+        const formattedExpiry = expiryDate.toLocaleDateString('fa-IR');
+
+        userSubscriptions[chatId] = {
+            planName: plan.name,
+            expiryDate: formattedExpiry,
+            volume: plan.volume,
+            configLink: assignedLink,
+            extractedConfigs: parsedData.extractedConfigs
+        };
+
+        let userMsg = `🎉 **خرید شما با موفقیت انجام شد و از کیف پول کسر گردید!**\n\n` +
+                      `📦 پلن: ${plan.name}\n` +
+                      `🌐 حجم: ${plan.volume}\n` +
+                      `⏳ مدت: ${plan.duration}\n` +
+                      `💵 مبلغ کسر شده: ${plan.price}\n` +
+                      `💰 موجودی جدید کیف پول: \`${userWallets[chatId].toLocaleString()} تومان\`\n\n` +
+                      `🔗 **لینک اشتراک اختصاصی شما:**\n\`${assignedLink}\``;
+
+        if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
+            userMsg += `\n\n⚙️ **کدهای کانفیگ اختصاصی خوانده‌شده:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
+        }
+
+        bot.sendMessage(chatId, userMsg, { parse_mode: 'Markdown' });
+
+        // گزارش به ادمین
+        const userName = callbackQuery.from.first_name || 'کاربر';
+        const userUsername = callbackQuery.from.username ? `@${callbackQuery.from.username}` : 'ندارد';
+        const adminMsg = `🔔 **خرید جدید از طریق کیف پول!**\n\n` +
+                         `👤 نام: ${userName} (${userUsername})\n` +
+                         `🔢 آیدی عددی: \`${userId}\`\n` +
+                         `📦 پلن: ${plan.name}\n` +
+                         `💵 مبلغ کسرشده: ${plan.price}\n` +
+                         `🔗 لینک اختصاص‌یافته: \`${assignedLink}\``;
+        bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    // پرداخت کارت به کارت برای پلن
+    if (data.startsWith('pay_card_')) {
+        const planId = parseInt(data.split('_')[2]);
+        const plan = customPlans.find(p => p.id === planId);
+
+        if (!plan || plan.links.length === 0) {
+            bot.sendMessage(chatId, '❌ متأسفانه این پلن موجود نیست.');
+            return;
+        }
+
+        const assignedLink = plan.links[0];
 
         userStates[chatId] = { 
             awaiting_receipt: true, 
-            planId: selectedPlan.id,
-            selectedPlanName: selectedPlan.name, 
+            planId: plan.id,
+            selectedPlanName: plan.name, 
             selectedPlanLink: assignedLink, 
-            selectedPlanVolume: selectedPlan.volume, 
-            selectedPlanDuration: selectedPlan.duration,
-            selectedPlanPrice: selectedPlan.price
+            selectedPlanVolume: plan.volume, 
+            selectedPlanDuration: plan.duration,
+            selectedPlanPrice: plan.price
         };
 
-        const checkoutText = `📋 **فاکتور نهایی خرید اشتراک**\n\n` +
+        const checkoutText = `📋 **فاکتور نهایی خرید (کارت به کارت)**\n\n` +
                              `━━━━━━━━━━━━━━━━━━━\n` +
-                             `🏷 نام پلن: \`${selectedPlan.name}\`\n` +
-                             `🌐 حجم ترافیک: \`${selectedPlan.volume}\`\n` +
-                             `⏳ مدت زمان: \`${selectedPlan.duration}\`\n` +
-                             `💵 **مبلغ قابل پرداخت: ${selectedPlan.price}**\n` +
+                             `🏷 نام پلن: \`${plan.name}\`\n` +
+                             `🌐 حجم ترافیک: \`${plan.volume}\`\n` +
+                             `⏳ مدت زمان: \`${plan.duration}\`\n` +
+                             `💵 **مبلغ قابل پرداخت: ${plan.price}**\n` +
                              `━━━━━━━━━━━━━━━━━━━\n\n` +
                              `💳 لطفاً مبلغ فوق را به شماره کارت زیر واریز نموده و تصویر رسید آن را همینجا ارسال کنید:\n\n` +
                              `📌 شماره کارت:\n\`${paymentCardNumber}\`\n` +
@@ -481,12 +610,6 @@ bot.on('callback_query', async (callbackQuery) => {
 
     if (data === 'test_server') {
         bot.sendMessage(chatId, '🧪 سرور تست ربات فعال است.');
-        return;
-    }
-
-    if (data === 'wallet') {
-        const balance = userWallets[chatId] || 0;
-        bot.sendMessage(chatId, '💰 موجودی کیف پول: `' + balance.toLocaleString() + ' تومان`', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -542,6 +665,24 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
+    // ثبت مبلغ دلخواه برای شارژ کیف پول
+    if (userStates[chatId] && userStates[chatId].step === 'get_wallet_deposit_amount') {
+        const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
+        if (!amount || amount <= 0) {
+            bot.sendMessage(chatId, '❌ لطفاً یک مبلغ معتبر به صورت عدد (تومان) وارد کنید.');
+            return;
+        }
+        userStates[chatId] = { step: 'get_wallet_deposit_receipt', depositAmount: amount };
+        
+        const depositMsg = `💳 **فاکتور شارژ کیف پول**\n\n` +
+                           `💵 مبلغ شارژ: \`${amount.toLocaleString()} تومان\`\n\n` +
+                           `لطفاً مبلغ فوق را به شماره کارت زیر واریز کرده و تصویر رسید آن را همینجا ارسال کنید:\n\n` +
+                           `📌 شماره کارت:\n\`${paymentCardNumber}\`\n` +
+                           `👤 به نام: *${paymentCardOwner}*`;
+        bot.sendMessage(chatId, depositMsg, { parse_mode: 'Markdown' });
+        return;
+    }
+
     if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
         const state = userStates[chatId];
 
@@ -587,7 +728,7 @@ bot.on('message', async (msg) => {
             };
             customPlans.push(newPlan);
             delete userStates[chatId];
-            bot.sendMessage(chatId, `🎉 پلن **${newPlan.name}** ساخته شد! از بخش مدیریت می‌توانید لینک‌های بیشتری به این پلن اضافه کنید.`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `🎉 پلن **${newPlan.name}** ساخته شد!`, { parse_mode: 'Markdown' });
             return;
         }
     }
@@ -637,6 +778,42 @@ bot.on('photo', async (msg) => {
     const username = msg.from.username ? '@' + msg.from.username : 'ندارد';
     const name = msg.from.first_name || 'کاربر';
 
+    // رسید شارژ کیف پول
+    if (userStates[chatId] && userStates[chatId].step === 'get_wallet_deposit_receipt') {
+        const photoId = msg.photo[msg.photo.length - 1].file_id;
+        const amount = userStates[chatId].depositAmount;
+        delete userStates[chatId];
+
+        pending_deposits[`deposit_${userId}`] = { amount };
+
+        bot.sendMessage(chatId, '✅ رسید شارژ کیف پول دریافت شد. پس از بررسی ادمین، مبلغ به حساب شما اضافه می‌شود.');
+
+        const caption = `🔔 **رسید جدید شارژ کیف پول!**\n\n` +
+                        `👤 نام: ${name}\n` +
+                        `🆔 یوزرنیم: ${username}\n` +
+                        `🔢 آیدی عددی: \`${userId}\`\n` +
+                        `💵 مبلغ درخواستی: \`${amount.toLocaleString()} تومان\``;
+
+        const adminDepositKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ تایید شارژ کیف پول', callback_data: `approve_deposit_${userId}` },
+                        { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
+                    ]
+                ]
+            }
+        };
+
+        bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
+            caption: caption,
+            parse_mode: 'Markdown',
+            ...adminDepositKeyboard
+        });
+        return;
+    }
+
+    // رسید خرید پلن از طریق کارت به کارت
     if (userStates[chatId] && userStates[chatId].awaiting_receipt) {
         const photoId = msg.photo[msg.photo.length - 1].file_id;
         const planId = userStates[chatId].planId;
@@ -663,7 +840,7 @@ bot.on('photo', async (msg) => {
 
         userSubscriptions[`pending_${userId}`] = savedStateInfo;
 
-        const caption = `🔔 **رسید جدید خرید اشتراک!**\n\n` +
+        const caption = `🔔 **رسید جدید خرید اشتراک (کارت به کارت)!**\n\n` +
                         `👤 نام: ${name}\n` +
                         `🆔 یوزرنیم: ${username}\n` +
                         `🔢 آیدی عددی: \`${userId}\`\n` +
@@ -691,10 +868,36 @@ bot.on('photo', async (msg) => {
     }
 });
 
-// تایید خرید توسط ادمین و حذف اولین لینک استفاده‌شده (جایگزینی خودکار کانفیگ بعدی)
+// مدیریت تایید/رد رسیدهای خرید پلن و شارژ کیف پول توسط ادمین
 bot.on('callback_query', async (callbackQuery) => {
     const data = callbackQuery.data;
     const chatId = callbackQuery.message.chat.id;
+
+    if (data.startsWith('approve_deposit_') || data.startsWith('reject_deposit_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const parts = data.split('_');
+        const action = parts[0];
+        const targetUserId = parts[2];
+        const depositKey = `deposit_${targetUserId}`;
+
+        if (action === 'approve') {
+            const depositInfo = pending_deposits[depositKey];
+            if (depositInfo) {
+                userWallets[targetUserId] = (userWallets[targetUserId] || 0) + depositInfo.amount;
+                delete pending_deposits[depositKey];
+
+                bot.sendMessage(targetUserId, `🎉 **شارژ کیف پول شما تایید شد!**\n\n💰 مبلغ \`${depositInfo.amount.toLocaleString()} تومان\` به کیف پول شما اضافه شد.\nموجودی جدید: \`${userWallets[targetUserId].toLocaleString()} تومان\``, { parse_mode: 'Markdown' }).catch(() => {});
+                bot.sendMessage(chatId, '✅ شارژ کیف پول تایید شد و به حساب کاربر اضافه گردید.');
+            } else {
+                bot.sendMessage(chatId, '❌ اطلاعات این تراکنش یافت نشد.');
+            }
+        } else {
+            delete pending_deposits[depositKey];
+            bot.sendMessage(targetUserId, '❌ متأسفانه رسید شارژ کیف پول شما رد شد.');
+            bot.sendMessage(chatId, '❌ رسید رد شد.');
+        }
+        return;
+    }
 
     if (data.startsWith('approve_custom_') || data.startsWith('reject_custom_')) {
         if (!isAdmin(callbackQuery)) return;
@@ -706,10 +909,9 @@ bot.on('callback_query', async (callbackQuery) => {
         if (action === 'approve') {
             const subInfo = userSubscriptions[pendingKey];
             if (subInfo) {
-                // حذف اولین لینک از صف انبار پلن مربوطه (طوری که کانفیگ بعدی جایش را بگیرد)
                 const plan = customPlans.find(p => p.id === subInfo.planId);
                 if (plan && plan.links.length > 0) {
-                    plan.links.shift(); // اولین لینک فروخته‌شده از آرایه برداشته می‌شود
+                    plan.links.shift(); // برداشتن اولین لینک از صف
                 }
 
                 const expiryDate = new Date();
@@ -740,7 +942,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     bot.sendMessage(targetUserId, `🎉 اشتراک شما تایید شد!\n\nلینک سابسکریپشن:\n${subInfo.configLink}`);
                 });
 
-                bot.sendMessage(chatId, '✅ تایید شد! کانفیگ فروخته‌شده حذف شد و کانفیگ بعدی پلن به صورت خودکار جایگزین گردید.');
+                bot.sendMessage(chatId, '✅ تایید شد! کانفیگ فروخته‌شده حذف شد و کانفیگ بعدی پلن جایگزین گردید.');
             } else {
                 bot.sendMessage(chatId, '❌ اطلاعات این خرید یافت نشد.');
             }
@@ -756,4 +958,4 @@ process.on('uncaughtException', (err) => {
     console.error('خطا:', err);
 });
 
-console.log('🤖 ربات با سیستم چندکانفیگه و جایگزینی خودکار اجرا شد.');
+console.log('🤖 ربات با سیستم کیف پول حرفه‌ای و شارژ دلخواه اجرا شد.');
