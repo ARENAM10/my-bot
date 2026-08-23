@@ -118,8 +118,9 @@ function trackUser(msg, isNewStart = false) {
     if (msg && msg.from && msg.from.id) {
         const userId = msg.from.id;
         const user = msg.from;
-        const name = user.first_name || 'بدون نام';
+        const name = user.first_name || user.last_name || 'بدون نام';
         const username = user.username ? `@${user.username}` : 'ندارد';
+        const chatId = msg.chat ? msg.chat.id : userId;
 
         let isBrandNew = false;
         if (!db.allUsers.includes(userId)) {
@@ -135,9 +136,12 @@ function trackUser(msg, isNewStart = false) {
             };
             isBrandNew = true;
         } else {
-            // آپدیت نام و یوزرنیم در صورت تغییر
+            // همیشه به‌روزرسانی اطلاعات در صورت تغییر
             db.usersDetailMap[userId].name = name;
             db.usersDetailMap[userId].username = username;
+            if (!db.usersDetailMap[userId].joinedAt) {
+                db.usersDetailMap[userId].joinedAt = new Date().toLocaleString('fa-IR');
+            }
         }
         saveDatabase();
 
@@ -356,6 +360,23 @@ bot.on('callback_query', async (callbackQuery) => {
     const chatId = msg.chat.id;
     const userId = callbackQuery.from.id;
 
+    // ثبت اضطراری کاربر در صورت کلیک روی دکمه‌ها در صورتی که قبلاً ثبت نشده بود
+    if (callbackQuery.from) {
+        const u = callbackQuery.from;
+        const name = u.first_name || u.last_name || 'بدون نام';
+        const username = u.username ? `@${u.username}` : 'ندارد';
+        if (!db.usersDetailMap[userId]) {
+            db.usersDetailMap[userId] = { name, username, joinedAt: new Date().toLocaleString('fa-IR') };
+        } else {
+            db.usersDetailMap[userId].name = name;
+            db.usersDetailMap[userId].username = username;
+        }
+        if (!db.allUsers.includes(userId)) {
+            db.allUsers.push(userId);
+        }
+        saveDatabase();
+    }
+
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
@@ -367,19 +388,23 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'my_account_info') {
-        const userInfo = db.usersDetailMap[chatId] || { name: 'نامشخص', username: 'ندارد', joinedAt: 'نامشخص' };
-        const userWallet = db.userWallets[chatId] || 0;
-        const userSubsList = db.userSubscriptions[chatId] || [];
-        const userReferralsCount = db.referals[chatId] || 0;
+        const userInfo = db.usersDetailMap[userId] || db.usersDetailMap[chatId] || { 
+            name: callbackQuery.from.first_name || 'کاربر', 
+            username: callbackQuery.from.username ? `@${callbackQuery.from.username}` : 'ندارد', 
+            joinedAt: new Date().toLocaleString('fa-IR') 
+        };
+        const userWallet = db.userWallets[userId] || db.userWallets[chatId] || 0;
+        const userSubsList = db.userSubscriptions[userId] || db.userSubscriptions[chatId] || [];
+        const userReferralsCount = db.referals[userId] || db.referals[chatId] || 0;
 
         let accountText = `👤 **اطلاعات حساب کاربری شما:**\n\n` +
                           `📛 نام: ${userInfo.name}\n` +
                           `🔗 یوزرنیم: ${userInfo.username}\n` +
-                          `🆔 شناسه عددی: \`${chatId}\`\n` +
+                          `🆔 شناسه عددی: \`${userId}\`\n` +
                           `💰 موجودی کیف پول: \`${userWallet.toLocaleString()} تومان\`\n` +
                           `📱 تعداد اشتراک‌های فعال: \`${userSubsList.length} عدد\`\n` +
                           `👥 تعداد زیرمجموعه‌ها: \`${userReferralsCount} نفر\`\n` +
-                          `📅 تاریخ پیوستن به ربات: ${userInfo.joinedAt}`;
+                          `📅 تاریخ پیوستن به ربات: ${userInfo.joinedAt || 'ثبت‌نشده'}`;
 
         bot.sendMessage(chatId, accountText, { parse_mode: 'Markdown' });
         return;
@@ -522,7 +547,7 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data.startsWith('edit_p_')) {
         const planId = parseInt(data.split('_')[2]);
         userStates[chatId] = { step: 'edit_plan_get_name', targetPlanId: planId };
-        bot.sendMessage(chatId, '✏️ **ویرایش پلن**\n\nلطفاً **نام جدید** پلن را وارد کنید (یا متن قبلی را دوباره بفرستید):', { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, '✏️ **ویرایش پلن**\n\nلطفاً **نام جدید** پلن را وارد کنید:', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -635,7 +660,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'wallet') {
-        const balance = db.userWallets[chatId] || 0;
+        const balance = db.userWallets[userId] || db.userWallets[chatId] || 0;
         const walletKeyboard = {
             reply_markup: {
                 inline_keyboard: [
@@ -681,7 +706,7 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         const priceNumber = parsePrice(selectedPlan.price);
-        const userBalance = db.userWallets[chatId] || 0;
+        const userBalance = db.userWallets[userId] || db.userWallets[chatId] || 0;
 
         const inlineBtns = [];
         let paymentDesc = `📋 **فاکتور نهایی خرید اشتراک**\n\n` +
@@ -715,14 +740,14 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         const priceNumber = parsePrice(plan.price);
-        const userBalance = db.userWallets[chatId] || 0;
+        const userBalance = db.userWallets[userId] || db.userWallets[chatId] || 0;
 
         if (userBalance < priceNumber) {
             bot.sendMessage(chatId, '❌ موجودی کیف پول شما کافی نیست.');
             return;
         }
 
-        db.userWallets[chatId] -= priceNumber;
+        db.userWallets[userId] = userBalance - priceNumber;
         const assignedLink = plan.links.shift();
         delete userStates[chatId];
         saveDatabase();
@@ -732,10 +757,10 @@ bot.on('callback_query', async (callbackQuery) => {
         expiryDate.setDate(expiryDate.getDate() + 30);
         const formattedExpiry = expiryDate.toLocaleDateString('fa-IR');
         const currentDateStr = new Date().toLocaleString('fa-IR');
-        const userInfo = db.usersDetailMap[chatId] || { name: 'کاربر' };
+        const userInfo = db.usersDetailMap[userId] || { name: 'کاربر' };
 
         const subObj = {
-            userId: chatId,
+            userId: userId,
             userName: userInfo.name,
             planName: plan.name,
             expiryDate: formattedExpiry,
@@ -745,15 +770,15 @@ bot.on('callback_query', async (callbackQuery) => {
             purchaseDate: currentDateStr
         };
 
-        if (!db.userSubscriptions[chatId]) {
-            db.userSubscriptions[chatId] = [];
+        if (!db.userSubscriptions[userId]) {
+            db.userSubscriptions[userId] = [];
         }
-        db.userSubscriptions[chatId].push(subObj);
+        db.userSubscriptions[userId].push(subObj);
         db.allSubscriptionsHistory.push(subObj);
 
         db.receiptsHistory.push({
             type: 'خرید با کیف پول',
-            userId: chatId,
+            userId: userId,
             userName: userInfo.name,
             details: `${plan.name} (${plan.price})`,
             status: 'تایید شده خودکار',
@@ -765,7 +790,7 @@ bot.on('callback_query', async (callbackQuery) => {
                       `📦 پلن: ${plan.name}\n` +
                       `🌐 حجم: ${plan.volume}\n` +
                       `💵 مبلغ کسر شده: ${plan.price}\n` +
-                      `💰 موجودی جدید کیف پول: \`${db.userWallets[chatId].toLocaleString()} تومان\`\n\n` +
+                      `💰 موجودی جدید کیف پول: \`${db.userWallets[userId].toLocaleString()} تومان\`\n\n` +
                       `🔗 **لینک اشتراک شما:**\n\`${assignedLink}\``;
 
         if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
@@ -824,7 +849,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'my_subs') {
-        const subs = db.userSubscriptions[chatId];
+        const subs = db.userSubscriptions[userId] || db.userSubscriptions[chatId];
         
         if (subs && Array.isArray(subs) && subs.length > 0) {
             let subText = `📱 **لیست اشتراک‌های فعال شما (${subs.length} عدد):**\n\n`;
@@ -865,7 +890,7 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, '❌ سیستم زیرمجموعه‌گیری در حال حاضر غیرفعال است.');
             return;
         }
-        const userRefCount = db.referals[chatId] || 0;
+        const userRefCount = db.referals[userId] || db.referals[chatId] || 0;
         const inviteLink = `https://t.me/${bot.options.username}?start=${chatId}`;
         bot.sendMessage(chatId, `👥 **سیستم دعوت از دوستان**\n\nبا ارسال لینک زیر به دوستان خود، به ازای هر ورود پاداش بگیرید:\n\`${inviteLink}\`\n\nتعداد زیرمجموعه‌های شما: ${userRefCount} نفر`, { parse_mode: 'Markdown' });
         return;
@@ -963,7 +988,6 @@ bot.on('message', async (msg) => {
     if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
         const state = userStates[chatId];
         
-        // بخش ویرایش پلن‌های موجود
         if (state.step === 'edit_plan_get_name') {
             state.editName = text.trim();
             state.step = 'edit_plan_get_volume';
@@ -977,7 +1001,7 @@ bot.on('message', async (msg) => {
         } else if (state.step === 'edit_plan_get_duration') {
             state.editDuration = text.trim();
             state.step = 'edit_plan_get_price';
-            bot.sendMessage(chatId, '💵 قیمت جدید پلن را وارد کنید (مثلا 95,000 تومان):');
+            bot.sendMessage(chatId, '💵 قیمت جدید پلن را وارد کنید:');
             return;
         } else if (state.step === 'edit_plan_get_price') {
             const planId = state.targetPlanId;
@@ -1008,7 +1032,7 @@ bot.on('message', async (msg) => {
         if (state.step === 'get_new_plan_name') {
             state.planName = text.trim();
             state.step = 'get_new_plan_volume';
-            bot.sendMessage(chatId, '🌐 حجم اشتراک (مثلا 10 گیگ) را وارد کنید:');
+            bot.sendMessage(chatId, '🌐 حجم اشتراک را وارد کنید:');
             return;
         } else if (state.step === 'get_new_plan_volume') {
             state.planVolume = text.trim();
