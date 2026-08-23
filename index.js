@@ -5,13 +5,13 @@ const TOKEN = "8850301156:AAGXFnSqSwyGbvPtucnkZdXhkLWIQi2GpWo";
 const ADMIN_USERNAME = "amir_85m10";
 const ADMIN_CHAT_ID = "8923324852";
 
-// راه‌اندازی دیتابیس SQLite
+// اتصال به دیتابیس SQLite
 const db = new sqlite3.Database('./arena_bot.db', (err) => {
     if (err) console.error("خطا در اتصال به پایگاه داده:", err.message);
     else console.log("متصل به دیتابیس SQLite.");
 });
 
-// ایجاد جدول‌ها
+// ایجاد جداول مورد نیاز
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (
         userId TEXT PRIMARY KEY,
@@ -58,7 +58,6 @@ db.serialize(() => {
         value TEXT
     )`);
 
-    // مقداردهی اولیه تنظیمات پیش‌فرض
     db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('cardNumber', '6037-9971-xxxx-xxxx')`);
     db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('cardHolder', 'نام صاحب کارت')`);
     db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('welcomeMessage', '✨ به پنل اختصاصی خوش آمدید.\\n\\nلطفاً از گزینه‌های زیر انتخاب کنید:')`);
@@ -98,7 +97,6 @@ const persistentKeyboard = {
     }
 };
 
-// دستور استارت و ثبت نام کاربر در دیتابیس
 bot.onText(/\/start(.*)/, (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
@@ -113,7 +111,6 @@ bot.onText(/\/start(.*)/, (msg, match) => {
             db.run(`INSERT INTO users (userId, firstName, username, joinedDate) VALUES (?, ?, ?, ?)`,
                 [userId, firstName, username, new Date().toLocaleDateString('fa-IR')]);
             
-            // سیستم ضدتقلب و پاداش دعوت دوستان
             if (refId && refId !== userId) {
                 db.get(`SELECT * FROM users WHERE userId = ?`, [refId], (err, refUser) => {
                     if (refUser) {
@@ -148,7 +145,6 @@ bot.onText(/\/start(.*)/, (msg, match) => {
 
 bot.on("message", (msg) => {
     const chatId = msg.chat.id;
-    const userId = msg.from.id.toString();
     const text = msg.text;
 
     if (text === "🎛 پنل مدیریت پیشرفته" && isAdmin(msg.from)) {
@@ -171,7 +167,6 @@ function openAdminPanel(chatId) {
     });
 }
 
-// مدیریت کلیک دکمه‌های شیشه‌ای
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const userId = query.from.id.toString();
@@ -217,7 +212,6 @@ bot.on("callback_query", async (query) => {
         return;
     }
 
-    // فرآیند خرید و پرداخت
     if (data.startsWith("pay_card_")) {
         const subId = data.replace("pay_card_", "");
         db.get(`SELECT * FROM products WHERE id = ?`, [subId], (err, sub) => {
@@ -247,7 +241,6 @@ bot.on("callback_query", async (query) => {
         return;
     }
 
-    // تایید سفارش توسط مالک
     if (data.startsWith("approve_order_") && isAdmin(query.from)) {
         const orderId = data.replace("approve_order_", "");
         db.get(`SELECT * FROM orders WHERE orderId = ?`, [orderId], (err, order) => {
@@ -288,7 +281,6 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-// مدیریت پیام‌های متنی و ویزاردها
 bot.on("message", (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
@@ -327,7 +319,6 @@ bot.on("message", (msg) => {
         }
     }
 
-    // منوی خرید اشتراک
     if (text === "🛒 خرید اشتراک") {
         db.all(`SELECT * FROM products WHERE status = 1`, (err, rows) => {
             if (!rows || rows.length === 0) {
@@ -392,7 +383,6 @@ bot.on("message", (msg) => {
         return;
     }
 
-    // ارسال رسید پرداخت کاربر
     if (currentState === "waiting_for_receipt") {
         const orderId = userState[userId].currentOrderId;
         db.get(`SELECT * FROM orders WHERE orderId = ?`, [orderId], (err, order) => {
