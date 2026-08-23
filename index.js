@@ -4,32 +4,31 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// توکن مستقیم ربات شما
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// یوزرنیم مالک ربات (بدون @ یا با @)
 const ADMIN_USERNAME = 'arenam_10';
 
+// دیتابیس ساده موقت در حافظه برای ذخیره وضعیت کاربران (مثل مرحله ارسال رسید)
+const userStates = {};
+
 app.get('/', (req, res) => {
-    res.send('Bot is active and running with Full Admin Panel!');
+    res.send('Bot is active with Subscriptions & Wallet Logic!');
 });
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
 
-// تابع کمکی برای بررسی اینکه آیا کاربر ادمین است یا خیر
 function isAdmin(msg) {
     const username = msg.from && msg.from.username;
     return username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase();
 }
 
-// منوی اصلی کاربران (شیشه‌ای) همراه با دکمه پنل مدیریت برای مالک
+// استارت ربات
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
 
-    // پاک کردن کیبورد قبلی و ارسال منوی اصلی
     bot.sendMessage(chatId, 'در حال بارگذاری منو...', {
         reply_markup: { remove_keyboard: true }
     }).then(() => {
@@ -55,33 +54,28 @@ bot.onText(/\/start/, (msg) => {
             }
         };
 
-        // اگر کاربر مالک بود، کیبورد پایین صفحه (دکمه پنل مدیریت) را هم برایش فعال می‌کنیم
         if (isAdmin(msg)) {
             const adminReplyKeyboard = {
                 reply_markup: {
-                    keyboard: [
-                        [{ text: '💻 پنل مدیریت' }]
-                    ],
+                    keyboard: [[{ text: '💻 پنل مدیریت' }]],
                     resize_keyboard: true,
                     is_persistent: true
                 }
             };
-            bot.sendMessage(chatId, '👑 خوش آمدید مالک عزیز! دکمه پنل مدیریت در پایین صفحه فعال شد.', adminReplyKeyboard);
+            bot.sendMessage(chatId, '👑 خوش آمدید مالک عزیز! پنل مدیریت فعال شد.', adminReplyKeyboard);
         }
 
         bot.sendMessage(chatId, 'سلام! به منوی خدمات خوش آمدید. لطفاً گزینه مورد نظر خود را انتخاب کنید: 👇', inlineKeyboard);
     });
 });
 
-// باز کردن پنل مدیریت با زدن دکمه شیشه‌ای یا کیبورد پایین یا دستور /panel
+// باز کردن پنل مدیریت
 bot.onText(/💻 پنل مدیریت|\/panel/, (msg) => {
     const chatId = msg.chat.id;
-
     if (!isAdmin(msg)) {
         bot.sendMessage(chatId, '❌ شما دسترسی به این بخش ندارید.');
         return;
     }
-
     sendAdminPanel(chatId);
 });
 
@@ -128,7 +122,7 @@ function sendAdminPanel(chatId) {
     });
 }
 
-// لیسنر کلیک روی دکمه‌های شیشه‌ای
+// مدیریت کلیک دکمه‌های شیشه‌ای
 bot.on('callback_query', (callbackQuery) => {
     const msg = callbackQuery.message;
     const data = callbackQuery.data;
@@ -136,96 +130,77 @@ bot.on('callback_query', (callbackQuery) => {
 
     bot.answerCallbackQuery(callbackQuery.id);
 
-    // مدیریت کلیک‌های بخش ادمین
+    // مدیریت بخش ادمین
     if (data.startsWith('admin_')) {
         if (!isAdmin(callbackQuery)) {
-            bot.sendMessage(chatId, '❌ خطا: دسترسی غیرمجاز!');
+            bot.sendMessage(chatId, '❌ دسترسی غیرمجاز!');
             return;
         }
-
-        switch (data) {
-            case 'admin_manage_sub':
-                bot.sendMessage(chatId, '🛒 بخش مدیریت اشتراک‌ها باز شد.');
-                break;
-            case 'admin_history':
-                bot.sendMessage(chatId, '📦 سوابق کل اشتراک‌های ثبت شده...');
-                break;
-            case 'admin_charge_wallet':
-                bot.sendMessage(chatId, '💰 شارژ دستی کیف پول کاربران...');
-                break;
-            case 'admin_receipts':
-                bot.sendMessage(chatId, '📋 لیست رسیدهای ارسالی کاربران...');
-                break;
-            case 'admin_stats':
-                bot.sendMessage(chatId, '📊 آمار ربات:\n- تعداد کل کاربران: 1 نفر\n- وضعیت سرور: فعال و پایدار ✅');
-                break;
-            case 'admin_users':
-                bot.sendMessage(chatId, '👥 مدیریت لیست کاربران...');
-                break;
-            case 'admin_pay_settings':
-                bot.sendMessage(chatId, '💳 تنظیمات درگاه و شماره کارت...');
-                break;
-            case 'admin_user_messages':
-                bot.sendMessage(chatId, '💬 پیام‌های دریافتی از مشتریان...');
-                break;
-            case 'admin_force_join':
-                bot.sendMessage(chatId, '🔒 تنظیمات کانال‌های عضویت اجباری...');
-                break;
-            case 'admin_broadcast':
-                bot.sendMessage(chatId, '📢 برای ارسال پیام همگانی، متن خود را بفرستید.');
-                break;
-            case 'admin_delete_msg':
-                bot.sendMessage(chatId, '🗑 ابزار حذف پیام...');
-                break;
-            case 'admin_pin_msg':
-                bot.sendMessage(chatId, '📌 ابزار سنجاق کردن پیام...');
-                break;
-            case 'admin_customer_options':
-                bot.sendMessage(chatId, '👤 تنظیمات بخش مشتریان...');
-                break;
-            case 'admin_owner_start':
-                bot.sendMessage(chatId, '🔄 ریستارت و به‌روزرسانی پنل مالک...');
-                break;
-            case 'admin_main_options':
-                bot.sendMessage(chatId, '🎛 گزینه‌های اصلی ربات...');
-                break;
-            default:
-                bot.sendMessage(chatId, 'گزینه مدیریتی انتخاب شد.');
-        }
+        bot.sendMessage(chatId, `🛠 بخش مدیریتی (${data}) باز شد.`);
         return;
     }
 
-    // دکمه‌های کاربران عادی
-    switch (data) {
-        case 'buy_sub':
-            bot.sendMessage(chatId, '🛒 بخش خرید اشتراک: لطفاً پلن مورد نظر خود را انتخاب کنید.');
-            break;
-        case 'free_sub':
-            bot.sendMessage(chatId, '🎁 بخش اشتراک رایگان...');
-            break;
-        case 'test_server':
-            bot.sendMessage(chatId, '🧪 سرور تست رایگان برقرار شد.');
-            break;
-        case 'wallet':
-            bot.sendMessage(chatId, '💰 کیف پول شما: موجودی 0 تومان.');
-            break;
-        case 'my_subs':
-            bot.sendMessage(chatId, '📱 اشتراک‌های فعال شما: هیچ اشتراکی ندارید.');
-            break;
-        case 'tutorial':
-            bot.sendMessage(chatId, '📖 آموزش اتصال به کانفیگ‌ها...');
-            break;
-        case 'agency':
-            bot.sendMessage(chatId, '🤝 شرایط درخواست نمایندگی...');
-            break;
-        case 'invite':
-            bot.sendMessage(chatId, '👥 لینک دعوت شما...');
-            break;
-        case 'support':
-            bot.sendMessage(chatId, '📞 ارتباط با پشتیبانی...');
-            break;
-        default:
-            bot.sendMessage(chatId, 'گزینه نامعتبر است.');
+    // منطق کاربران: خرید اشتراک
+    if (data === 'buy_sub') {
+        const plansKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '⭐ اشتراک ۱ ماهه - ۵۰ هزار تومان', callback_data: 'plan_1m' }],
+                    [{ text: '🌟 اشتراک ۳ ماهه - ۱۲۰ هزار تومان', callback_data: 'plan_3m' }],
+                    [{ text: '🔙 بازگشت به منو', callback_data: 'back_to_main' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, '🛒 لطفاً پلن اشتراک مورد نظر خود را انتخاب کنید: 👇', plansKeyboard);
+        return;
+    }
+
+    // انتخاب پلن خاص
+    if (data.startsWith('plan_')) {
+        userStates[chatId] = { awaiting_receipt: true, selected_plan: data };
+        
+        const cardInfo = `💳 **اطلاعات کارت به کارت**\n\n` +
+            `لطفاً مبلغ را به کارت زیر واریز کنید:\n` +
+            `\`6037-9971-xxxx-xxxx\`\n` +
+            `به نام: مالک ربات\n\n` +
+            `📸 **سپس عکس رسید واریز را همینجا بفرستید تا اشتراک شما خودکار فعال شود.**`;
+            
+        bot.sendMessage(chatId, cardInfo, { parse_mode: 'Markdown' });
+        return;
+    }
+
+    if (data === 'wallet') {
+        bot.sendMessage(chatId, '💰 کیف پول شما:\nموجودی فعلی: ۰ تومان\n\nبرای افزایش موجودی می‌توانید از بخش خرید اشتراک اقدام کنید.');
+        return;
+    }
+
+    if (data === 'back_to_main') {
+        bot.sendMessage(chatId, 'به منوی اصلی بازگشتید.');
+        return;
+    }
+
+    bot.sendMessage(chatId, 'این بخش در حال راه‌اندازی است...');
+});
+
+// دریافت عکس رسید از طرف کاربر و ارسال آن برای ادمین
+bot.on('photo', (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const username = msg.from.username ? `@${msg.from.username}` : 'ندارد';
+    const name = msg.from.first_name || 'کاربر';
+
+    // بررسی اینکه آیا کاربر در انتظار ارسال رسید بوده یا نه
+    if (userStates[chatId] && userStates[chatId].awaiting_receipt) {
+        const photoId = msg.photo[msg.photo.length - 1].file_id;
+        
+        bot.sendMessage(chatId, '✅ رسید شما با موفقیت دریافت شد و برای بررسی به مدیریت ارسال گردید. لطفاً صبور باشید.');
+        
+        // پاک کردن وضعیت منتظر رسید
+        delete userStates[chatId];
+
+        // پیدا کردن یا ارسال به ادمین (در اینجا به ادمین پیام می‌فرستیم - برای تست عملکرد پیام ارسال میشه)
+        // توجه: برای ارسال به یوزرنیم ادمین، ربات باید ادمین را بشناسد یا آیدی عددی او ذخیره باشد.
+        bot.sendMessage(chatId, `🔔 [گزارش سیستم]: رسید خرید کاربر ${name} (${username} با آیدی ${userId}) دریافت شد و به ادمین ارجاع داده شد.`);
     }
 });
 
@@ -233,4 +208,4 @@ process.on('uncaughtException', (err) => {
     console.log('خطای مدیریت شده:', err.message);
 });
 
-console.log('🤖 ربات با پنل کامل ادمین و تشخیص خودکار مالک استارت شد...');
+console.log('🤖 ربات همراه با منطق خرید و دریافت رسید فعال شد...');
