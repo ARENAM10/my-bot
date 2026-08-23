@@ -1,8 +1,8 @@
 import TelegramBot from "node-telegram-bot-api";
 
 const TOKEN = "8850301156:AAGXFnSqSwyGbvPtucnkZdXhkLWIQi2GpWo";
-const ADMIN_USERNAME = "amir_85m10"; // یوزرنیم جدید مالک
-const ADMIN_CHAT_ID = "8923324852";  // آیدی عددی پشتیبان
+const ADMIN_USERNAME = "amir_85m10";
+const ADMIN_CHAT_ID = "8923324852";
 const CARD_NUMBER = "6037-9971-xxxx-xxxx"; 
 const CARD_HOLDER = "نام صاحب کارت";       
 
@@ -11,7 +11,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const userState = {};
 const userBalances = {};
 
-// تابع بررسی ادمین (پشتیبانی از یوزرنیم جدید و آیدی عددی)
+// تابع بررسی ادمین
 function isAdmin(user) {
     if (!user) return false;
     const username = user.username ? user.username.toLowerCase() : "";
@@ -19,13 +19,16 @@ function isAdmin(user) {
     return username === ADMIN_USERNAME.toLowerCase() || userId === ADMIN_CHAT_ID;
 }
 
-// دکمه‌های همیشگی پایین صفحه
+// چیدمان دقیق دکمه‌های پایین صفحه دقیقاً مطابق عکس ارسالی شما
 const persistentKeyboard = {
     reply_markup: {
         keyboard: [
-            [{ text: "🛒 خرید اشتراک" }, { text: "🎁 اشتراک رایگان" }],
-            [{ text: "💳 کیف پول" }, { text: "📦 اشتراک‌های من" }],
-            [{ text: "📞 پشتیبانی" }, { text: "👥 دعوت دوستان" }]
+            [{ text: "🛒 خرید اشتراک" }],
+            [{ text: "🎁 اشتراک رایگان" }, { text: "🚀 سرور تست" }],
+            [{ text: "💳 کیف پول" }],
+            [{ text: "📦 اشتراک‌های من" }, { text: "📖 آموزش اتصال" }],
+            [{ text: "🤝 درخواست نمایندگی" }],
+            [{ text: "👥 دعوت دوستان" }, { text: "📞 پشتیبانی" }]
         ],
         resize_keyboard: true
     }
@@ -37,7 +40,7 @@ bot.onText(/\/start/, (msg) => {
     const userId = msg.from.id;
     userState[userId] = { step: null };
 
-    bot.sendMessage(chatId, `✨ به پنل اختصاصی ARENA CONFIG خوش آمدید.\n\nلطفاً از دکمه‌های زیر انتخاب کنید:`, persistentKeyboard);
+    bot.sendMessage(chatId, `✨ به پنل اختصاصی ARENA CONFIG خوش آمدید.\n\nلطفاً از گزینه‌های زیر انتخاب کنید:`, persistentKeyboard);
 });
 
 // دستور پنل مدیریت (مختص مالک)
@@ -63,7 +66,7 @@ bot.onText(/\/admin/, (msg) => {
     });
 });
 
-// مدیریت کلیک دکمه‌های پنل مدیریت و پرداخت
+// مدیریت کلیک دکمه‌های شیشه‌ای (مدیریت و پرداخت)
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const userId = query.from.id.toString();
@@ -141,11 +144,15 @@ bot.on("message", (msg) => {
     const photo = msg.photo;
 
     if (text === "🛒 خرید اشتراک") {
-        bot.sendMessage(chatId, "🛒 بخش خرید اشتراک");
+        bot.sendMessage(chatId, "🛒 بخش خرید اشتراک و تعرفه‌ها");
         return;
     }
     if (text === "🎁 اشتراک رایگان") {
-        bot.sendMessage(chatId, "🎁 بخش اشتراک رایگان و هدیه روزانه");
+        bot.sendMessage(chatId, "🎁 بخش دریافت اشتراک رایگان");
+        return;
+    }
+    if (text === "🚀 سرور تست") {
+        bot.sendMessage(chatId, "🚀 بخش دریافت سرور تست رایگان");
         return;
     }
     if (text === "💳 کیف پول") {
@@ -158,12 +165,20 @@ bot.on("message", (msg) => {
         bot.sendMessage(chatId, "📁 شما در حال حاضر اشتراک فعالی ندارید.");
         return;
     }
-    if (text === "📞 پشتیبانی") {
-        bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @amir_85m10");
+    if (text === "📖 آموزش اتصال") {
+        bot.sendMessage(chatId, "📖 راهنمای اتصال به سرورها در سیستم‌عامل‌های مختلف");
+        return;
+    }
+    if (text === "🤝 درخواست نمایندگی") {
+        bot.sendMessage(chatId, "🤝 شرایط و قوانین اخذ نمایندگی");
         return;
     }
     if (text === "👥 دعوت دوستان") {
-        bot.sendMessage(chatId, "🌐 لینک معرفی به دوستان");
+        bot.sendMessage(chatId, "🌐 لینک معرفی به دوستان و کسب درآمد");
+        return;
+    }
+    if (text === "📞 پشتیبانی") {
+        bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @amir_85m10");
         return;
     }
 
@@ -207,14 +222,13 @@ bot.on("message", (msg) => {
                     inline_keyboard: [
                         [
                             { text: "✅ تایید و شارژ", callback_data: `approve_${userId}_${amount}` },
-                            { text: "❌ رد فیش", callback_data: `reject_${userId}` }
+                            { text: "❌ رد فیش", callback_data: "reject_${userId}" }
                         ]
                     ]
                 },
                 parse_mode: "Markdown"
             };
 
-            // ارسال فیش‌ها به ادمین (با استفاده از چت آیدی ادمین)
             if (photo) {
                 const fileId = photo[photo.length - 1].file_id;
                 bot.sendPhoto(ADMIN_CHAT_ID, fileId, {
