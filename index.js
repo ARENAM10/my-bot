@@ -12,12 +12,8 @@ app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
 
-const TOKEN = process.env.BOT_TOKEN;
-
-if (!TOKEN) {
-    console.error('خطا: متغیر BOT_TOKEN یافت نشد!');
-    process.exit(1);
-}
+// توکن رو مستقیماً همینجا گذاشتیم تا دیگه خطای متغیر محیطی نده
+const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
@@ -26,4 +22,4 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(chatId, 'سلام! ربات روشن است. 🌹');
 });
 
-console.log('🤖 ربات استارت شد...');
+console.log('🤖 ربات استارت شد و با موفقیت متصل شد...');
