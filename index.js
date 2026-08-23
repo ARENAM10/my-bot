@@ -18,8 +18,11 @@ let isForceJoinEnabled = false;
 
 // تنظیمات بخش‌های مختلف
 let isTestServerEnabled = true;     
+let testServerConfig = 'vless://example-test-server-link'; // لینک سرور تست قابل تغییر
+
 let isFreeSubEnabled = true;
-let freeSubConfig = 'vless://example-free-sub-link';
+let freeSubConfig = 'vless://example-free-sub-link'; // لینک اشتراک رایگان قابل تغییر
+
 let isInviteSystemEnabled = true;    
 
 const userStates = {};       
@@ -59,7 +62,7 @@ let customPlans = [
 ]; 
 
 let paymentCardNumber = '6037-9971-xxxx-xxxx'; 
-let paymentCardOwner = 'نام و فامیل شما'; 
+// متغیر نام صاحب کارت حذف شد
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
@@ -167,12 +170,11 @@ function getMainKeyboard() {
                 ],
                 [{ text: '💰 کیف پول من', callback_data: 'wallet' }],
                 [
-                    { text: '📱 اشتراک‌های من', callback_data: 'my_subs' },
-                    { text: '📖 آموزش اتصال', callback_data: 'tutorial' }
-                ],
-                [{ text: '🤝 درخواست نمایندگی', callback_data: 'agency' }],
-                [
                     ...(isInviteSystemEnabled ? [{ text: '👥 دعوت دوستان (زیرمجموعه‌گیری)', callback_data: 'invite' }] : []),
+                    { text: '📱 اشتراک‌های من', callback_data: 'my_subs' }
+                ],
+                [
+                    { text: '📖 آموزش اتصال', callback_data: 'tutorial' },
                     { text: '📞 پشتیبانی آنلاین', callback_data: 'support' }
                 ],
                 [{ text: '🔄 استارت مجدد / منوی اصلی', callback_data: 'restart_bot' }]
@@ -279,12 +281,16 @@ function sendAdminPanel(chatId) {
                     { text: freeSubStatus, callback_data: 'toggle_free_sub' }
                 ],
                 [
+                    { text: '🧪 تغییر لینک سرور تست', callback_data: 'admin_set_test_link' },
+                    { text: '🎁 تغییر لینک اشتراک رایگان', callback_data: 'admin_set_free_link' }
+                ],
+                [
                     { text: inviteStatus, callback_data: 'toggle_invite_system' },
                     { text: forceJoinStatus, callback_data: 'admin_force_join_menu' }
                 ],
                 [
                     { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' },
-                    { text: '💳 تنظیمات پرداخت', callback_data: 'admin_pay_settings' }
+                    { text: '💳 تنظیمات شماره کارت', callback_data: 'admin_pay_settings' }
                 ]
             ]
         }
@@ -351,11 +357,25 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    if (data === 'admin_set_test_link') {
+        if (!isAdmin(callbackQuery)) return;
+        userStates[chatId] = { step: 'get_new_test_link' };
+        bot.sendMessage(chatId, `🧪 لینک یا کانفیگ جدید سرور تست را بفرستید.\nلینک فعلی:\n\`${testServerConfig}\``, { parse_mode: 'Markdown' });
+        return;
+    }
+
     if (data === 'toggle_free_sub') {
         if (!isAdmin(callbackQuery)) return;
         isFreeSubEnabled = !isFreeSubEnabled;
         bot.sendMessage(chatId, `🎁 بخش اشتراک رایگان با موفقیت ${isFreeSubEnabled ? 'روشن' : 'خاموش'} شد.`);
         sendAdminPanel(chatId);
+        return;
+    }
+
+    if (data === 'admin_set_free_link') {
+        if (!isAdmin(callbackQuery)) return;
+        userStates[chatId] = { step: 'get_new_free_link' };
+        bot.sendMessage(chatId, `🎁 لینک یا کانفیگ جدید اشتراک رایگان را بفرستید.\nلینک فعلی:\n\`${freeSubConfig}\``, { parse_mode: 'Markdown' });
         return;
     }
 
@@ -448,7 +468,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
     if (data === 'admin_pay_settings') {
         userStates[chatId] = { step: 'get_new_card_number' };
-        bot.sendMessage(chatId, '💳 **تنظیمات کارت به کارت**\n\nشماره کارت فعلی: `' + paymentCardNumber + '`\n\nشماره کارت جدید را بفرستید:', { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, '💳 **تنظیمات شماره کارت**\n\nشماره کارت فعلی: `' + paymentCardNumber + '`\n\nشماره کارت جدید را بفرستید:', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -678,9 +698,10 @@ bot.on('callback_query', async (callbackQuery) => {
 
         userStates[chatId] = { step: 'get_card_purchase_receipt', planId: plan.id };
 
+        // نام و نام خانوادگی از بخش کارت به کارت حذف شد
         const checkoutText = `📋 **فاکتور نهایی خرید (کارت به کارت)**\n\n` +
                              `🏷 پلن: \`${plan.name}\` | 💵 مبلغ: \`${plan.price}\`\n\n` +
-                             `💳 به شماره کارت زیر واریز کرده و سپس **عکس رسید واریزی** را همینجا بفرستید:\n\`${paymentCardNumber}\`\n👤 به نام: *${paymentCardOwner}*`;
+                             `💳 به شماره کارت زیر واریز کرده و سپس **عکس رسید واریزی** را همینجا بفرستید:\n\`${paymentCardNumber}\``;
 
         bot.sendMessage(chatId, checkoutText, { parse_mode: 'Markdown' });
         return;
@@ -691,16 +712,30 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, '❌ بخش اشتراک رایگان در حال حاضر غیرفعال است.');
             return;
         }
-        bot.sendMessage(chatId, `🎁 **اشتراک رایگان شما:**\n\n\`${freeSubConfig}\``, { parse_mode: 'Markdown' });
+        
+        const parsedFree = await fetchAndParseConfig(freeSubConfig);
+        let freeMsg = `🎁 **سرویس اشتراک رایگان شما:**\n\n🔗 **لینک اشتراک:**\n\`${freeSubConfig}\``;
+        if (parsedFree.extractedConfigs && parsedFree.extractedConfigs.length > 0) {
+            freeMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${parsedFree.extractedConfigs.join('\n\n')}\n\`\`\``;
+        }
+        bot.sendMessage(chatId, freeMsg, { parse_mode: 'Markdown' });
         return;
     }
 
     if (data === 'test_server') {
         if (!isTestServerEnabled) {
-            bot.sendMessage(chatId, '❌ سرور تست در حال حاضر غیرفعال است.');
+            bot.sendMessage(chatId, '❌ سرویس تست در حال حاضر غیرفعال است.');
             return;
         }
-        bot.sendMessage(chatId, '🧪 سرور تست ربات فعال و آماده تست است.');
+
+        const parsedTest = await fetchAndParseConfig(testServerConfig);
+        let testMsg = `🧪 **سرور تست پرسرعت و رایگان**\n\nبرای تست کیفیت و پینگ، می‌توانید از لینک یا کانفیگ زیر استفاده کنید:\n\n🔗 **لینک اتصال:**\n\`${testServerConfig}\``;
+        
+        if (parsedTest.extractedConfigs && parsedTest.extractedConfigs.length > 0) {
+            testMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedTest.extractedConfigs.join('\n\n')}\n\`\`\``;
+        }
+        
+        bot.sendMessage(chatId, testMsg, { parse_mode: 'Markdown' });
         return;
     }
 
@@ -771,6 +806,20 @@ bot.on('message', async (msg) => {
             sendAdminPanel(chatId);
             return;
         }
+        if (state.step === 'get_new_test_link') {
+            testServerConfig = text.trim();
+            delete userStates[chatId];
+            bot.sendMessage(chatId, `✅ لینک سرور تست با موفقیت آپدیت شد.`);
+            sendAdminPanel(chatId);
+            return;
+        }
+        if (state.step === 'get_new_free_link') {
+            freeSubConfig = text.trim();
+            delete userStates[chatId];
+            bot.sendMessage(chatId, `✅ لینک اشتراک رایگان با موفقیت آپدیت شد.`);
+            sendAdminPanel(chatId);
+            return;
+        }
         if (state.step === 'admin_get_charge_user_id') {
             const targetId = parseInt(text.trim(), 10);
             if (!targetId || isNaN(targetId)) {
@@ -804,9 +853,10 @@ bot.on('message', async (msg) => {
         }
         userStates[chatId] = { step: 'get_wallet_deposit_receipt', depositAmount: amount };
         
+        // نام و نام خانوادگی از بخش واریز کیف پول هم حذف شد
         const depositMsg = `💳 **فاکتور شارژ کیف پول**\n\n` +
                            `💵 مبلغ شارژ: \`${amount.toLocaleString()} تومان\`\n\n` +
-                           `به شماره کارت زیر واریز کرده و رسید بفرستید:\n\`${paymentCardNumber}\`\n👤 به نام: *${paymentCardOwner}*`;
+                           `به شماره کارت زیر واریز کرده و رسید بفرستید:\n\`${paymentCardNumber}\``;
         bot.sendMessage(chatId, depositMsg, { parse_mode: 'Markdown' });
         return;
     }
