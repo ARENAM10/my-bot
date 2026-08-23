@@ -40,7 +40,7 @@ let db = {
     usersDetailMap: {},
     receiptsHistory: [],
     referals: {},
-    userSubscriptions: {}, // ذخیره به صورت آرایه برای هر کاربر (چندین اشتراک)
+    userSubscriptions: {}, 
     allSubscriptionsHistory: [],
     customPlans: [
         { 
@@ -127,15 +127,6 @@ function trackUser(msg) {
             db.allUsers.push(userId);
             db.usersDetailMap[userId] = { name, username, joinedAt: new Date().toLocaleString('fa-IR') };
             saveDatabase();
-
-            if (userId !== ADMIN_CHAT_ID) {
-                const memberReport = `👤 **کاربر جدید برای اولین بار وارد ربات شد!**\n\n` +
-                                     `📛 نام: ${name}\n` +
-                                     `🆔 یوزرنیم: ${username}\n` +
-                                     `🔢 آیدی عددی: \`${userId}\`\n` +
-                                     `📊 کل کاربران تاکنون: ${db.allUsers.length} نفر`;
-                bot.sendMessage(ADMIN_CHAT_ID, memberReport, { parse_mode: 'Markdown' }).catch(() => {});
-            }
         }
     }
 }
@@ -702,7 +693,6 @@ bot.on('callback_query', async (callbackQuery) => {
             purchaseDate: currentDateStr
         };
 
-        // --- اصلاح ذخیره چند اشتراک (اضافه شدن به آرایه اشتراک‌های کاربر) ---
         if (!db.userSubscriptions[chatId]) {
             db.userSubscriptions[chatId] = [];
         }
@@ -781,8 +771,11 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    // --- اصلاح‌شده برای نمایش دقیق و سریع اشتراک‌ها بدون ارسال پیام‌های تکراری ---
     if (data === 'my_subs') {
+        loadDatabase(); // بارگذاری مجدد جهت اطمینان از همگام‌سازی با فایل دیتابیس
         const subs = db.userSubscriptions[chatId];
+        
         if (subs && Array.isArray(subs) && subs.length > 0) {
             let subText = `📱 **لیست اشتراک‌های فعال شما (${subs.length} عدد):**\n\n`;
             subs.forEach((sub, idx) => {
@@ -814,11 +807,6 @@ bot.on('callback_query', async (callbackQuery) => {
                              `3️⃣ برنامه را باز کرده، روی علامت + یا Import کلیک و لینک را اضافه کنید.\n` +
                              `4️⃣ روی دکمه اتصال (Connect) ضربه بزنید تا متصل شوید.`;
         bot.sendMessage(chatId, tutorialText, { parse_mode: 'Markdown' });
-        return;
-    }
-
-    if (data === 'agency') {
-        bot.sendMessage(chatId, '🤝 برای نمایندگی با پشتیبانی ارتباط بگیرید.');
         return;
     }
 
@@ -1156,7 +1144,6 @@ bot.on('callback_query', async (callbackQuery) => {
                     purchaseDate: currentDateStr
                 };
 
-                // --- ذخیره در لیست آرایه اشتراک‌ها برای تایید کارت به کارت ---
                 if (!db.userSubscriptions[targetUserId]) {
                     db.userSubscriptions[targetUserId] = [];
                 }
@@ -1192,4 +1179,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با سیستم ذخیره‌سازی دائمی و مدیریت چند اشتراک اجرا شد.');
+console.log('🤖 ربات با سیستم بروزرسانی سریع و رفع مشکل پیام‌های تکراری اجرا شد.');
