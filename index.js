@@ -4,7 +4,7 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// توکن رو مستقیماً قرار میدیم تا هیچ نیازی به تنظیم متغیر تو رایلوای نباشه
+// توکن مستقیم بدون نیاز به متغیر محیطی
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -22,7 +22,6 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(chatId, 'سلام! ربات با موفقیت روشن شد و آماده کاره. 🌹');
 });
 
-// مدیریت خطاهای احتمالی برای جلوگیری از خاموش شدن ربات
 process.on('uncaughtException', (err) => {
     console.log('خطای مدیریت شده:', err.message);
 });
