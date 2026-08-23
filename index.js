@@ -226,7 +226,6 @@ async function checkMembership(userId) {
     }
 }
 
-// --- تابع پیشرفته و جامع برای استخراج تمام جزئیات کانفیگ و حجم‌ها ---
 async function fetchAndParseConfig(url) {
     let resultInfo = {
         isSubLink: false,
@@ -481,7 +480,6 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'my_account_info') {
-        // بررسی و پیدا کردن امن اطلاعات کاربر از هر دو روش (userId یا chatId)
         const targetKey = userId || chatId;
         
         if (!db.usersDetailMap[targetKey]) {
@@ -494,9 +492,9 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         const userInfo = db.usersDetailMap[targetKey];
-        const userWallet = db.userWallets[targetKey] || db.userWallets[chatId] || 0;
-        const userSubsList = db.userSubscriptions[targetKey] || db.userSubscriptions[chatId] || [];
-        const userReferralsCount = db.referals[targetKey] || db.referals[chatId] || 0;
+        const userWallet = db.userWallets[targetKey] || 0;
+        const userSubsList = db.userSubscriptions[targetKey] || [];
+        const userReferralsCount = db.referals[targetKey] || 0;
 
         let accountText = `👤 **اطلاعات حساب کاربری شما:**\n\n` +
                           `📛 نام: ${userInfo.name || 'بدون نام'}\n` +
@@ -746,7 +744,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'wallet') {
-        const balance = db.userWallets[userId] || db.userWallets[chatId] || 0;
+        const balance = db.userWallets[userId] || 0;
         const walletKeyboard = {
             reply_markup: {
                 inline_keyboard: [
@@ -755,7 +753,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 ]
             }
         };
-        bot.sendMessage(chatId, `💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: \`${balance.toLocaleString()} تومان\`\n\nبرای افزایش موجودی، روی دکمه زیر کلیک کنید:`, { parse_mode: 'Markdown', ...walletKeyboard });
+        bot.sendMessage(chatId, `💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: \`${balance.toLocaleString()} تومان\`\n\nشناسه کاربری شما: \`${userId}\`\n\nبرای افزایش موجودی، روی دکمه زیر کلیک کنید:`, { parse_mode: 'Markdown', ...walletKeyboard });
         return;
     }
 
@@ -792,7 +790,7 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         const priceNumber = parsePrice(selectedPlan.price);
-        const userBalance = db.userWallets[userId] || db.userWallets[chatId] || 0;
+        const userBalance = db.userWallets[userId] || 0;
 
         const inlineBtns = [];
         let paymentDesc = `📋 **فاکتور نهایی خرید اشتراک**\n\n` +
@@ -826,7 +824,7 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         const priceNumber = parsePrice(plan.price);
-        const userBalance = db.userWallets[userId] || db.userWallets[chatId] || 0;
+        const userBalance = db.userWallets[userId] || 0;
 
         if (userBalance < priceNumber) {
             bot.sendMessage(chatId, '❌ موجودی کیف پول شما کافی نیست.');
@@ -945,7 +943,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'my_subs') {
-        const subs = db.userSubscriptions[userId] || db.userSubscriptions[chatId];
+        const subs = db.userSubscriptions[userId];
         
         if (subs && Array.isArray(subs) && subs.length > 0) {
             let subText = `📱 **لیست اشتراک‌های فعال شما (${subs.length} عدد):**\n\n`;
@@ -980,7 +978,7 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, '❌ سیستم زیرمجموعه‌گیری در حال حاضر غیرفعال است.');
             return;
         }
-        const userRefCount = db.referals[userId] || db.referals[chatId] || 0;
+        const userRefCount = db.referals[userId] || 0;
         const inviteLink = `https://t.me/${bot.options.username}?start=${chatId}`;
         bot.sendMessage(chatId, `👥 **سیستم دعوت از دوستان**\n\nبا ارسال لینک زیر به دوستان خود، به ازای هر ورود پاداش بگیرید:\n\`${inviteLink}\`\n\nتعداد زیرمجموعه‌های شما: ${userRefCount} نفر`, { parse_mode: 'Markdown' });
         return;
@@ -1380,5 +1378,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با قابلیت خواندن کامل جزئیات ترافیک، حجم و وضعیت کانفیگ فعال شد.');
-
+console.log('🤖 ربات با موفقیت آپدیت و فعال شد.');
