@@ -11,7 +11,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const userState = {};
 const userBalances = {};
 
-// تابع کمکی برای تشخیص صددرصدی مالک
+// تابع بررسی ادمین
 function isAdmin(user) {
     if (!user) return false;
     const username = user.username ? user.username.toLowerCase() : "";
@@ -19,25 +19,25 @@ function isAdmin(user) {
     return username === ADMIN_USERNAME.toLowerCase() || userId === ADMIN_CHAT_ID;
 }
 
-// دستور /start (پاکسازی کامل دکمه‌های پایینی و نمایش منوی شیشه‌ای)
+// دکمه‌های همیشگی پایین صفحه
+const persistentKeyboard = {
+    reply_markup: {
+        keyboard: [
+            [{ text: "🛒 خرید اشتراک" }, { text: "🎁 اشتراک رایگان" }],
+            [{ text: "💳 کیف پول" }, { text: "📦 اشتراک‌های من" }],
+            [{ text: "📞 پشتیبانی" }, { text: "👥 دعوت دوستان" }]
+        ],
+        resize_keyboard: true
+    }
+};
+
+// دستور /start (بدون منوی شیشه‌ای، فقط با دکمه‌های پایین)
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     userState[userId] = { step: null };
 
-    bot.sendMessage(chatId, `✨ به پنل اختصاصی ARENA CONFIG خوش آمدید.\n\nلطفاً از گزینه‌های زیر انتخاب کنید:`, {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: "🛒 خرید اشتراک", callback_data: "buy_sub" }],
-                [{ text: "🚀 تست سرعت", callback_data: "speed_test" }, { text: "🎁 هدیه روزانه", callback_data: "daily_gift" }],
-                [{ text: "💳 حساب کاربری", callback_data: "account" }, { text: "📁 اشتراک‌های من", callback_data: "my_subs" }],
-                [{ text: "📖 راهنمای اتصال", callback_data: "guide" }, { text: "🤝 اخذ نمایندگی", callback_data: "agency" }],
-                [{ text: "🌐 معرفی به دوستان", callback_data: "invite" }, { text: "📞 ارتباط با پشتیبانی", callback_data: "support" }]
-            ],
-            // این دستور به طور قطعی دکمه‌های مستطیلی پایین را از صفحه پاک می‌کند
-            remove_keyboard: true 
-        }
-    });
+    bot.sendMessage(chatId, `✨ به پنل اختصاصی ARENA CONFIG خوش آمدید.\n\nلطفاً از دکمه‌های زیر انتخاب کنید:`, persistentKeyboard);
 });
 
 // دستور اختصاصی پنل مدیریت
@@ -56,15 +56,14 @@ bot.onText(/\/admin/, (msg) => {
                 [{ text: "💰 شارژ کیف پول", callback_data: "adm_charge" }, { text: "📁 رسیدها و فیش‌ها", callback_data: "adm_receipts" }],
                 [{ text: "👥 کاربران", callback_data: "adm_users" }, { text: "📊 آمار کل", callback_data: "adm_stats" }],
                 [{ text: "💳 تنظیمات پرداخت", callback_data: "adm_payment" }, { text: "💬 پیام مشتریان", callback_data: "adm_messages" }],
-                [{ text: "📢 ارسال همگانی", callback_data: "adm_broadcast" }],
-                [{ text: "🔙 بازگشت به منوی اصلی", callback_data: "back_to_main" }]
+                [{ text: "📢 ارسال همگانی", callback_data: "adm_broadcast" }]
             ]
         },
         parse_mode: "Markdown"
     });
 });
 
-// مدیریت کلیک دکمه‌ها
+// مدیریت کلیک دکمه‌های پنل مدیریت
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const userId = query.from.id.toString();
@@ -74,7 +73,6 @@ bot.on("callback_query", async (query) => {
 
     if (!userState[userId]) userState[userId] = { step: null };
 
-    // بخش ادمین
     if (data.startsWith("adm_")) {
         if (!isAdmin(query.from)) {
             bot.sendMessage(chatId, "❌ دسترسی غیرمجاز.");
@@ -97,7 +95,6 @@ bot.on("callback_query", async (query) => {
         return;
     }
 
-    // تایید فیش توسط ادمین
     if (data.startsWith("approve_")) {
         if (!isAdmin(query.from)) return;
         const [, targetUserId, amountStr] = data.split("_");
@@ -111,7 +108,6 @@ bot.on("callback_query", async (query) => {
         return;
     }
 
-    // رد فیش توسط ادمین
     if (data.startsWith("reject_")) {
         if (!isAdmin(query.from)) return;
         const [, targetUserId] = data.split("_");
@@ -120,22 +116,6 @@ bot.on("callback_query", async (query) => {
         bot.sendMessage(chatId, `❌ فیش کاربر رد شد.`);
         return;
     }
-
-    // بخش کاربران عادی
-    if (data === "buy_sub") bot.sendMessage(chatId, "🛒 بخش خرید اشتراک");
-    else if (data === "speed_test") bot.sendMessage(chatId, "🚀 ابزار تست سرعت سرورها");
-    else if (data === "daily_gift") bot.sendMessage(chatId, "🎁 هدیه روزانه شما");
-    else if (data === "account") {
-        const balance = userBalances[userId] || 0;
-        userState[userId].step = "waiting_for_amount";
-        bot.sendMessage(chatId, `💳 حساب کاربری شما\n\n💰 موجودی کیف پول: ${balance.toLocaleString()} تومان\n\nلطفاً مبلغ مورد نظر برای شارژ حساب (به تومان) را وارد کنید:\n\n(برای لغو کلمه «انصراف» را بفرستید)`);
-    } 
-    else if (data === "my_subs") bot.sendMessage(chatId, "📁 شما در حال حاضر اشتراک فعالی ندارید.");
-    else if (data === "guide") bot.sendMessage(chatId, "📖 راهنمای اتصال");
-    else if (data === "agency") bot.sendMessage(chatId, "🤝 شرایط اخذ نمایندگی");
-    else if (data === "invite") bot.sendMessage(chatId, "🌐 لینک معرفی به دوستان");
-    else if (data === "support") bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @ARENAM_10");
-    else if (data === "back_to_main") bot.sendMessage(chatId, `✨ به پنل اختصاصی ARENA CONFIG خوش آمدید.`);
 
     if (data.startsWith("pay_card_")) {
         const amount = data.split("_")[2];
@@ -153,12 +133,39 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-// مدیریت پیام‌ها و ارسال فیش به مالک
+// مدیریت پیام‌ها و دکمه‌های پایین صفحه
 bot.on("message", (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
     const text = msg.text;
     const photo = msg.photo;
+
+    if (text === "🛒 خرید اشتراک") {
+        bot.sendMessage(chatId, "🛒 بخش خرید اشتراک");
+        return;
+    }
+    if (text === "🎁 اشتراک رایگان") {
+        bot.sendMessage(chatId, "🎁 بخش اشتراک رایگان و هدیه روزانه");
+        return;
+    }
+    if (text === "💳 کیف پول") {
+        const balance = userBalances[userId] || 0;
+        userState[userId] = { step: "waiting_for_amount" };
+        bot.sendMessage(chatId, `💳 حساب کاربری شما\n\n💰 موجودی کیف پول: ${balance.toLocaleString()} تومان\n\nلطفاً مبلغ مورد نظر برای شارژ حساب (به تومان) را وارد کنید:\n\n(برای لغو کلمه «انصراف» را بفرستید)`);
+        return;
+    }
+    if (text === "📦 اشتراک‌های من") {
+        bot.sendMessage(chatId, "📁 شما در حال حاضر اشتراک فعالی ندارید.");
+        return;
+    }
+    if (text === "📞 پشتیبانی") {
+        bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @ARENAM_10");
+        return;
+    }
+    if (text === "👥 دعوت دوستان") {
+        bot.sendMessage(chatId, "🌐 لینک معرفی به دوستان");
+        return;
+    }
 
     if (!userState[userId]) userState[userId] = { step: null };
     const currentState = userState[userId].step;
