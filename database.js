@@ -8,7 +8,6 @@ const db = new sqlite3.Database('./arena.sqlite', (err) => {
     }
 });
 
-// ایجاد جداول موردنیاز
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (
         userId TEXT PRIMARY KEY,
@@ -46,7 +45,17 @@ db.serialize(() => {
         name TEXT,
         volume TEXT,
         duration TEXT,
-        config TEXT,
+        startDate TEXT,
+        expireDate TEXT,
+        config TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT,
+        amount INTEGER,
+        type TEXT,
+        description TEXT,
         date TEXT
     )`);
 
@@ -57,7 +66,7 @@ db.serialize(() => {
 
     db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('cardNumber', '6037-9971-xxxx-xxxx')`);
     db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('cardHolder', 'نام صاحب کارت')`);
-    db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('welcomeMessage', '✨ به پنل اختصاصی خوش آمدید.\\n\\nلطفاً از گزینه‌های زیر انتخاب کنید:')`);
+    db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('welcomeMessage', '✨ به پنل اختصاصی آرنا خوش آمدید.\\n\\nلطفاً از منوی زیر گزینه مورد نظر را انتخاب کنید:')`);
 });
 
 export default db;
