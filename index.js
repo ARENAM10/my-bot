@@ -12,9 +12,9 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
-const ADMIN_WEB_PASSWORD = 'admin_secure_password'; // رمز ورود به پنل وب
+const ADMIN_WEB_PASSWORD = 'admin_secure_password';
 
-// --- استفاده از مسیر پایدار Volume در Railway ---
+// --- مسیر ذخیره‌سازی داده‌ها ---
 const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
 const DB_FILE = path.join(DATA_DIR, 'database.json');
 
@@ -68,9 +68,9 @@ function loadDatabase() {
             const data = fs.readFileSync(DB_FILE, 'utf8');
             const parsed = JSON.parse(data);
             db = { ...db, ...parsed };
-            console.log('✅ دیتابیس با موفقیت از Volume دائمی بازیابی شد. تعداد کاربران:', db.allUsers.length);
+            console.log('✅ دیتابیس با موفقیت بارگذاری شد. تعداد کل کاربران:', db.allUsers.length);
         } else {
-            console.log('⚠️ فایل دیتابیس در Volume یافت نشد، ایجاد فایل جدید...');
+            console.log('⚠️ فایل دیتابیس یافت نشد، ایجاد فایل جدید...');
             saveDatabase();
         }
     } catch (e) {
@@ -85,7 +85,7 @@ function saveDatabase() {
         }
         fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
     } catch (e) {
-        console.log('❌ خطا در ذخیره‌سازی روی Volume:', e);
+        console.log('❌ خطا در ذخیره‌سازی دیتابیس:', e);
     }
 }
 
@@ -94,7 +94,7 @@ loadDatabase();
 const userStates = {};       
 const REWARD_AMOUNT = 5000;  
 
-// --- بخش وب‌سایت و پنل مدیریت تحت وب ---
+// --- بخش وب‌سایت و پنل مدیریت ---
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -176,7 +176,8 @@ function parsePrice(priceStr) {
     return parseInt(digits, 10) || 0;
 }
 
-function trackUser(msg, isNewStart = false) {
+// تابع جامع برای ثبت نام کاربر و گزارش فوری به مالک هنگام استارت یا تعامل
+function trackUserAndNotifyAdmin(msg) {
     if (msg && msg.from && msg.from.id) {
         const userId = msg.from.id;
         const user = msg.from;
@@ -206,7 +207,8 @@ function trackUser(msg, isNewStart = false) {
         }
         saveDatabase();
 
-        if (isBrandNew && isNewStart && chatId !== ADMIN_CHAT_ID) {
+        // گزارش به مالک برای هر بار استارت کاربر (جدید یا قدیمی)
+        if (chatId !== ADMIN_CHAT_ID) {
             const keyboard = {
                 reply_markup: {
                     inline_keyboard: [[{ text: '👤 پروفایل کاربر', url: `tg://user?id=${userId}` }]]
@@ -214,7 +216,7 @@ function trackUser(msg, isNewStart = false) {
             };
             bot.sendMessage(
                 ADMIN_CHAT_ID, 
-                `👤 **کاربر جدید به ربات پیوست!**\n\n📛 نام: ${name}\n🔗 یوزرنیم: ${username}\n🆔 آیدی عددی: \`${userId}\`\n📅 تاریخ عضویت: ${db.usersDetailMap[userId].joinedAt}`, 
+                `🚀 **کاربر ربات را استارت کرد!**\n\n📛 نام: ${name}\n🔗 یوزرنیم: ${username}\n🆔 آیدی عددی: \`${userId}\`\n📌 وضعیت: ${isBrandNew ? 'کاربر جدید 🟢' : 'کاربر قدیمی (استارت مجدد) 🔄'}`, 
                 { parse_mode: 'Markdown', ...keyboard }
             ).catch(() => {});
         }
@@ -303,7 +305,6 @@ async function sendMainMenu(chatId) {
 }
 
 async function handleForceJoin(msg) {
-    trackUser(msg, false);
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
@@ -331,7 +332,8 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
     delete userStates[chatId];
 
-    trackUser(msg, true);
+    // ثبت کاربر و ارسال گزارش به مالک
+    trackUserAndNotifyAdmin(msg);
 
     const canProceed = await handleForceJoin(msg);
     if (!canProceed) return;
@@ -366,7 +368,6 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
 
 bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
     loadDatabase();
-    trackUser(msg, false);
     const chatId = msg.chat.id;
     if (!isAdmin(msg)) {
         bot.sendMessage(chatId, '❌ شما دسترسی به این بخش ندارید.');
@@ -429,6 +430,7 @@ bot.on('callback_query', async (callbackQuery) => {
     const chatId = msg.chat.id;
     const userId = callbackQuery.from.id;
 
+    // به‌روزرسانی اطلاعات کاربر در دیتابیس در صورت تعامل
     if (callbackQuery.from) {
         const u = callbackQuery.from;
         const name = u.first_name || u.last_name || 'بدون نام';
@@ -455,6 +457,7 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    // --- بخش اصلاح‌شده و دقیق «حساب کاربری من» ---
     if (data === 'my_account_info') {
         const userInfo = db.usersDetailMap[userId] || db.usersDetailMap[chatId] || { 
             name: callbackQuery.from.first_name || 'کاربر', 
@@ -980,7 +983,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
 bot.on('message', async (msg) => {
     loadDatabase();
-    trackUser(msg, false);
+    trackUserAndNotifyAdmin(msg);
     const chatId = msg.chat.id;
     const text = msg.text;
 
@@ -1161,7 +1164,7 @@ bot.on('message', async (msg) => {
 
 bot.on('photo', async (msg) => {
     loadDatabase();
-    trackUser(msg, false);
+    trackUserAndNotifyAdmin(msg);
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const userInfo = db.usersDetailMap[userId] || { name: 'کاربر' };
@@ -1356,4 +1359,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات همراه با پنل وب مدیریت با موفقیت به‌روزرسانی شد و در حال اجراست.');
+console.log('🤖 ربات همراه با بخش حساب کاربری اصلاح‌شده و گزارش استارت کامل فعال است.');
