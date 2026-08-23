@@ -8,8 +8,10 @@ const CARD_HOLDER = "نام صاحب کارت";
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+// پایگاه داده ساده در حافظه (برای ربات‌های تست و سبک)
 const userState = {};
 const userBalances = {};
+const allUsers = new Set(); // ذخیره آیدی تمام کاربرانی که استارت زده‌اند
 
 function isAdmin(user) {
     if (!user) return false;
@@ -18,7 +20,7 @@ function isAdmin(user) {
     return username === ADMIN_USERNAME.toLowerCase() || userId === ADMIN_CHAT_ID;
 }
 
-// دکمه‌های همیشگی پایین صفحه دقیقاً مشابه نمونه
+// دکمه‌های همیشگی پایین صفحه
 const persistentKeyboard = {
     reply_markup: {
         keyboard: [
@@ -35,34 +37,61 @@ const persistentKeyboard = {
 
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    const userId = msg.from.id;
+    const userId = msg.from.id.toString();
     userState[userId] = { step: null };
+    allUsers.add(userId); // ذخیره کاربر برای آمار و ارسال همگانی
+
+    // اگر مالک ربات باشد، دکمه پنل مدیریت هم به او نمایش داده می‌شود
+    if (isAdmin(msg.from)) {
+        bot.sendMessage(chatId, `✨ به پنل مدیریت و کاربری خوش آمدید مالک عزیز 👑\n\nبرای ورود به پنل مدیریت از دستور /admin استفاده کنید.`, {
+            reply_markup: {
+                keyboard: [
+                    [{ text: "🎛 پنل مدیریت کل" }],
+                    ...persistentKeyboard.reply_markup.keyboard
+                ],
+                resize_keyboard: true
+            }
+        });
+        return;
+    }
 
     bot.sendMessage(chatId, `✨ به پنل اختصاصی خوش آمدید.\n\nلطفاً از گزینه‌های زیر انتخاب کنید:`, persistentKeyboard);
 });
 
+// دستور یا دکمه پنل مدیریت
 bot.onText(/\/admin/, (msg) => {
-    const chatId = msg.chat.id;
+    openAdminPanel(msg.chat.id, msg.from);
+});
 
-    if (!isAdmin(msg.from)) {
+bot.on("message", (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id.toString();
+    const text = msg.text;
+
+    if (text === "🎛 پنل مدیریت کل" && isAdmin(msg.from)) {
+        openAdminPanel(chatId, msg.from);
+        return;
+    }
+});
+
+function openAdminPanel(chatId, user) {
+    if (!isAdmin(user)) {
         bot.sendMessage(chatId, "❌ شما دسترسی به پنل مدیریت ندارید.");
         return;
     }
 
-    bot.sendMessage(chatId, `🎛 **پنل مدیریت اختصاصی مالک**\n\nگزینه مورد نظر را انتخاب کنید:`, {
+    bot.sendMessage(chatId, `🎛 **پنل مدیریت پیشرفته و عملیاتی مالک**\n\nیک گزینه را انتخاب کنید:`, {
         reply_markup: {
             inline_keyboard: [
-                [{ text: "🛒 مدیریت اشتراک", callback_data: "adm_manage_sub" }, { text: "📦 سوابق اشتراک‌ها", callback_data: "adm_history" }],
-                [{ text: "💰 شارژ کیف پول", callback_data: "adm_charge" }, { text: "📁 رسیدها و فیش‌ها", callback_data: "adm_receipts" }],
-                [{ text: "👥 کاربران", callback_data: "adm_users" }, { text: "📊 آمار کل", callback_data: "adm_stats" }],
-                [{ text: "💳 تنظیمات پرداخت", callback_data: "adm_payment" }, { text: "💬 پیام مشتریان", callback_data: "adm_messages" }],
-                [{ text: "📢 ارسال همگانی", callback_data: "adm_broadcast" }]
+                [{ text: "📊 آمار واقعی ربات", callback_data: "adm_stats" }, { text: "📢 ارسال پیام همگانی", callback_data: "adm_broadcast" }],
+                [{ text: "💰 شارژ دستی کاربر", callback_data: "adm_charge_manual" }, { text: "📁 لیست کاربران", callback_data: "adm_users_list" }]
             ]
         },
         parse_mode: "Markdown"
     });
-});
+}
 
+// مدیریت کلیک دکمه‌های شیشه‌ای
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const userId = query.from.id.toString();
@@ -72,25 +101,35 @@ bot.on("callback_query", async (query) => {
 
     if (!userState[userId]) userState[userId] = { step: null };
 
-    if (data.startsWith("adm_")) {
-        if (!isAdmin(query.from)) {
-            bot.sendMessage(chatId, "❌ دسترسی غیرمجاز.");
-            return;
-        }
+    // بخش‌های مدیریت (غیرنمایشی و واقعی)
+    if (data === "adm_stats") {
+        if (!isAdmin(query.from)) return;
+        const totalUsers = allUsers.size;
+        let totalMoney = 0;
+        Object.values(userBalances).forEach(b => totalMoney += b);
 
-        const adminResponses = {
-            "adm_manage_sub": "🛒 بخش مدیریت اشتراک‌ها و سرورها",
-            "adm_history": "📦 سوابق کل اشتراک‌های فروخته شده",
-            "adm_charge": "💰 بخش شارژ دستی کیف پول کاربران",
-            "adm_receipts": "📁 لیست فیش‌ها و رسیدهای در انتظار بررسی",
-            "adm_users": "👥 لیست و آمار کاربران ربات",
-            "adm_stats": "📊 آمار کلی درآمد و فروش",
-            "adm_payment": "💳 تنظیمات شماره کارت و درگاه پرداخت",
-            "adm_messages": "💬 لیست پیام‌های پشتیبانی دریافتی",
-            "adm_broadcast": "📢 ارسال پیام همگانی به تمام کاربران"
-        };
+        bot.sendMessage(chatId, `📊 **آمار واقعی ربات:**\n\n👥 کل کاربران استارت زده: **${totalUsers} نفر**\n💰 مجموع موجودی کیف پول‌ها: **${totalMoney.toLocaleString()} تومان**`, { parse_mode: "Markdown" });
+        return;
+    }
 
-        bot.sendMessage(chatId, adminResponses[data] || "بخش مدیریت");
+    if (data === "adm_broadcast") {
+        if (!isAdmin(query.from)) return;
+        userState[userId].step = "waiting_for_broadcast_text";
+        bot.sendMessage(chatId, `📢 لطفاً پیام همگانی خود را بفرستید (متن، عکس یا...) تا به تمام ${allUsers.size} کاربر ارسال شود:\n\n(برای لغو کلمه «انصراف» را بفرستید)`);
+        return;
+    }
+
+    if (data === "adm_charge_manual") {
+        if (!isAdmin(query.from)) return;
+        userState[userId].step = "waiting_for_charge_id";
+        bot.sendMessage(chatId, `💰 لطفاً **آیدی عددی کاربر** مورد نظر را بفرستید:`);
+        return;
+    }
+
+    if (data === "adm_users_list") {
+        if (!isAdmin(query.from)) return;
+        const usersArray = Array.from(allUsers);
+        bot.sendMessage(chatId, `📁 لیست آخرین آیدی‌های عددی کاربران ربات:\n\n\`{ ${usersArray.join(", ")} }\``, { parse_mode: "Markdown" });
         return;
     }
 
@@ -102,7 +141,7 @@ bot.on("callback_query", async (query) => {
         if (!userBalances[targetUserId]) userBalances[targetUserId] = 0;
         userBalances[targetUserId] += amount;
 
-        bot.sendMessage(targetUserId, `✅ پرداخت شما به مبلغ ${amount.toLocaleString()} تومان تایید و حساب شما شارژ شد! 🎉`);
+        bot.sendMessage(targetUserId, `✅ پرداخت شما به مبلغ ${amount.toLocaleString()} تومان تایید و کیف پول شما شارژ شد! 🎉`);
         bot.sendMessage(chatId, `✅ فیش کاربر تایید شد و مبلغ ${amount.toLocaleString()} تومان به حسابش واریز گردید.`);
         return;
     }
@@ -126,20 +165,83 @@ bot.on("callback_query", async (query) => {
             `مبلغ قابل پرداخت: 💎 **${parseInt(amount).toLocaleString()} تومان**\n` +
             `شماره کارت: \`${CARD_NUMBER}\`\n` +
             `به نام: ${CARD_HOLDER}\n\n` +
-            `⚠️ **توجه بسیار مهم:** لطفاً مبلغ را به هیچ وجه رند نکنید و دقیقاً همین مبلغ را واریز کنید. در غیر این صورت واریزی شما تایید نخواهد شد!\n\n` +
-            `پس از واریز، لطفاً دکمه زیر را زده و عکس رسید پرداخت را ارسال کنید.\n\n` +
-            `📤 ارسال رسید پرداخت 📥`,
+            `⚠️ **توجه بسیار مهم:** لطفاً مبلغ را به هیچ وجه رند نکنید و دقیقاً همین مبلغ را واریز کنید.\n\n` +
+            `پس از واریز، عکس رسید یا کد پیگیری را همینجا بفرستید.`,
             { parse_mode: "Markdown" }
         );
     }
 });
 
+// مدیریت پیام‌ها، فرآیند خرید، شارژ کیف پول و ارسال همگانی
 bot.on("message", (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
     const text = msg.text;
     const photo = msg.photo;
 
+    if (!userState[userId]) userState[userId] = { step: null };
+    const currentState = userState[userId].step;
+
+    if (text === "انصراف") {
+        userState[userId].step = null;
+        bot.sendMessage(chatId, "❌ عملیات لغو شد.", persistentKeyboard);
+        return;
+    }
+
+    // مدیریت ارسال همگانی واقعی توسط ادمین
+    if (isAdmin(msg.from) && currentState === "waiting_for_broadcast_text") {
+        userState[userId].step = null;
+        let successCount = 0;
+        let failCount = 0;
+
+        bot.sendMessage(chatId, `⏳ ارسال پیام همگانی آغاز شد...`);
+
+        allUsers.forEach(async (targetId) => {
+            try {
+                if (photo) {
+                    const fileId = photo[photo.length - 1].file_id;
+                    await bot.sendPhoto(targetId, fileId, { caption: msg.caption || "" });
+                } else if (text) {
+                    await bot.sendMessage(targetId, text);
+                }
+                successCount++;
+            } catch (e) {
+                failCount++;
+            }
+        });
+
+        setTimeout(() => {
+            bot.sendMessage(chatId, `✅ ارسال همگانی به پایان رسید.\n\n✔️ موفق: ${successCount}\n❌ ناموفق (بلاک کرده‌ یا ربات را استارت نکده‌اند): ${failCount}`);
+        }, 2000);
+        return;
+    }
+
+    // شارژ دستی واقعی کیف پول توسط ادمین
+    if (isAdmin(msg.from) && currentState === "waiting_for_charge_id") {
+        userState[userId].targetUserToCharge = text;
+        userState[userId].step = "waiting_for_charge_amount";
+        bot.sendMessage(chatId, `💰 کاربر هدف ثبت شد. حالا **مبلغ شارژ (تومان)** را وارد کنید:`);
+        return;
+    }
+    if (isAdmin(msg.from) && currentState === "waiting_for_charge_amount") {
+        const targetId = userState[userId].targetUserToCharge;
+        const amount = parseInt(text);
+
+        if (isNaN(amount)) {
+            bot.sendMessage(chatId, `⚠️ لطفاً یک عدد معتبر وارد کنید:`);
+            return;
+        }
+
+        if (!userBalances[targetId]) userBalances[targetId] = 0;
+        userBalances[targetId] += amount;
+
+        userState[userId].step = null;
+        bot.sendMessage(chatId, `✅ کیف پول کاربر \`${targetId}\` به مبلغ ${amount.toLocaleString()} تومان شارژ شد.`);
+        bot.sendMessage(targetId, `🎁 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد!`).catch(() => {});
+        return;
+    }
+
+    // دکمه‌های منوی اصلی کاربران
     if (text === "🛒 خرید اشتراک") {
         bot.sendMessage(chatId, 
             `محصول مورد نظر را انتخاب کنید: 💎\n\n` +
@@ -158,27 +260,21 @@ bot.on("message", (msg) => {
         return;
     }
     if (text === "💳 کیف پول") {
-        const balance = userBalances[userId] || 21000; // پیش‌فرض تستی طبق عکس
-        userState[userId] = { step: "waiting_for_amount" };
+        const balance = userBalances[userId] || 0;
+        userState[userId].step = "waiting_for_amount";
         
         bot.sendMessage(chatId, 
-            `💎 شناسه کاربری: 8923324852\n` +
+            `💎 شناسه کاربری: \`${userId}\`\n` +
             `💎 موجودی شما: ${balance.toLocaleString()} تومان\n` +
-            `💎 تاریخ عضویت: 1405/04/01\n\n` +
-            `💎 برای افزایش موجودی یا وارد کردن کد هدیه از منوی زیر استفاده کنید:\n\n` +
-            `شارژ حساب\n` +
-            `استفاده از کد هدیه`
-        );
-        
-        setTimeout(() => {
-            bot.sendMessage(chatId, "💎 لطفاً مبلغ مورد نظر برای شارژ کیف پول خود را وارد کنید (تومان):", {
+            `💎 تاریخ عضویت: فعال\n\n` +
+            `💎 لطفاً مبلغ مورد نظر برای شارژ کیف پول خود را وارد کنید (تومان):`,
+            {
                 reply_markup: {
                     keyboard: [[{ text: "انصراف" }]],
-                    resize_keyboard: true,
-                    one_time_keyboard: true
+                    resize_keyboard: true
                 }
-            });
-        }, 500);
+            }
+        );
         return;
     }
     if (text === "📦 اشتراک‌های من") {
@@ -194,20 +290,11 @@ bot.on("message", (msg) => {
         return;
     }
     if (text === "👥 دعوت دوستان") {
-        bot.sendMessage(chatId, "🌐 لینک دعوت از دوستان");
+        bot.sendMessage(chatId, "🌐 لینک دعوت از دوستان شما: https://t.me/" + bot.options.username + "?start=" + userId);
         return;
     }
     if (text === "📞 پشتیبانی") {
-        bot.sendMessage(chatId, "📞 ارتباط با پشتیبانی: @amir_85m10");
-        return;
-    }
-
-    if (!userState[userId]) userState[userId] = { step: null };
-    const currentState = userState[userId].step;
-
-    if (text === "انصراف") {
-        userState[userId].step = null;
-        bot.sendMessage(chatId, "❌ عملیات لغو شد.", persistentKeyboard);
+        bot.sendMessage(chatId, `📞 ارتباط با پشتیبانی: @${ADMIN_USERNAME}`);
         return;
     }
 
@@ -223,7 +310,7 @@ bot.on("message", (msg) => {
         userState[userId].amount = amount;
         userState[userId].step = null;
 
-        bot.sendMessage(chatId, `💎 برای شارژ مبلغ ${amount.toLocaleString()} تومان، لطفاً یکی از روش‌های زیر را انتخاب کنید`, {
+        bot.sendMessage(chatId, `💎 برای شارژ مبلغ ${amount.toLocaleString()} تومان، روش پرداخت را انتخاب کنید:`, {
             reply_markup: {
                 keyboard: [
                     [{ text: "کارت به کارت" }],
@@ -244,9 +331,7 @@ bot.on("message", (msg) => {
             `مبلغ قابل پرداخت: 💎 **${parseInt(amount).toLocaleString()} تومان**\n` +
             `شماره کارت: \`${CARD_NUMBER}\`\n` +
             `به نام: ${CARD_HOLDER}\n\n` +
-            `⚠️ **توجه بسیار مهم:** لطفاً مبلغ را به هیچ وجه رند نکنید و دقیقاً همین مبلغ را واریز کنید. در غیر این صورت واریزی شما تایید نخواهد شد!\n\n` +
-            `پس از واریز، لطفاً دکمه زیر را زده و عکس رسید پرداخت را ارسال کنید.\n\n` +
-            `📤 ارسال رسید پرداخت 📥`,
+            `⚠️ لطفاً مبلغ را دقیقاً واریز کرده و عکس رسید یا کد پیگیری را بفرستید.`,
             { parse_mode: "Markdown" }
         );
         return;
@@ -266,7 +351,7 @@ bot.on("message", (msg) => {
                         ]
                     ]
                 },
-                parse_Mode: "Markdown"
+                parse_mode: "Markdown"
             };
 
             if (photo) {
@@ -280,7 +365,7 @@ bot.on("message", (msg) => {
                 .catch((err) => console.log("خطا در ارسال متن به ادمین:", err.message));
             }
 
-            bot.sendMessage(chatId, "✅ فیش شما برای پشتیبانی ارسال شد. پس از تایید، حساب شما شارژ خواهد شد.", persistentKeyboard);
+            bot.sendMessage(chatId, "✅ فیش شما برای پشتیبانی ارسال شد. پس از بررسی، کیف پول شما شارژ خواهد شد.", persistentKeyboard);
             userState[userId].step = null;
         }
     }
