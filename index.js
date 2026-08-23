@@ -14,7 +14,6 @@ const ADMIN_CHAT_ID = 8923324852;
 const CHANNEL_USERNAME = '@YourChannelUsername'; 
 let isForceJoinEnabled = false; 
 
-// قابلیت‌های قابل کنترل ادمین (سرور تست و سیستم زیرمجموعه‌گیری)
 let isTestServerEnabled = true;     
 let isInviteSystemEnabled = true;    
 
@@ -22,6 +21,7 @@ const userStates = {};
 const userSubscriptions = {}; 
 const userWallets = {};      
 const pending_deposits = {}; 
+const pending_card_purchases = {}; // اصلاح مشکل پرداخت کارت به کارت و ارسال رسید
 const allUsers = new Set();  
 const referals = {};         
 
@@ -55,7 +55,7 @@ let paymentCardOwner = 'مالک ربات';
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
-    res.send('Bot is running with full features!');
+    res.send('Bot is running smoothly!');
 });
 
 app.listen(PORT, () => {
@@ -145,8 +145,9 @@ async function fetchAndParseConfig(url) {
     }
 }
 
-async function sendMainMenu(chatId) {
-    const inlineKeyboard = {
+// منوی اصلی شامل گزینه استارت مجدد / منوی اصلی
+function getMainKeyboard() {
+    return {
         reply_markup: {
             inline_keyboard: [
                 [{ text: '🛒 خرید اشتراک پرسرعت', callback_data: 'buy_sub' }],
@@ -163,11 +164,15 @@ async function sendMainMenu(chatId) {
                 [
                     ...(isInviteSystemEnabled ? [{ text: '👥 دعوت دوستان (زیرمجموعه‌گیری)', callback_data: 'invite' }] : []),
                     { text: '📞 پشتیبانی آنلاین', callback_data: 'support' }
-                ]
+                ],
+                [{ text: '🔄 استارت مجدد / منوی اصلی', callback_data: 'restart_bot' }]
             ]
         }
     };
-    bot.sendMessage(chatId, '✨ **به ربات انحصاری ما خوش آمدید**\n\nلطفاً از منوی زیر گزینه موردنظر خود را انتخاب کنید: 👇', { parse_mode: 'Markdown', ...inlineKeyboard });
+}
+
+async function sendMainMenu(chatId) {
+    bot.sendMessage(chatId, '✨ **به ربات انحصاری ما خوش آمدید**\n\nلطفاً از منوی زیر گزینه موردنظر خود را انتخاب کنید: 👇', { parse_mode: 'Markdown', ...getMainKeyboard() });
 }
 
 async function handleForceJoin(msg) {
@@ -289,7 +294,12 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // دکمه‌های کنترل ادمین برای سرور تست و زیرمجموعه‌گیری
+    if (data === 'restart_bot') {
+        delete userStates[chatId];
+        sendMainMenu(chatId);
+        return;
+    }
+
     if (data === 'toggle_force_join') {
         if (!isAdmin(callbackQuery)) return;
         isForceJoinEnabled = !isForceJoinEnabled;
@@ -565,20 +575,12 @@ bot.on('callback_query', async (callbackQuery) => {
         const plan = customPlans.find(p => p.id === planId);
         if (!plan || plan.links.length === 0) return;
 
-        const assignedLink = plan.links[0];
-        userStates[chatId] = { 
-            awaiting_receipt: true, 
-            planId: plan.id,
-            selectedPlanName: plan.name, 
-            selectedPlanLink: assignedLink, 
-            selectedPlanVolume: plan.volume, 
-            selectedPlanDuration: plan.duration,
-            selectedPlanPrice: plan.price
-        };
+        // تنظیم حالت کاربر برای انتظار دریافت رسید خرید پلن کارت به کارت
+        userStates[chatId] = { step: 'get_card_purchase_receipt', planId: plan.id };
 
         const checkoutText = `📋 **فاکتور نهایی خرید (کارت به کارت)**\n\n` +
                              `🏷 پلن: \`${plan.name}\` | 💵 مبلغ: \`${plan.price}\`\n\n` +
-                             `💳 به شماره کارت زیر واریز کرده و رسید بفرستید:\n\`${paymentCardNumber}\`\n👤 به نام: *${paymentCardOwner}*`;
+                             `💳 به شماره کارت زیر واریز کرده و سپس **عکس رسید واریزی** را همینجا بفرستید:\n\`${paymentCardNumber}\`\n👤 به نام: *${paymentCardOwner}*`;
 
         bot.sendMessage(chatId, checkoutText, { parse_mode: 'Markdown' });
         return;
@@ -610,7 +612,6 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'tutorial') {
-        // آموزش اتصال خلاصه شده در ۴ خط
         const tutorialText = `📖 **آموزش اتصال:**\n` +
                              `1️⃣ اپلیکیشن V2Ray (مثل v2rayNG یا FoXray) را نصب کنید.\n` +
                              `2️⃣ لینک اشتراک اختصاصی خود را از بخش «اشتراک‌های من» کپی کنید.\n` +
@@ -744,41 +745,77 @@ bot.on('message', async (msg) => {
     }
 });
 
+// مدیریت ارسال عکس رسید (شارژ کیف پول و خرید کارت به کارت)
 bot.on('photo', async (msg) => {
     trackUser(msg);
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-    const username = msg.from.username ? '@' + msg.from.username : 'ندارد';
     const name = msg.from.first_name || 'کاربر';
+    const photoId = msg.photo[msg.photo.length - 1].file_id;
 
-    if (userStates[chatId] && userStates[chatId].step === 'get_wallet_deposit_receipt') {
-        const photoId = msg.photo[msg.photo.length - 1].file_id;
-        const amount = userStates[chatId].depositAmount;
-        delete userStates[chatId];
+    if (userStates[chatId]) {
+        if (userStates[chatId].step === 'get_wallet_deposit_receipt') {
+            const amount = userStates[chatId].depositAmount;
+            delete userStates[chatId];
 
-        pending_deposits[`deposit_${userId}`] = { amount };
-        bot.sendMessage(chatId, '✅ رسید دریافت شد. پس از تایید ادمین مبلغ افزوده می‌شود.');
+            pending_deposits[`deposit_${userId}`] = { amount };
+            bot.sendMessage(chatId, '✅ رسید دریافت شد. پس از تایید ادمین مبلغ به کیف پول شما افزوده می‌شود.');
 
-        const adminDepositKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '✅ تایید شارژ', callback_data: `approve_deposit_${userId}` },
-                        { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
+            const adminDepositKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '✅ تایید شارژ', callback_data: `approve_deposit_${userId}` },
+                            { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
+                        ]
                     ]
-                ]
-            }
-        };
+                }
+            };
 
-        bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
-            caption: `🔔 **رسید شارژ کیف پول**\nکاربر: ${name} (\`${userId}\`)\nمبلغ: \`${amount.toLocaleString()} تومان\``,
-            parse_mode: 'Markdown',
-            ...adminDepositKeyboard
-        });
-        return;
+            bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
+                caption: `🔔 **رسید شارژ کیف پول**\nکاربر: ${name} (\`${userId}\`)\nمبلغ: \`${amount.toLocaleString()} تومان\``,
+                parse_mode: 'Markdown',
+                ...adminDepositKeyboard
+            });
+            return;
+        }
+
+        // بخش خرید مستقیم پلن با کارت به کارت و ارسال رسید
+        if (userStates[chatId].step === 'get_card_purchase_receipt') {
+            const planId = userStates[chatId].planId;
+            const plan = customPlans.find(p => p.id === planId);
+            delete userStates[chatId];
+
+            if (!plan || plan.links.length === 0) {
+                bot.sendMessage(chatId, '❌ متأسفانه این پلن تمام شده یا نامعتبر است.');
+                return;
+            }
+
+            pending_card_purchases[`card_pur_${userId}`] = { planId: plan.id };
+            bot.sendMessage(chatId, '✅ رسید خرید شما دریافت شد. پس از بررسی و تایید ادمین، لینک اشتراک برای شما ارسال خواهد شد.');
+
+            const adminCardKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '✅ تایید و ارسال اشتراک', callback_data: `approve_card_${userId}_${plan.id}` },
+                            { text: '❌ رد رسید', callback_data: `reject_card_${userId}` }
+                        ]
+                    ]
+                }
+            };
+
+            bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
+                caption: `🔔 **رسید خرید کارت به کارت (اشتراک)**\nکاربر: ${name} (\`${userId}\`)\nپلن: ${plan.name} (${plan.price})`,
+                parse_mode: 'Markdown',
+                ...adminCardKeyboard
+            });
+            return;
+        }
     }
 });
 
+// دکمه‌های تایید و رد ادمین برای واریزی‌ها و رسیدها
 bot.on('callback_query', async (callbackQuery) => {
     const data = callbackQuery.data;
     const chatId = callbackQuery.message.chat.id;
@@ -804,7 +841,56 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, '❌ رسید رد شد.');
         }
     }
+
+    if (data.startsWith('approve_card_') || data.startsWith('reject_card_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const parts = data.split('_');
+        const action = parts[0];
+        const targetUserId = parts[2];
+        const cardKey = `card_pur_${targetUserId}`;
+
+        if (action === 'approve') {
+            const planId = parseInt(parts[3]);
+            const plan = customPlans.find(p => p.id === planId);
+
+            if (plan && plan.links.length > 0) {
+                const assignedLink = plan.links.shift();
+                const parsedData = await fetchAndParseConfig(assignedLink);
+                const expiryDate = new Date();
+                expiryDate.setDate(expiryDate.getDate() + 30);
+                const formattedExpiry = expiryDate.toLocaleDateString('fa-IR');
+
+                userSubscriptions[targetUserId] = {
+                    planName: plan.name,
+                    expiryDate: formattedExpiry,
+                    volume: plan.volume,
+                    configLink: assignedLink,
+                    extractedConfigs: parsedData.extractedConfigs
+                };
+
+                delete pending_card_purchases[cardKey];
+
+                let successMsg = `🎉 **خرید شما تایید شد و اشتراک صادر گردید!**\n\n` +
+                                 `📦 پلن: ${plan.name}\n` +
+                                 `🌐 حجم: ${plan.volume}\n\n` +
+                                 `🔗 **لینک اشتراک شما:**\n\`${assignedLink}\``;
+
+                if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
+                    successMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
+                }
+
+                bot.sendMessage(targetUserId, successMsg, { parse_mode: 'Markdown' }).catch(() => {});
+                bot.sendMessage(chatId, '✅ خرید تایید شد و لینک اشتراک برای کاربر ارسال گردید.');
+            } else {
+                bot.sendMessage(chatId, '❌ خطا: این پلن دیگر کانفیگ یا لینک بازی ندارد.');
+            }
+        } else {
+            delete pending_card_purchases[cardKey];
+            bot.sendMessage(targetUserId, '❌ رسید خرید کارت به کارت شما توسط ادمین رد شد.');
+            bot.sendMessage(chatId, '❌ رسید رد شد.');
+        }
+    }
 });
 
 process.on('uncaughtException', (err) => {});
-console.log('🤖 ربات با موفقیت و تمام قابلیت‌های یکپارچه اجرا شد.');
+console.log('🤖 ربات با موفقیت و رفع مشکلات پرداخت و منو اجرا شد.');
