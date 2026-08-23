@@ -11,7 +11,6 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const userState = {};
 const userBalances = {};
 
-// تابع بررسی ادمین
 function isAdmin(user) {
     if (!user) return false;
     const username = user.username ? user.username.toLowerCase() : "";
@@ -19,7 +18,7 @@ function isAdmin(user) {
     return username === ADMIN_USERNAME.toLowerCase() || userId === ADMIN_CHAT_ID;
 }
 
-// چیدمان دقیق دکمه‌های پایین صفحه دقیقاً مطابق عکس ارسالی شما
+// دکمه‌های همیشگی پایین صفحه دقیقاً مشابه نمونه
 const persistentKeyboard = {
     reply_markup: {
         keyboard: [
@@ -34,16 +33,14 @@ const persistentKeyboard = {
     }
 };
 
-// دستور /start
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     userState[userId] = { step: null };
 
-    bot.sendMessage(chatId, `✨ به پنل اختصاصی ARENA CONFIG خوش آمدید.\n\nلطفاً از گزینه‌های زیر انتخاب کنید:`, persistentKeyboard);
+    bot.sendMessage(chatId, `✨ به پنل اختصاصی خوش آمدید.\n\nلطفاً از گزینه‌های زیر انتخاب کنید:`, persistentKeyboard);
 });
 
-// دستور پنل مدیریت (مختص مالک)
 bot.onText(/\/admin/, (msg) => {
     const chatId = msg.chat.id;
 
@@ -52,7 +49,7 @@ bot.onText(/\/admin/, (msg) => {
         return;
     }
 
-    bot.sendMessage(chatId, `🎛 **پنل مدیریت اختصاصی مالک (ARENA)**\n\nگزینه مورد نظر را انتخاب کنید:`, {
+    bot.sendMessage(chatId, `🎛 **پنل مدیریت اختصاصی مالک**\n\nگزینه مورد نظر را انتخاب کنید:`, {
         reply_markup: {
             inline_keyboard: [
                 [{ text: "🛒 مدیریت اشتراک", callback_data: "adm_manage_sub" }, { text: "📦 سوابق اشتراک‌ها", callback_data: "adm_history" }],
@@ -66,7 +63,6 @@ bot.onText(/\/admin/, (msg) => {
     });
 });
 
-// مدیریت کلیک دکمه‌های شیشه‌ای (مدیریت و پرداخت)
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const userId = query.from.id.toString();
@@ -127,16 +123,17 @@ bot.on("callback_query", async (query) => {
 
         bot.sendMessage(chatId, 
             `💳 **اطلاعات کارت به کارت**\n\n` +
-            `مبلغ: **${parseInt(amount).toLocaleString()} تومان**\n` +
+            `مبلغ قابل پرداخت: 💎 **${parseInt(amount).toLocaleString()} تومان**\n` +
             `شماره کارت: \`${CARD_NUMBER}\`\n` +
             `به نام: ${CARD_HOLDER}\n\n` +
-            `لطفاً پس از واریز وجه، **عکس فیش واریزی** یا **کد پیگیری** را همینجا بفرستید.`,
+            `⚠️ **توجه بسیار مهم:** لطفاً مبلغ را به هیچ وجه رند نکنید و دقیقاً همین مبلغ را واریز کنید. در غیر این صورت واریزی شما تایید نخواهد شد!\n\n` +
+            `پس از واریز، لطفاً دکمه زیر را زده و عکس رسید پرداخت را ارسال کنید.\n\n` +
+            `📤 ارسال رسید پرداخت 📥`,
             { parse_mode: "Markdown" }
         );
     }
 });
 
-// مدیریت پیام‌ها و دکمه‌های پایین صفحه
 bot.on("message", (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
@@ -144,21 +141,44 @@ bot.on("message", (msg) => {
     const photo = msg.photo;
 
     if (text === "🛒 خرید اشتراک") {
-        bot.sendMessage(chatId, "🛒 بخش خرید اشتراک و تعرفه‌ها");
+        bot.sendMessage(chatId, 
+            `محصول مورد نظر را انتخاب کنید: 💎\n\n` +
+            `🎮 Gaming\n\n` +
+            `نامحدود ماهانه | 1 3 5 کاربر\n\n` +
+            `حجمی | نامحدود کاربر و زمان`
+        );
         return;
     }
     if (text === "🎁 اشتراک رایگان") {
-        bot.sendMessage(chatId, "🎁 بخش دریافت اشتراک رایگان");
+        bot.sendMessage(chatId, "🎁 بخش اشتراک رایگان");
         return;
     }
     if (text === "🚀 سرور تست") {
-        bot.sendMessage(chatId, "🚀 بخش دریافت سرور تست رایگان");
+        bot.sendMessage(chatId, "💎 بخش تست در حال حاضر غیرفعال است!");
         return;
     }
     if (text === "💳 کیف پول") {
-        const balance = userBalances[userId] || 0;
+        const balance = userBalances[userId] || 21000; // پیش‌فرض تستی طبق عکس
         userState[userId] = { step: "waiting_for_amount" };
-        bot.sendMessage(chatId, `💳 حساب کاربری شما\n\n💰 موجودی کیف پول: ${balance.toLocaleString()} تومان\n\nلطفاً مبلغ مورد نظر برای شارژ حساب (به تومان) را وارد کنید:\n\n(برای لغو کلمه «انصراف» را بفرستید)`);
+        
+        bot.sendMessage(chatId, 
+            `💎 شناسه کاربری: 8923324852\n` +
+            `💎 موجودی شما: ${balance.toLocaleString()} تومان\n` +
+            `💎 تاریخ عضویت: 1405/04/01\n\n` +
+            `💎 برای افزایش موجودی یا وارد کردن کد هدیه از منوی زیر استفاده کنید:\n\n` +
+            `شارژ حساب\n` +
+            `استفاده از کد هدیه`
+        );
+        
+        setTimeout(() => {
+            bot.sendMessage(chatId, "💎 لطفاً مبلغ مورد نظر برای شارژ کیف پول خود را وارد کنید (تومان):", {
+                reply_markup: {
+                    keyboard: [[{ text: "انصراف" }]],
+                    resize_keyboard: true,
+                    one_time_keyboard: true
+                }
+            });
+        }, 500);
         return;
     }
     if (text === "📦 اشتراک‌های من") {
@@ -166,15 +186,15 @@ bot.on("message", (msg) => {
         return;
     }
     if (text === "📖 آموزش اتصال") {
-        bot.sendMessage(chatId, "📖 راهنمای اتصال به سرورها در سیستم‌عامل‌های مختلف");
+        bot.sendMessage(chatId, "📖 راهنمای اتصال به سرورها");
         return;
     }
     if (text === "🤝 درخواست نمایندگی") {
-        bot.sendMessage(chatId, "🤝 شرایط و قوانین اخذ نمایندگی");
+        bot.sendMessage(chatId, "🤝 شرایط اخذ نمایندگی");
         return;
     }
     if (text === "👥 دعوت دوستان") {
-        bot.sendMessage(chatId, "🌐 لینک معرفی به دوستان و کسب درآمد");
+        bot.sendMessage(chatId, "🌐 لینک دعوت از دوستان");
         return;
     }
     if (text === "📞 پشتیبانی") {
@@ -187,7 +207,7 @@ bot.on("message", (msg) => {
 
     if (text === "انصراف") {
         userState[userId].step = null;
-        bot.sendMessage(chatId, "❌ عملیات لغو شد. برای بازگشت به منو /start را بزنید.");
+        bot.sendMessage(chatId, "❌ عملیات لغو شد.", persistentKeyboard);
         return;
     }
 
@@ -196,24 +216,44 @@ bot.on("message", (msg) => {
         const amount = parseInt(text);
         
         if (isNaN(amount) || amount <= 0) {
-            bot.sendMessage(chatId, "⚠️ لطفاً یک مبلغ معتبر به صورت عدد (تومان) وارد کنید:");
+            bot.sendMessage(chatId, "⚠️ لطفاً یک مبلغ معتبر به صورت عدد وارد کنید:");
             return;
         }
 
         userState[userId].amount = amount;
         userState[userId].step = null;
 
-        bot.sendMessage(chatId, `✅ مبلغ ${amount.toLocaleString()} تومان ثبت شد.\n\nلطفاً روش پرداخت را انتخاب کنید:`, {
+        bot.sendMessage(chatId, `💎 برای شارژ مبلغ ${amount.toLocaleString()} تومان، لطفاً یکی از روش‌های زیر را انتخاب کنید`, {
             reply_markup: {
-                inline_keyboard: [
-                    [{ text: "💳 کارت به کارت", callback_data: `pay_card_${amount}` }],
-                    [{ text: "❌ انصراف", callback_data: "account" }]
-                ]
+                keyboard: [
+                    [{ text: "کارت به کارت" }],
+                    [{ text: "انصراف" }]
+                ],
+                resize_keyboard: true
             }
         });
+        return;
     }
-    else if (currentState === "waiting_for_receipt") {
-        const amount = userState[userId].amount;
+
+    if (text === "کارت به کارت") {
+        const amount = userState[userId].amount || 50000;
+        userState[userId].step = "waiting_for_receipt";
+
+        bot.sendMessage(chatId, 
+            `💳 **اطلاعات کارت به کارت**\n\n` +
+            `مبلغ قابل پرداخت: 💎 **${parseInt(amount).toLocaleString()} تومان**\n` +
+            `شماره کارت: \`${CARD_NUMBER}\`\n` +
+            `به نام: ${CARD_HOLDER}\n\n` +
+            `⚠️ **توجه بسیار مهم:** لطفاً مبلغ را به هیچ وجه رند نکنید و دقیقاً همین مبلغ را واریز کنید. در غیر این صورت واریزی شما تایید نخواهد شد!\n\n` +
+            `پس از واریز، لطفاً دکمه زیر را زده و عکس رسید پرداخت را ارسال کنید.\n\n` +
+            `📤 ارسال رسید پرداخت 📥`,
+            { parse_mode: "Markdown" }
+        );
+        return;
+    }
+
+    if (currentState === "waiting_for_receipt") {
+        const amount = userState[userId].amount || 50000;
 
         if (photo || text) {
             const userInfo = `👤 کاربر: [${msg.from.first_name || "کاربر"}](tg://user?id=${userId}) (ID: \`${userId}\`)\n💰 مبلغ: ${parseInt(amount).toLocaleString()} تومان`;
@@ -222,11 +262,11 @@ bot.on("message", (msg) => {
                     inline_keyboard: [
                         [
                             { text: "✅ تایید و شارژ", callback_data: `approve_${userId}_${amount}` },
-                            { text: "❌ رد فیش", callback_data: "reject_${userId}" }
+                            { text: "❌ رد فیش", callback_data: `reject_${userId}` }
                         ]
                     ]
                 },
-                parse_mode: "Markdown"
+                parse_Mode: "Markdown"
             };
 
             if (photo) {
@@ -240,7 +280,7 @@ bot.on("message", (msg) => {
                 .catch((err) => console.log("خطا در ارسال متن به ادمین:", err.message));
             }
 
-            bot.sendMessage(chatId, "✅ فیش شما برای پشتیبانی ارسال شد. پس از تایید، حساب شما شارژ خواهد شد.");
+            bot.sendMessage(chatId, "✅ فیش شما برای پشتیبانی ارسال شد. پس از تایید، حساب شما شارژ خواهد شد.", persistentKeyboard);
             userState[userId].step = null;
         }
     }
