@@ -12,6 +12,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
+const ADMIN_WEB_PASSWORD = 'admin_secure_password'; // رمز ورود به پنل وب
 
 // --- استفاده از مسیر پایدار Volume در Railway ---
 const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
@@ -93,12 +94,73 @@ loadDatabase();
 const userStates = {};       
 const REWARD_AMOUNT = 5000;  
 
+// --- بخش وب‌سایت و پنل مدیریت تحت وب ---
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+
 app.get('/', (req, res) => {
-    res.send('Bot is running with Railway Persistent Volume!');
+    res.send(`
+        <html dir="rtl"><head><title>ربات فعال است</title></head>
+        <body style="font-family:Tahoma;text-align:center;padding-top:50px;background:#f4f7f6;">
+            <h2>🤖 ربات تلگرام و پنل مدیریت با موفقیت آنلاین است</h2>
+            <p>برای ورود به پنل مدیریت وب کلیک کنید: <a href="/admin">ورود به پنل مدیریت</a></p>
+        </body></html>
+    `);
+});
+
+app.get('/admin', (req, res) => {
+    res.send(`
+        <html dir="rtl"><head><title>ورود به پنل مدیریت</title>
+        <style>body{font-family:Tahoma;background:#f4f7f6;text-align:center;padding-top:50px;} .box{background:white;padding:30px;width:350px;margin:auto;border-radius:10px;box-shadow:0 0 10px rgba(0,0,0,0.1);} input{width:100%;padding:10px;margin:10px 0;border:1px solid #ccc;border-radius:5px;} button{background:#28a745;color:white;border:none;padding:10px;width:100%;border-radius:5px;cursor:pointer;}</style>
+        </head><body>
+            <div class="box">
+                <h3>🔐 ورود به پنل ادمین</h3>
+                <form action="/admin/login" method="POST">
+                    <input type="password" name="password" placeholder="رمز عبور ادمین" required>
+                    <button type="submit">ورود</button>
+                </form>
+            </div>
+        </body></html>
+    `);
+});
+
+app.post('/admin/login', (req, res) => {
+    if (req.body.password === ADMIN_WEB_PASSWORD) {
+        res.redirect('/admin/dashboard');
+    } else {
+        res.send('<script>alert("رمز عبور اشتباه است!"); window.location="/admin";</script>');
+    }
+});
+
+app.get('/admin/dashboard', (req, res) => {
+    let usersListHtml = '';
+    db.allUsers.forEach(uId => {
+        const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: 'نامشخص' };
+        const wallet = db.userWallets[uId] || 0;
+        usersListHtml += `<tr><td>${uId}</td><td>${info.name}</td><td>${info.username}</td><td>${wallet.toLocaleString()} تومان</td><td>${info.joinedAt}</td></tr>`;
+    });
+
+    res.send(`
+        <html dir="rtl"><head><title>داشبورد مدیریت</title>
+        <style>body{font-family:Tahoma;background:#f8f9fa;margin:0;padding:20px;} .container{max-width:1000px;margin:auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.05);} h2{color:#333;border-bottom:2px solid #28a745;padding-bottom:10px;} table{width:100%;border-collapse:collapse;margin-top:15px;} th,td{border:1px solid #dee2e6;padding:10px;text-align:center;font-size:14px;} th{background:#343a40;color:white;}</style>
+        </head><body>
+            <div class="container">
+                <h2>🚀 داشبورد مدیریت وب ربات</h2>
+                <p><b>تعداد کل کاربران:</b> ${db.allUsers.length} نفر</p>
+                <p><b>تعداد کل اشتراک‌های صادر شده:</b> ${db.allSubscriptionsHistory.length} عدد</p>
+                <h3>👥 لیست کاربران ربات</h3>
+                <table>
+                    <tr><th>شناسه</th><th>نام</th><th>یوزرنیم</th><th>کیف پول</th><th>تاریخ عضویت</th></tr>
+                    ${usersListHtml}
+                </table>
+                <br><a href="/admin" style="color:red;text-decoration:none;font-weight:bold;">خروج از پنل</a>
+            </div>
+        </body></html>
+    `);
 });
 
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server & Web Panel running on port ${PORT}`);
 });
 
 function isAdmin(msgOrQuery) {
@@ -136,7 +198,6 @@ function trackUser(msg, isNewStart = false) {
             };
             isBrandNew = true;
         } else {
-            // همیشه به‌روزرسانی اطلاعات در صورت تغییر
             db.usersDetailMap[userId].name = name;
             db.usersDetailMap[userId].username = username;
             if (!db.usersDetailMap[userId].joinedAt) {
@@ -145,9 +206,17 @@ function trackUser(msg, isNewStart = false) {
         }
         saveDatabase();
 
-        // اطلاع‌رسانی به ادمین برای کاربر جدید
         if (isBrandNew && isNewStart && chatId !== ADMIN_CHAT_ID) {
-            bot.sendMessage(ADMIN_CHAT_ID, `👤 **کاربر جدید به ربات پیوست!**\n\n📛 نام: ${name}\n🔗 یوزرنیم: ${username}\n🆔 آیدی عددی: \`${userId}\`\n📅 تاریخ عضویت: ${db.usersDetailMap[userId].joinedAt}`, { parse_mode: 'Markdown' }).catch(() => {});
+            const keyboard = {
+                reply_markup: {
+                    inline_keyboard: [[{ text: '👤 پروفایل کاربر', url: `tg://user?id=${userId}` }]]
+                }
+            };
+            bot.sendMessage(
+                ADMIN_CHAT_ID, 
+                `👤 **کاربر جدید به ربات پیوست!**\n\n📛 نام: ${name}\n🔗 یوزرنیم: ${username}\n🆔 آیدی عددی: \`${userId}\`\n📅 تاریخ عضویت: ${db.usersDetailMap[userId].joinedAt}`, 
+                { parse_mode: 'Markdown', ...keyboard }
+            ).catch(() => {});
         }
     }
 }
@@ -262,7 +331,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
     delete userStates[chatId];
 
-    trackUser(msg, true); // ثبت و اطلاع‌رسانی کاربر جدید در صورت اولین استارت
+    trackUser(msg, true);
 
     const canProceed = await handleForceJoin(msg);
     if (!canProceed) return;
@@ -360,7 +429,6 @@ bot.on('callback_query', async (callbackQuery) => {
     const chatId = msg.chat.id;
     const userId = callbackQuery.from.id;
 
-    // ثبت اضطراری کاربر در صورت کلیک روی دکمه‌ها در صورتی که قبلاً ثبت نشده بود
     if (callbackQuery.from) {
         const u = callbackQuery.from;
         const name = u.first_name || u.last_name || 'بدون نام';
@@ -1288,4 +1356,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با موفقیت به‌روزرسانی شد و در حال اجراست.');
+console.log('🤖 ربات همراه با پنل وب مدیریت با موفقیت به‌روزرسانی شد و در حال اجراست.');
