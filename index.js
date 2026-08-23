@@ -1,4 +1,4 @@
-1const TelegramBot = require('node-telegram-bot-api');
+const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const axios = require('axios');
 
@@ -18,14 +18,14 @@ let isTestServerEnabled = true;
 let isInviteSystemEnabled = true;    
 
 const userStates = {};       
-const userSubscriptions = {}; // ذخیره اشتراک فعال هر کاربر
-const allSubscriptionsHistory = []; // تاریخچه و سوابق کامل تمام اشتراک‌های صادر شده
+const userSubscriptions = {}; 
+const allSubscriptionsHistory = []; 
 const userWallets = {};      
 const pending_deposits = {}; 
 const pending_card_purchases = {}; 
-const allUsers = new Set();  // لیست آیدی عددی کل کاربران
-const usersDetailMap = {};   // ذخیره مشخصات کامل کاربران برای بخش مدیریت
-const receiptsHistory = [];  // بایگانی و سوابق تمام رسیدهای مالی کاربران
+const allUsers = new Set();  
+const usersDetailMap = {};   
+const receiptsHistory = [];  
 const referals = {};         
 
 let customPlans = [
@@ -58,7 +58,7 @@ let paymentCardOwner = 'مالک ربات';
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
-    res.send('Bot is running smoothly with full features!');
+    res.send('Bot is running smoothly!');
 });
 
 app.listen(PORT, () => {
@@ -78,7 +78,6 @@ function parsePrice(priceStr) {
     return parseInt(digits, 10) || 0;
 }
 
-// ثبت دقیق کاربران جدید و ارسال پیام ورود اولین بار به ادمین
 function trackUser(msg) {
     if (msg && msg.from && msg.from.id) {
         const userId = msg.from.id;
@@ -415,7 +414,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // بخش سوابق رسیدهای مالی کاربران
     if (data === 'admin_receipts') {
         if (receiptsHistory.length === 0) {
             bot.sendMessage(chatId, '📋 هیچ سابقه رسییدی ثبت نشده است.');
@@ -429,14 +427,12 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // بخش شارژ دستی کیف پول مشتری با آیدی عددی
     if (data === 'admin_charge_wallet') {
         userStates[chatId] = { step: 'admin_get_charge_user_id' };
         bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً **آیدی عددی** مشتری مورد نظر را ارسال کنید:', { parse_mode: 'Markdown' });
         return;
     }
 
-    // بخش سوابق اشتراک‌ها با جزئیات کامل و آیدی مشتری
     if (data === 'admin_history') {
         if (allSubscriptionsHistory.length === 0) {
             bot.sendMessage(chatId, '📦 هیچ سابقه اشتراکی ثبت نشده است.');
@@ -454,7 +450,6 @@ bot.on('callback_query', async (callbackQuery) => {
                            `📅 تاریخ خرید: ${sub.purchaseDate}\n\n`;
         });
         
-        // ارسال پیام با قابلیت تفکیک در صورت طولانی بودن متن
         if (historyText.length > 4000) {
             const chunks = historyText.match(/[\s\S]{1,4000}/g);
             for (const chunk of chunks) {
@@ -466,7 +461,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // بخش لیست کامل کاربران با آیدی عددی
     if (data === 'admin_users') {
         if (allUsers.size === 0) {
             bot.sendMessage(chatId, '👥 هیچ کاربری ثبت نشده است.');
@@ -615,7 +609,6 @@ bot.on('callback_query', async (callbackQuery) => {
         userSubscriptions[chatId] = subObj;
         allSubscriptionsHistory.push(subObj);
 
-        // ثبت در سوابق رسیدها به عنوان خرید از کیف پول
         receiptsHistory.push({
             type: 'خرید با کیف پول',
             userId: chatId,
@@ -727,7 +720,6 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
-    // مراحل شارژ دستی کیف پول توسط ادمین با آیدی عددی
     if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
         const state = userStates[chatId];
         if (state.step === 'admin_get_charge_user_id') {
@@ -842,7 +834,6 @@ bot.on('message', async (msg) => {
     }
 });
 
-// مدیریت عکس رسیدها و حفظ سوابق آن‌ها
 bot.on('photo', async (msg) => {
     trackUser(msg);
     const chatId = msg.chat.id;
@@ -859,7 +850,6 @@ bot.on('photo', async (msg) => {
             pending_deposits[`deposit_${userId}`] = { amount };
             bot.sendMessage(chatId, '✅ رسید دریافت شد. پس از تایید ادمین مبلغ به کیف پول شما افزوده می‌شود.');
 
-            // ذخیره در تاریخچه رسیدها
             receiptsHistory.push({
                 type: 'شارژ کیف پول',
                 userId: userId,
@@ -942,7 +932,6 @@ bot.on('callback_query', async (callbackQuery) => {
         const targetUserId = parts[2];
         const depositKey = `deposit_${targetUserId}`;
 
-        // آپدیت وضعیت در تاریخچه رسیدها
         const rec = receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید');
         if (rec) {
             rec.status = (action === 'approve') ? 'تایید شده' : 'رد شده';
@@ -1027,4 +1016,4 @@ bot.on('callback_query', async (callbackQuery) => {
 });
 
 process.on('uncaughtException', (err) => {});
-console.log('🤖 ربات با موفقیت و کلیه قابلیت‌های درخواستی اجرا شد.');
+console.log('🤖 ربات با موفقیت و بدون خطای دستوری اجرا شد.');
