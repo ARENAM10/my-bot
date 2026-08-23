@@ -20,10 +20,30 @@ const userWallets = {};
 const allUsers = new Set();  
 const referals = {};         
 
-// لیست پلن‌ها (فیلد price به ساختار پلن اضافه شد)
+// لیست پلن‌ها (اکنون هر پلن می‌تواند آرایه‌ای از چند لینک/کانفیگ داشته باشد)
 let customPlans = [
-    { id: 1, name: 'اشتراک اقتصادی 🌟', volume: '30 گیگابایت', duration: '30 روزه', price: '95,000 تومان', link: 'https://example.com/sub/1' },
-    { id: 2, name: 'اشتراک نامحدود 🔥', volume: 'نامحدود (VIP)', duration: '30 روزه', price: '180,000 تومان', link: 'https://example.com/sub/2' }
+    { 
+        id: 1, 
+        name: 'اشتراک اقتصادی 🌟', 
+        volume: '10 گیگابایت', 
+        duration: '30 روزه', 
+        price: '95,000 تومان', 
+        links: [
+            'https://example.com/sub/1-1', 
+            'https://example.com/sub/1-2', 
+            'https://example.com/sub/1-3'
+        ] 
+    },
+    { 
+        id: 2, 
+        name: 'اشتراک نامحدود 🔥', 
+        volume: 'نامحدود (VIP)', 
+        duration: '30 روزه', 
+        price: '180,000 تومان', 
+        links: [
+            'https://example.com/sub/2-1'
+        ] 
+    }
 ]; 
 
 let paymentCardNumber = '6037-9971-xxxx-xxxx'; 
@@ -31,7 +51,7 @@ let paymentCardOwner = 'مالک ربات';
 const REWARD_AMOUNT = 5000;  
 
 app.get('/', (req, res) => {
-    res.send('Bot is running with Link Parser & Config Details!');
+    res.send('Bot is running with Multi-Config Auto Replacement!');
 });
 
 app.listen(PORT, () => {
@@ -47,7 +67,22 @@ function isAdmin(msgOrQuery) {
 
 function trackUser(msg) {
     if (msg && msg.chat && msg.chat.id) {
-        allUsers.add(msg.chat.id);
+        const chatId = msg.chat.id;
+        if (!allUsers.has(chatId)) {
+            allUsers.add(chatId);
+            
+            if (chatId !== ADMIN_CHAT_ID) {
+                const user = msg.from;
+                const name = user.first_name || 'بدون نام';
+                const username = user.username ? `@${user.username}` : 'ندارد';
+                const memberReport = `👤 **کاربر جدید وارد ربات شد!**\n\n` +
+                                     `📛 نام: ${name}\n` +
+                                     `🆔 یوزرنیم: ${username}\n` +
+                                     `🔢 آیدی عددی: \`${chatId}\`\n` +
+                                     `📊 کل کاربران تاکنون: ${allUsers.size} نفر`;
+                bot.sendMessage(ADMIN_CHAT_ID, memberReport, { parse_mode: 'Markdown' }).catch(() => {});
+            }
+        }
     }
 }
 
@@ -63,7 +98,6 @@ async function checkMembership(userId) {
     }
 }
 
-// تابع هوشمند برای خواندن و استخراج جزئیات از لینک یا سابسکریپشن
 async function fetchAndParseConfig(url) {
     try {
         if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -204,7 +238,7 @@ function sendAdminPanel(chatId) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: '⚙️ مدیریت پلن‌ها و قیمت‌ها', callback_data: 'admin_manage_plans' },
+                    { text: '⚙️ مدیریت پلن‌ها و لینک‌ها', callback_data: 'admin_manage_plans' },
                     { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' }
                 ],
                 [
@@ -274,13 +308,13 @@ bot.on('callback_query', async (callbackQuery) => {
         const plansMenuKeyboard = {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '➕ افزودن اشتراک/پلن جدید', callback_data: 'plan_mgmt_add' }],
-                    [{ text: '📋 لیست و ویرایش پلن‌های موجود', callback_data: 'plan_mgmt_list' }],
+                    [{ text: '➕ افزودن پلن جدید', callback_data: 'plan_mgmt_add' }],
+                    [{ text: '📋 لیست پلن‌ها و افزودن لینک به آن‌ها', callback_data: 'plan_mgmt_list' }],
                     [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
                 ]
             }
         };
-        bot.sendMessage(chatId, '⚙️ **مدیریت پلن‌ها و اشتراک‌ها**', { parse_mode: 'Markdown', ...plansMenuKeyboard });
+        bot.sendMessage(chatId, '⚙️ **مدیریت پلن‌ها و چند کانفیگ**', { parse_mode: 'Markdown', ...plansMenuKeyboard });
         return;
     }
 
@@ -296,14 +330,14 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        let textList = '📋 **لیست پلن‌های ثبت شده:**\n\n';
+        let textList = '📋 **لیست پلن‌ها و تعداد کانفیگ‌های موجود:**\n\n';
         const inlineBtns = [];
 
-        customPlans.forEach((p, index) => {
-            textList += `${index + 1}. **${p.name}**\n   🌐 حجم: ${p.volume} | ⏳ زمان: ${p.duration} | 💵 قیمت: ${p.price}\n   🔗 لینک: \`${p.link}\`\n\n`;
+        customPlans.forEach((p) => {
+            textList += `▪️ **${p.name}**\n   🌐 حجم: ${p.volume} | ⏳ زمان: ${p.duration} | 💵 قیمت: ${p.price}\n   📦 تعداد کانفیگ‌های موجود در انبار: **${p.links.length} عدد**\n\n`;
             inlineBtns.push([
-                { text: `✏️ ویرایش: ${p.name}`, callback_data: `edit_plan_${p.id}` },
-                { text: `🗑 حذف`, callback_data: `del_plan_${p.id}` }
+                { text: `➕ افزودن لینک به: ${p.name}`, callback_data: `add_link_${p.id}` },
+                { text: `🗑 حذف کل پلن`, callback_data: `del_plan_${p.id}` }
             ]);
         });
 
@@ -312,17 +346,17 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    if (data.startsWith('add_link_')) {
+        const planId = parseInt(data.split('_')[2]);
+        userStates[chatId] = { step: 'get_extra_link_for_plan', targetPlanId: planId };
+        bot.sendMessage(chatId, '🔗 لطفاً لینک سابسکریپشن یا کانفیگ جدید را بفرستید تا به این پلن اضافه شود:', { parse_mode: 'Markdown' });
+        return;
+    }
+
     if (data.startsWith('del_plan_')) {
         const planId = parseInt(data.split('_')[2]);
         customPlans = customPlans.filter(p => p.id !== planId);
         bot.sendMessage(chatId, '🗑 پلن با موفقیت حذف شد.');
-        return;
-    }
-
-    if (data.startsWith('edit_plan_')) {
-        const planId = parseInt(data.split('_')[2]);
-        userStates[chatId] = { step: 'edit_plan_name', editPlanId: planId };
-        bot.sendMessage(chatId, '✏️ **ویرایش پلن**\n\nلطفاً **نام جدید پلن** را وارد کنید:', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -384,16 +418,18 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // ⭐ بخش خرید اشتراک با ظاهر شیک، مرتب و تفکیک قیمت‌ها
     if (data === 'buy_sub') {
-        if (customPlans.length === 0) {
-            bot.sendMessage(chatId, '🛒 در حال حاضر هیچ پلنی تعریف نشده است.');
+        // فقط پلن‌هایی که حداقل یک لینک در انبار دارند نمایش داده شوند
+        const availablePlans = customPlans.filter(p => p.links && p.links.length > 0);
+
+        if (availablePlans.length === 0) {
+            bot.sendMessage(chatId, '🛒 در حال حاضر هیچ پلن یا کانفیگی برای فروش موجود نیست.');
             return;
         }
 
         let planText = '🛒 **لیست پلن‌های اشتراک پرسرعت:**\n\nلطفاً پلن مد نظر خود را از دکمه‌های زیر انتخاب کنید 👇';
-        const planButtons = customPlans.map(p => [
-            { text: `🔹 ${p.name} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
+        const planButtons = availablePlans.map(p => [
+            { text: `🌐 ${p.volume} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
         ]);
         planButtons.push([{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]);
 
@@ -405,15 +441,19 @@ bot.on('callback_query', async (callbackQuery) => {
         const planId = parseInt(data.split('_')[2]);
         const selectedPlan = customPlans.find(p => p.id === planId);
 
-        if (!selectedPlan) {
-            bot.sendMessage(chatId, '❌ این پلن وجود ندارد.');
+        if (!selectedPlan || selectedPlan.links.length === 0) {
+            bot.sendMessage(chatId, '❌ متأسفانه این پلن تمام شده یا دیگر موجود نیست.');
             return;
         }
 
+        // برداشتن اولین لینک از صف پلن برای این خرید
+        const assignedLink = selectedPlan.links[0];
+
         userStates[chatId] = { 
             awaiting_receipt: true, 
+            planId: selectedPlan.id,
             selectedPlanName: selectedPlan.name, 
-            selectedPlanLink: selectedPlan.link, 
+            selectedPlanLink: assignedLink, 
             selectedPlanVolume: selectedPlan.volume, 
             selectedPlanDuration: selectedPlan.duration,
             selectedPlanPrice: selectedPlan.price
@@ -502,29 +542,39 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
-    // ثبت پلن جدید مرحله به مرحله (شامل فیلد قیمت)
     if (chatId === ADMIN_CHAT_ID && userStates[chatId]) {
         const state = userStates[chatId];
+
+        if (state.step === 'get_extra_link_for_plan') {
+            const planId = state.targetPlanId;
+            const plan = customPlans.find(p => p.id === planId);
+            if (plan) {
+                plan.links.push(text.trim());
+                delete userStates[chatId];
+                bot.sendMessage(chatId, `✅ لینک جدید با موفقیت به پلن **${plan.name}** اضافه شد.\nمجموع کانفیگ‌های این پلن اکنون: ${plan.links.length} عدد`, { parse_mode: 'Markdown' });
+                return;
+            }
+        }
 
         if (state.step === 'get_new_plan_name') {
             state.planName = text.trim();
             state.step = 'get_new_plan_volume';
-            bot.sendMessage(chatId, '🌐 حجم اشتراک (مثلا 50 گیگ) را وارد کنید:');
+            bot.sendMessage(chatId, '🌐 حجم اشتراک (مثلا 10 گیگ) را وارد کنید:');
             return;
         } else if (state.step === 'get_new_plan_volume') {
             state.planVolume = text.trim();
             state.step = 'get_new_plan_duration';
-            bot.sendMessage(chatId, '⏳ زمان اعتبار (مثلا 1 ماهه) را وارد کنید:');
+            bot.sendMessage(chatId, '⏳ زمان اعتبار (مثلا 30 روزه) را وارد کنید:');
             return;
         } else if (state.step === 'get_new_plan_duration') {
             state.planDuration = text.trim();
             state.step = 'get_new_plan_price';
-            bot.sendMessage(chatId, '💵 قیمت پلن (مثلا 120,000 تومان) را وارد کنید:');
+            bot.sendMessage(chatId, '💵 قیمت پلن (مثلا 95,000 تومان) را وارد کنید:');
             return;
         } else if (state.step === 'get_new_plan_price') {
             state.planPrice = text.trim();
             state.step = 'get_new_plan_link';
-            bot.sendMessage(chatId, '🔗 لینک سابسکریپشن یا کانفیگ مربوط به این پلن را وارد کنید:');
+            bot.sendMessage(chatId, '🔗 اولین لینک کانفیگ یا سابسکریپشن مربوط به این پلن را وارد کنید:');
             return;
         } else if (state.step === 'get_new_plan_link') {
             const newPlan = {
@@ -533,48 +583,11 @@ bot.on('message', async (msg) => {
                 volume: state.planVolume,
                 duration: state.planDuration,
                 price: state.planPrice,
-                link: text.trim()
+                links: [text.trim()]
             };
             customPlans.push(newPlan);
             delete userStates[chatId];
-            bot.sendMessage(chatId, `🎉 پلن **${newPlan.name}** با موفقیت و با قیمت **${newPlan.price}** ساخته شد!`, { parse_mode: 'Markdown' });
-            return;
-        }
-
-        if (state.step === 'edit_plan_name') {
-            state.editName = text.trim();
-            state.step = 'edit_plan_volume';
-            bot.sendMessage(chatId, '🌐 حجم جدید را وارد کنید:');
-            return;
-        } else if (state.step === 'edit_plan_volume') {
-            state.editVolume = text.trim();
-            state.step = 'edit_plan_duration';
-            bot.sendMessage(chatId, '⏳ زمان جدید را وارد کنید:');
-            return;
-        } else if (state.step === 'edit_plan_duration') {
-            state.editDuration = text.trim();
-            state.step = 'edit_plan_price';
-            bot.sendMessage(chatId, '💵 قیمت جدید را وارد کنید:');
-            return;
-        } else if (state.step === 'edit_plan_price') {
-            state.editPrice = text.trim();
-            state.step = 'edit_plan_link';
-            bot.sendMessage(chatId, '🔗 لینک جدید را وارد کنید:');
-            return;
-        } else if (state.step === 'edit_plan_link') {
-            const planIndex = customPlans.findIndex(p => p.id === state.editPlanId);
-            if (planIndex !== -1) {
-                customPlans[planIndex] = {
-                    id: state.editPlanId,
-                    name: state.editName,
-                    volume: state.editVolume,
-                    duration: state.editDuration,
-                    price: state.editPrice,
-                    link: text.trim()
-                };
-            }
-            delete userStates[chatId];
-            bot.sendMessage(chatId, '✅ پلن با موفقیت ویرایش شد.');
+            bot.sendMessage(chatId, `🎉 پلن **${newPlan.name}** ساخته شد! از بخش مدیریت می‌توانید لینک‌های بیشتری به این پلن اضافه کنید.`, { parse_mode: 'Markdown' });
             return;
         }
     }
@@ -626,6 +639,7 @@ bot.on('photo', async (msg) => {
 
     if (userStates[chatId] && userStates[chatId].awaiting_receipt) {
         const photoId = msg.photo[msg.photo.length - 1].file_id;
+        const planId = userStates[chatId].planId;
         const planName = userStates[chatId].selectedPlanName;
         const planLink = userStates[chatId].selectedPlanLink;
         const planVolume = userStates[chatId].selectedPlanVolume;
@@ -638,6 +652,7 @@ bot.on('photo', async (msg) => {
         const parsedData = await fetchAndParseConfig(planLink);
 
         const savedStateInfo = { 
+            planId,
             planName, 
             configLink: planLink, 
             planVolume, 
@@ -676,6 +691,7 @@ bot.on('photo', async (msg) => {
     }
 });
 
+// تایید خرید توسط ادمین و حذف اولین لینک استفاده‌شده (جایگزینی خودکار کانفیگ بعدی)
 bot.on('callback_query', async (callbackQuery) => {
     const data = callbackQuery.data;
     const chatId = callbackQuery.message.chat.id;
@@ -690,6 +706,12 @@ bot.on('callback_query', async (callbackQuery) => {
         if (action === 'approve') {
             const subInfo = userSubscriptions[pendingKey];
             if (subInfo) {
+                // حذف اولین لینک از صف انبار پلن مربوطه (طوری که کانفیگ بعدی جایش را بگیرد)
+                const plan = customPlans.find(p => p.id === subInfo.planId);
+                if (plan && plan.links.length > 0) {
+                    plan.links.shift(); // اولین لینک فروخته‌شده از آرایه برداشته می‌شود
+                }
+
                 const expiryDate = new Date();
                 expiryDate.setDate(expiryDate.getDate() + 30);
                 const formattedExpiry = expiryDate.toLocaleDateString('fa-IR');
@@ -708,17 +730,17 @@ bot.on('callback_query', async (callbackQuery) => {
                               `🌐 حجم: ${subInfo.planVolume}\n` +
                               `⏳ مدت: ${subInfo.planDuration}\n` +
                               `💵 قیمت: ${subInfo.planPrice}\n\n` +
-                              `🔗 **لینک اشتراک (Subscription):**\n\`${subInfo.configLink}\``;
+                              `🔗 **لینک اشتراک اختصاصی شما:**\n\`${subInfo.configLink}\``;
 
                 if (subInfo.extractedConfigs && subInfo.extractedConfigs.length > 0) {
-                    userMsg += `\n\n⚙️ **کدهای کانفیگ خوانده‌شده:**\n\`\`\`\n${subInfo.extractedConfigs.join('\n\n')}\n\`\`\``;
+                    userMsg += `\n\n⚙️ **کدهای کانفیگ اختصاصی خوانده‌شده:**\n\`\`\`\n${subInfo.extractedConfigs.join('\n\n')}\n\`\`\``;
                 }
 
                 bot.sendMessage(targetUserId, userMsg, { parse_mode: 'Markdown' }).catch(() => {
                     bot.sendMessage(targetUserId, `🎉 اشتراک شما تایید شد!\n\nلینک سابسکریپشن:\n${subInfo.configLink}`);
                 });
 
-                bot.sendMessage(chatId, '✅ تایید شد و جزئیات + کدهای کانفیگ به کاربر ارسال گردید.');
+                bot.sendMessage(chatId, '✅ تایید شد! کانفیگ فروخته‌شده حذف شد و کانفیگ بعدی پلن به صورت خودکار جایگزین گردید.');
             } else {
                 bot.sendMessage(chatId, '❌ اطلاعات این خرید یافت نشد.');
             }
@@ -734,4 +756,4 @@ process.on('uncaughtException', (err) => {
     console.error('خطا:', err);
 });
 
-console.log('🤖 ربات کامل با قابلیت خواندن لینک، استخراج کانفیگ، پنل مدیریت پیشرفته و بخش خرید قیمت‌دار اجرا شد.');
+console.log('🤖 ربات با سیستم چندکانفیگه و جایگزینی خودکار اجرا شد.');
