@@ -13,7 +13,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 
-// --- فایل دیتابیس محلی برای ذخیره دائمی اطلاعات ---
+// --- فایل دیتابیس محلی برای ذخیره دائمی اطلاعات روی هارد Mount شده ---
 const DB_FILE = './database.json';
 
 let db = {
