@@ -1,4 +1,4 @@
-مconst TelegramBot = require('node-telegram-bot-api');
+const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
@@ -8,19 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
-
-// استفاده از Webhook به جای Polling برای پایداری در ترافیک بالا
-const bot = new TelegramBot(TOKEN, { webHook: true });
-
-// تنظیم آدرس وب‌هوک (باید آدرس دامنه یا سرور خود را جایگزین کنید)
-const HEROKU_URL = process.env.RENDER_EXTERNAL_URL || process.env.WEBHOOK_URL || `https://your-domain.com`;
-bot.setWebHook(`${HEROKU_URL}/bot${TOKEN}`);
-
-app.use(express.json());
-app.use(`/bot${TOKEN}`, (req, res) => {
-    bot.processUpdate(req.body);
-    res.sendStatus(200);
-});
+const bot = new TelegramBot(TOKEN, { polling: true });
 
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
@@ -31,9 +19,9 @@ const CHANNEL_LOG_ID = '-1004488082323';
 
 // نقشه برای جلوگیری از کلیک‌های متوالی و سریع روی دکمه‌ها (Rate Limiting ملایم)
 const userCooldowns = new Map();
-const COOLDOWN_TIME = 1000; // ۱ ثانیه مکث
+const COOLDOWN_TIME = 1200; // ۱.۲ ثانیه مکث برای جلوگیری از کلیک سریع
 
-// تابع تاخیر برای کنترل سرعت
+// تابع تاخیر ملایم برای کنترل سرعت ربات
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // تابع ارسال رسید و اشتراک به کانال
@@ -185,7 +173,7 @@ function logPurchaseToFile(subObj) {
 }
 
 loadDatabase();
-console.log('🔄 ربات روی بستر Webhook راه‌اندازی شد.');
+console.log('🔄 ربات مجدداً راه‌اندازی شد و تمامی اطلاعات کاربران و ویترین از دیتابیس بازیابی شد.');
 
 async function sendBackupToAdmin() {
     const backupDir = path.join(DATA_DIR, 'backups');
@@ -216,12 +204,13 @@ setInterval(sendBackupToAdmin, 24 * 60 * 60 * 1000);
 const REWARD_AMOUNT = 5000;  
 
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
 app.get('/', (req, res) => {
     res.send(`
         <html dir="rtl"><head><title>ربات فعال است</title></head>
         <body style="font-family:Tahoma;text-align:center;padding-top:50px;background:#f4f7f6;">
-            <h2>🤖 ربات تلگرام و پنل مدیریت با موفقیت آنلاین است (Webhook Mode)</h2>
+            <h2>🤖 ربات تلگرام و پنل مدیریت با موفقیت آنلاین است</h2>
             <p>برای ورود به پنل مدیریت وب کلیک کنید: <a href="/admin">ورود به پنل مدیریت</a></p>
         </body></html>
     `);
@@ -576,6 +565,7 @@ function sendAdminPanel(chatId) {
     });
 }
 
+// مدیریت کلیک دکمه‌ها همراه با محدودسازی سرعت (Anti-Spam) و تاخیر متوسط
 bot.on('callback_query', async (callbackQuery) => {
     loadDatabase(); 
     const msg = callbackQuery.message;
@@ -584,6 +574,7 @@ bot.on('callback_query', async (callbackQuery) => {
     const userId = callbackQuery.from.id;
     const currentTime = Date.now();
 
+    // بررسی محدودسازی کلیک پشت‌سرهم (Anti-Spam)
     if (userCooldowns.has(userId)) {
         const lastClickTime = userCooldowns.get(userId);
         if (currentTime - lastClickTime < COOLDOWN_TIME) {
@@ -595,7 +586,8 @@ bot.on('callback_query', async (callbackQuery) => {
     }
     userCooldowns.set(userId, currentTime);
 
-    await sleep(200);
+    // اعمال تاخیر ملایم برای تنظیم سرعت متوسط ربات
+    await sleep(400);
 
     const userObj = callbackQuery.from;
     if (userObj) {
@@ -1016,31 +1008,9 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'admin_charge_wallet') {
-        if (!isAdmin(callbackQuery)) return;
         db.userStates[chatId] = { step: 'admin_get_charge_user_id' };
         saveDatabase();
-        
-        const cancelKeyboard = {
-            reply_markup: {
-                inline_keyboard: [[{ text: '❌ انصراف و بازگشت', callback_data: 'admin_back_to_panel' }]]
-            }
-        };
-        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول (مرحله ۱ از ۲)**\n\nلطفاً **شناسه عددی (Chat ID)** یا یوزرنیم کاربر مورد نظر را ارسال کنید:', { parse_mode: 'Markdown', ...cancelKeyboard });
-        return;
-    }
-
-    if (data.startsWith('fast_charge_')) {
-        if (!isAdmin(callbackQuery)) return;
-        const parts = data.split('_');
-        const targetId = parseInt(parts[2], 10);
-        const amount = parseInt(parts[3], 10);
-
-        db.userWallets[targetId] = (db.userWallets[targetId] || 0) + amount;
-        delete db.userStates[chatId];
-        saveDatabase();
-
-        bot.sendMessage(chatId, `✅ **شارژ موفق!**\nمبلغ \`${amount.toLocaleString()} تومان\` به کیف پول کاربر \`${targetId}\` اضافه شد.`, { parse_mode: 'Markdown' });
-        bot.sendMessage(targetId, `🎉 **کیف پول شما توسط مدیریت شارژ شد!** 💳\nمبلغ \`${amount.toLocaleString()} تومان\` به حساب شما واریز گردید. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً **شناسه عددی (Chat ID)** کاربر مورد نظر را ارسال کنید:', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -1319,7 +1289,7 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
         const userRefCount = db.referals[userId] || 0;
-        const inviteLink = `https://t.me/${bot.options.username || 'BotUsername'}?start=${chatId}`;
+        const inviteLink = `https://t.me/${bot.options.username}?start=${chatId}`;
         const customInviteText = (db.botTexts.invite_title || '')
             .replace('{inviteLink}', inviteLink)
             .replace('{count}', userRefCount);
@@ -1442,66 +1412,27 @@ bot.on('message', async (msg) => {
             return;
         }
         if (state.step === 'admin_get_charge_user_id') {
-            const inputVal = text.trim();
-            let targetId = parseInt(inputVal.replace(/[^0-9]/g, ''), 10);
-            
+            const targetId = parseInt(text.trim(), 10);
             if (!targetId || isNaN(targetId)) {
-                const foundEntry = Object.entries(db.usersDetailMap).find(([id, info]) => 
-                    info.username && info.username.toLowerCase() === inputVal.toLowerCase().replace('@', '')
-                );
-                if (foundEntry) {
-                    targetId = parseInt(foundEntry[0], 10);
-                }
+                bot.sendMessage(chatId, '❌ شناسه عددی نامعتبر است.');
+                return;
             }
-
-            if (!targetId || isNaN(targetId)) {
-                return bot.sendMessage(chatId, '❌ کاربری با این مشخصات یافت نشد. لطفاً Chat ID معتبر یا یوزرنیم صحیح بفرستید:');
-            }
-
             db.userStates[chatId] = { step: 'admin_get_charge_amount', targetChargeUserId: targetId };
             saveDatabase();
-
-            const userInfo = db.usersDetailMap[targetId] || { name: 'نامشخص', username: 'ندارد' };
-            const currentWallet = db.userWallets[targetId] || 0;
-
-            const fastAmountsKeyboard = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            { text: '➕ ۵۰,۰۰۰ تومان', callback_data: `fast_charge_${targetId}_50000` },
-                            { text: '➕ ۱۰۰,۰۰۰ تومان', callback_data: `fast_charge_${targetId}_100000` }
-                        ],
-                        [
-                            { text: '➕ ۲۰۰,۰۰۰ تومان', callback_data: `fast_charge_${targetId}_200000` },
-                            { text: '➕ ۵۰۰,۰۰۰ تومان', callback_data: `fast_charge_${targetId}_500000` }
-                        ],
-                        [{ text: '❌ انصراف', callback_data: 'admin_back_to_panel' }]
-                    ]
-                }
-            };
-
-            bot.sendMessage(chatId, 
-                `👤 **مشخصات کاربر تایید شد:**\n` +
-                `▫️ نام: ${userInfo.name}\n` +
-                `▫️ یوزرنیم: @${userInfo.username ? userInfo.username.replace('@','') : 'ندارد'}\n` +
-                `▫️ موجودی فعلی: \`${currentWallet.toLocaleString()} تومان\`\n\n` +
-                `💵 **مبلغ شارژ (به تومان) را تایپ کنید یا از دکمه‌های زیر انتخاب کنید:**`, 
-                { parse_mode: 'Markdown', ...fastAmountsKeyboard }
-            );
+            bot.sendMessage(chatId, `✅ کاربر شناسایی شد (\`${targetId}\`).\n\nمبلغ شارژ (به تومان) را وارد کنید:`, { parse_mode: 'Markdown' });
             return;
-        } 
-        else if (state.step === 'admin_get_charge_amount') {
+        } else if (state.step === 'admin_get_charge_amount') {
             const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
             if (!amount || amount <= 0) {
-                return bot.sendMessage(chatId, '❌ مبلغ نامعتبر است. لطفاً یک عدد صحیح به تومان وارد کنید:');
+                bot.sendMessage(chatId, '❌ مبلغ نامعتبر است.');
+                return;
             }
-            
             const targetId = state.targetChargeUserId;
             db.userWallets[targetId] = (db.userWallets[targetId] || 0) + amount;
             delete db.userStates[chatId];
             saveDatabase();
 
-            bot.sendMessage(chatId, `🎉 **شارژ کیف پول انجام شد!**\nمبلغ \`${amount.toLocaleString()} تومان\` به کیف پول کاربر \`${targetId}\` اضافه گردید.`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `🎉 کیف پول کاربر \`${targetId}\` به مبلغ \`${amount.toLocaleString()} تومان\` شارژ شد.`);
             bot.sendMessage(targetId, `🎉 **کیف پول شما توسط مدیریت شارژ شد!** 💳\nمبلغ \`${amount.toLocaleString()} تومان\` به موجودی شما اضافه گردید. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
@@ -1620,7 +1551,7 @@ bot.on('message', async (msg) => {
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'get_broadcast_content') {
         delete db.userStates[chatId];
         saveDatabase();
-        bot.sendMessage(chatId, '⏳ ارسال همگانی آغاز شد. (با تاخیر ایمن برای جلوگیری از بلاک شدن)');
+        bot.sendMessage(chatId, '⏳ ارسال همگانی آغاز شد. لطفاً صبر کنید...');
         
         let successCount = 0;
         let blockCount = 0;
@@ -1630,8 +1561,7 @@ bot.on('message', async (msg) => {
                 try {
                     await bot.sendMessage(uId, text);
                     successCount++;
-                    // تاخیر ۱۰۰ میلی‌ثانیه‌ای بین هر پیام برای جلوگیری از فشار به تلگرام
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise(resolve => setTimeout(resolve, 50));
                 } catch (err) {
                     blockCount++;
                 }
@@ -1671,6 +1601,7 @@ bot.on('message', async (msg) => {
     }
 });
 
+// مدیریت دقیق عکس و رسیدهای ارسالی مشتریان به ادمین (نسخه کامل و به‌روزرسانی‌شده)
 bot.on('photo', async (msg) => {
     loadDatabase();
     trackUserAndNotifyAdmin(msg);
@@ -1682,6 +1613,7 @@ bot.on('photo', async (msg) => {
 
     const currentState = db.userStates[chatId] || {};
 
+    // بررسی رسید شارژ کیف پول
     if (currentState.step === 'get_wallet_deposit_receipt') {
         const amount = currentState.depositAmount;
         delete db.userStates[chatId];
@@ -1719,6 +1651,7 @@ bot.on('photo', async (msg) => {
         return;
     }
 
+    // بررسی رسید خرید اشتراک (اگر استیت ست شده باشد یا در غیر این صورت به عنوان پشتیبان از اولین پلن استفاده می‌شود)
     const planId = currentState.planId || currentState.targetPlanId || (db.customPlans.length > 0 ? db.customPlans[0].id : null);
     const plan = db.customPlans.find(p => p.id === planId) || db.customPlans[0];
 
@@ -1739,6 +1672,7 @@ bot.on('photo', async (msg) => {
         });
         saveDatabase();
 
+        // ارسال رسید به کانال گزارش
         await sendSubscriptionAndReceiptToChannel(userId, `${plan.name} - ${plan.price}`, photoId, CHANNEL_LOG_ID);
 
         const adminCardKeyboard = {
@@ -1752,6 +1686,7 @@ bot.on('photo', async (msg) => {
             }
         };
 
+        // ارسال مستقیم رسید خرید به ادمین همراه با دکمه‌های تایید و رد
         await bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
             caption: `🔔 **رسید جدید خرید کارت به کارت**\n\n👤 نام: ${userInfo.name}\n🆔 آیدی عددی: \`${userId}\`\n📦 پلن: ${plan.name} (${plan.price})`,
             parse_mode: 'Markdown',
