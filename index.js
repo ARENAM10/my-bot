@@ -123,12 +123,15 @@ function loadDatabase() {
     }
 }
 
+// --- ذخیره‌سازی امن و اتمیک (جلوگیری از خراب شدن فایل دیتابیس هنگام کرش) ---
 function saveDatabase() {
     try {
         if (!fs.existsSync(DATA_DIR)) {
             fs.mkdirSync(DATA_DIR, { recursive: true });
         }
-        fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+        const tempFile = DB_FILE + '.tmp';
+        fs.writeFileSync(tempFile, JSON.stringify(db, null, 2), 'utf8');
+        fs.renameSync(tempFile, DB_FILE);
     } catch (e) {
         console.log('❌ خطا در ذخیره‌سازی دیتابیس:', e);
     }
@@ -575,6 +578,7 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
+    // --- مدیریت تایید یا رد شارژ کیف پول (جلوگیری از Double Spending) ---
     if (data.startsWith('approve_deposit_') || data.startsWith('reject_deposit_')) {
         if (!isAdmin(callbackQuery)) return;
         const parts = data.split('_');
@@ -582,10 +586,14 @@ bot.on('callback_query', async (callbackQuery) => {
         const targetUserId = parts[2];
         const depositKey = `deposit_${targetUserId}`;
 
-        const rec = db.receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید');
-        if (rec) {
-            rec.status = (action === 'approve') ? 'تایید شده' : 'رد شده';
+        const rec = db.receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید' && r.type === 'شارژ کیف پول');
+        if (!rec) {
+            bot.answerCallbackQuery(callbackQuery.id, { text: '⚠️ این رسید قبلاً پردازش شده یا نامعتبر است!', show_alert: true });
+            return;
         }
+
+        rec.status = (action === 'approve') ? 'تایید شده' : 'رد شده';
+        saveDatabase();
 
         if (action === 'approve') {
             const depositInfo = db.pending_deposits[depositKey];
@@ -605,6 +613,7 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    // --- مدیریت تایید یا رد خرید کارت به کارت (جلوگیری از تکرار و تایید چندباره) ---
     if (data.startsWith('approve_card_') || data.startsWith('reject_card_')) {
         if (!isAdmin(callbackQuery)) return;
         const parts = data.split('_');
@@ -612,17 +621,21 @@ bot.on('callback_query', async (callbackQuery) => {
         const targetUserId = parts[2];
         const cardKey = `card_pur_${targetUserId}`;
 
-        const rec = db.receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید');
-        if (rec) {
-            rec.status = (action === 'approve') ? 'تایید شده و صادر گردید' : 'رد شده';
+        const rec = db.receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید' && r.type === 'خرید کارت به کارت');
+        if (!rec) {
+            bot.answerCallbackQuery(callbackQuery.id, { text: '⚠️ این رسید قبلاً پردازش شده یا نامعتبر است!', show_alert: true });
+            return;
         }
+
+        rec.status = (action === 'approve') ? 'تایید شده و صادر گردید' : 'رد شده';
+        saveDatabase();
 
         if (action === 'approve') {
             const planId = parseInt(parts[3]);
             const plan = db.customPlans.find(p => p.id === planId);
 
             if (plan && plan.links.length > 0) {
-                const assignedLink = plan.links.shift();
+                const assignedLink = plan.links.shift(); // برداشتن ایمن لینک
                 const parsedData = await fetchAndParseConfig(assignedLink);
                 const currentDateStr = new Date().toLocaleString('fa-IR');
                 const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر' };
@@ -1085,7 +1098,7 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         db.userWallets[userId] = userBalance - priceNumber;
-        const assignedLink = plan.links.shift();
+        const assignedLink = plan.links.shift(); // برداشتن امن لینک از انبار
         delete db.userStates[chatId];
         saveDatabase();
 
@@ -1566,4 +1579,8 @@ bot.on('photo', async (msg) => {
 
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.log('Unhandled Rejection at:', promise, 'reason:', reason);
 });
