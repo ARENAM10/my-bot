@@ -1778,7 +1778,7 @@ bot.on('photo', async (msg) => {
 
     const currentState = db.userStates[chatId] || {};
 
-    // 1. اگر کاربر در حال ارسال رسید شارژ کیف پول باشد
+    // 1. اگر کاربر در حال ارسال رسید شارژ کیف پول باشد (فقط افزایش موجودی، بدون اشتراک)
     if (currentState.step === 'get_wallet_deposit_receipt') {
         const amount = currentState.depositAmount;
         delete db.userStates[chatId];
@@ -1797,14 +1797,14 @@ bot.on('photo', async (msg) => {
         });
         saveDatabase();
 
-        // ارسال عکس رسید شارژ کیف پول به کانال لاگ
+        // ارسال عکس رسید فقط به عنوان شارژ کیف پول به کانال لاگ
         await sendSubscriptionAndReceiptToChannel(userId, `شارژ کیف پول - ${amount.toLocaleString()} تومان`, photoId, CHANNEL_LOG_ID);
 
         const adminDepositKeyboard = {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '✅ تایید شارژ', callback_data: `approve_deposit_${userId}` },
+                        { text: '✅ تایید شارژ کیف پول', callback_data: `approve_deposit_${userId}` },
                         { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
                     ]
                 ]
