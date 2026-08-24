@@ -1013,7 +1013,7 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- لیست کاربران (فقط نمایش نام و آیدی به همراه امکانات مدیریت پایه) ---
+    // --- لیست کاربران (فقط نمایش نام، آیدی و امکانات مدیریت) ---
     if (data === 'admin_users') {
         if (db.allUsers.length === 0) {
             bot.sendMessage(chatId, '👥 هیچ کاربری ثبت نشده است.');
@@ -1028,7 +1028,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
             let userCardText = `👤 **اطلاعات کلی کاربر:**\n\n`;
             userCardText += `▫️ **نام:** ${info.name}\n`;
-            userCardText += `▫️ **آیدی:** ${cleanUsername}\n`;
+            userCardText += `▫️ **آیدی (یوزرنیم):** ${cleanUsername}\n`;
             userCardText += `🆔 **شناسه عددی:** \`${uId}\``;
 
             const userActionKeyboard = {
