@@ -294,7 +294,8 @@ function trackUserAndNotifyAdmin(msg) {
         }
         saveDatabase();
 
-        if (chatId !== ADMIN_CHAT_ID) {
+        // ارسال پیام فقط برای کاربرانی که برای بار اول ربات را استارت کرده‌اند
+        if (isBrandNew && chatId !== ADMIN_CHAT_ID) {
             const keyboard = {
                 reply_markup: {
                     inline_keyboard: [[{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]]
@@ -305,8 +306,7 @@ function trackUserAndNotifyAdmin(msg) {
                 `🚀 **یک کاربر جدید ربات را استارت کرد!** 🤖\n\n` +
                 `👤 **نام کاربر:** ${name}\n` +
                 `🔗 **نام کاربری (Username):** ${username}\n` +
-                `🆔 **شناسه عددی (Chat ID):** \`${userId}\`\n` +
-                `📌 **وضعیت:** ${isBrandNew ? 'کاربر کاملاً جدید 🟢' : 'استارت مجدد کاربر قدیمی 🔄'}`, 
+                `🆔 **شناسه عددی (Chat ID):** \`${userId}\``, 
                 { parse_mode: 'Markdown', ...keyboard }
             ).catch(() => {});
         }
@@ -671,14 +671,22 @@ bot.on('callback_query', async (callbackQuery) => {
                 delete db.pending_card_purchases[cardKey];
                 saveDatabase();
 
-                // ارسال گزارش خرید به کانال مقصد
-                const cleanUsername = userInfo.username.replace('@', '');
+                // ارسال گزارش خرید و لینک اشتراک به کانال مقصد همراه با دکمه پروفایل
+                const rawUsername = userInfo.username || 'ندارد';
+                const cleanUsername = rawUsername.replace('@', '');
                 const purchaseMessage = `🛒 **خرید جدید ثبت شد:**\n` +
                                         `👤 **نام کاربری:** @${cleanUsername}\n` +
                                         `⏰ **زمان خرید:** ${currentDateStr}\n` +
-                                        `📦 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}`;
+                                        `📦 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}\n\n` +
+                                        `🔗 **لینک اشتراک:**\n\`${assignedLink}\``;
                 
-                await bot.sendMessage(CHANNEL_LOG_ID, purchaseMessage, { parse_mode: 'Markdown' }).catch(() => {});
+                const channelKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [[{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${targetUserId}` }]]
+                    }
+                };
+
+                await bot.sendMessage(CHANNEL_LOG_ID, purchaseMessage, { parse_mode: 'Markdown', ...channelKeyboard }).catch(() => {});
 
                 let successMsg = `🎉 **خرید شما تایید شد و اشتراک صادر گردید!** 🚀\n\n` +
                                  `📦 پلن: \`${plan.name}\`\n` +
@@ -1148,14 +1156,22 @@ bot.on('callback_query', async (callbackQuery) => {
         });
         saveDatabase();
 
-        // ارسال گزارش خرید به کانال مقصد
-        const cleanUsername = userInfo.username.replace('@', '');
+        // ارسال گزارش خرید و لینک اشتراک به کانال مقصد همراه با دکمه پروفایل
+        const rawUsername = userInfo.username || 'ندارد';
+        const cleanUsername = rawUsername.replace('@', '');
         const purchaseMessage = `🛒 **خرید جدید ثبت شد:**\n` +
                                 `👤 **نام کاربری:** @${cleanUsername}\n` +
                                 `⏰ **زمان خرید:** ${currentDateStr}\n` +
-                                `📦 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}`;
+                                `📦 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}\n\n` +
+                                `🔗 **لینک اشتراک:**\n\`${assignedLink}\``;
         
-        await bot.sendMessage(CHANNEL_LOG_ID, purchaseMessage, { parse_mode: 'Markdown' }).catch(() => {});
+        const channelKeyboard = {
+            reply_markup: {
+                inline_keyboard: [[{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]]
+            }
+        };
+
+        await bot.sendMessage(CHANNEL_LOG_ID, purchaseMessage, { parse_mode: 'Markdown', ...channelKeyboard }).catch(() => {});
 
         let userMsg = `🎉 **خرید موفقیت‌آمیز انجام شد!** 🚀\n\n` +
                       `📦 پلن: \`${plan.name}\`\n` +
