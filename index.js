@@ -1463,7 +1463,111 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
-// مدیریت پیام‌های متنی و دریافت رسیدها (نسخه دقیق و تفکیک شده)
+// هندلر اختصاصی عکس‌ها (برای جلوگیری از گم شدن رسیدها)
+bot.on('photo', async (msg) => {
+    loadDatabase();
+    const chatId = msg.chat.id;
+    const userId = msg.from ? msg.from.id : null;
+    if (!userId) return;
+
+    trackUserAndNotifyAdmin(msg);
+
+    const userState = db.userStates[chatId];
+    if (!userState) return;
+
+    // ۱. بررسی رسید شارژ کیف پول
+    if (userState.step === 'get_wallet_deposit_receipt') {
+        const amount = userState.depositAmount;
+        const photoFileId = msg.photo[msg.photo.length - 1].file_id;
+        const depositKey = `deposit_${userId}`;
+
+        db.pending_deposits[depositKey] = { amount: amount };
+        const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
+        const currentDateStr = new Date().toLocaleString('fa-IR');
+
+        db.receiptsHistory.push({
+            type: 'شارژ کیف پول',
+            userId: userId,
+            userName: userInfo.name,
+            details: `${amount.toLocaleString()} تومان`,
+            status: 'در انتظار تایید',
+            date: currentDateStr
+        });
+        saveDatabase();
+
+        const adminKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ تایید شارژ کیف پول', callback_data: `approve_deposit_${userId}` },
+                        { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
+                    ]
+                ]
+            }
+        };
+
+        const captionToAdmin = `🔔 **رسید جدید شارژ کیف پول!**\n\n` +
+                               `👤 کاربر: ${userInfo.name} (\`${userId}\`)\n` +
+                               `💵 مبلغ شارژ: \`${amount.toLocaleString()} تومان\``;
+
+        await bot.sendPhoto(ADMIN_CHAT_ID, photoFileId, { caption: captionToAdmin, parse_mode: 'Markdown', ...adminKeyboard }).catch(() => {});
+        
+        delete db.userStates[chatId];
+        saveDatabase();
+
+        bot.sendMessage(chatId, '✅ **رسید شارژ کیف پول دریافت شد.** پس از بررسی ادمین، موجودی کیف پول شما شارژ خواهد شد. ⏳', { parse_mode: 'Markdown' });
+        return;
+    }
+
+    // ۲. بررسی رسید خرید کارت‌به‌کارت اشتراک
+    if (userState.step === 'get_card_purchase_receipt') {
+        const planId = userState.planId;
+        const plan = db.customPlans.find(p => p.id === planId);
+        if (!plan) return;
+
+        const photoFileId = msg.photo[msg.photo.length - 1].file_id;
+        const cardKey = `card_pur_${userId}`;
+
+        db.pending_card_purchases[cardKey] = { planId: plan.id };
+        const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
+        const currentDateStr = new Date().toLocaleString('fa-IR');
+
+        db.receiptsHistory.push({
+            type: 'خرید کارت به کارت',
+            userId: userId,
+            userName: userInfo.name,
+            details: `${plan.name} (${plan.price})`,
+            status: 'در انتظار تایید',
+            date: currentDateStr
+        });
+        saveDatabase();
+
+        const adminKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ تایید و ارسال اشتراک', callback_data: `approve_card_${userId}_${plan.id}` },
+                        { text: '❌ رد رسید', callback_data: `reject_card_${userId}` }
+                    ]
+                ]
+            }
+        };
+
+        const captionToAdmin = `🔔 **رسید جدید خرید اشتراک!**\n\n` +
+                               `👤 کاربر: ${userInfo.name} (\`${userId}\`)\n` +
+                               `📦 پلن درخواستی: \`${plan.name}\` (${plan.price})`;
+
+        await bot.sendPhoto(ADMIN_CHAT_ID, photoFileId, { caption: captionToAdmin, parse_mode: 'Markdown', ...adminKeyboard }).catch(() => {});
+
+        delete db.userStates[chatId];
+        saveDatabase();
+
+        bot.sendMessage(chatId, '✅ **رسید خرید اشتراک دریافت شد.** پس از بررسی ادمین، لینک اشتراک برای شما ارسال می‌شود. ⏳', { parse_mode: 'Markdown' });
+        return;
+    }
+});
+
+// مدیریت پیام‌های متنی
 bot.on('message', async (msg) => {
     loadDatabase();
     const chatId = msg.chat.id;
@@ -1531,97 +1635,6 @@ bot.on('message', async (msg) => {
 
         await bot.sendMessage(ADMIN_CHAT_ID, supportForwardText, { parse_mode: 'Markdown', ...supportKeyboard }).catch(() => {});
         bot.sendMessage(chatId, db.botTexts.support_success, { parse_mode: 'Markdown' });
-        return;
-    }
-
-    // ۳. دریافت عکس رسید «شارژ کیف پول» (دقیقاً تفکیک شده از خرید اشتراک)
-    if (userState.step === 'get_wallet_deposit_receipt' && msg.photo) {
-        const amount = userState.depositAmount;
-        const photoFileId = msg.photo[msg.photo.length - 1].file_id;
-        const depositKey = `deposit_${userId}`;
-
-        db.pending_deposits[depositKey] = { amount: amount };
-        const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
-        const currentDateStr = new Date().toLocaleString('fa-IR');
-
-        db.receiptsHistory.push({
-            type: 'شارژ کیف پول',
-            userId: userId,
-            userName: userInfo.name,
-            details: `${amount.toLocaleString()} تومان`,
-            status: 'در انتظار تایید',
-            date: currentDateStr
-        });
-        saveDatabase();
-
-        const adminKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '✅ تایید شارژ کیف پول', callback_data: `approve_deposit_${userId}` },
-                        { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
-                    ]
-                ]
-            }
-        };
-
-        const captionToAdmin = `🔔 **رسید جدید شارژ کیف پول!**\n\n` +
-                               `👤 کاربر: ${userInfo.name} (\`${userId}\`)\n` +
-                               `💵 مبلغ شارژ: \`${amount.toLocaleString()} تومان\``;
-
-        await bot.sendPhoto(ADMIN_CHAT_ID, photoFileId, { caption: captionToAdmin, parse_mode: 'Markdown', ...adminKeyboard }).catch(() => {});
-        
-        delete db.userStates[chatId];
-        saveDatabase();
-
-        bot.sendMessage(chatId, '✅ **رسید شارژ کیف پول دریافت شد.** پس از بررسی ادمین، موجودی کیف پول شما شارژ خواهد شد. ⏳', { parse_mode: 'Markdown' });
-        return;
-    }
-
-    // ۴. دریافت عکس رسید «خرید کارت‌به‌کارت اشتراک» (مختص صدور لینک اشتراک)
-    if (userState.step === 'get_card_purchase_receipt' && msg.photo) {
-        const planId = userState.planId;
-        const plan = db.customPlans.find(p => p.id === planId);
-        if (!plan) return;
-
-        const photoFileId = msg.photo[msg.photo.length - 1].file_id;
-        const cardKey = `card_pur_${userId}`;
-
-        db.pending_card_purchases[cardKey] = { planId: plan.id };
-        const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
-        const currentDateStr = new Date().toLocaleString('fa-IR');
-
-        db.receiptsHistory.push({
-            type: 'خرید کارت به کارت',
-            userId: userId,
-            userName: userInfo.name,
-            details: `${plan.name} (${plan.price})`,
-            status: 'در انتظار تایید',
-            date: currentDateStr
-        });
-        saveDatabase();
-
-        const adminKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '✅ تایید و ارسال اشتراک', callback_data: `approve_card_${userId}_${plan.id}` },
-                        { text: '❌ رد رسید', callback_data: `reject_card_${userId}` }
-                    ]
-                ]
-            }
-        };
-
-        const captionToAdmin = `🔔 **رسید جدید خرید اشتراک!**\n\n` +
-                               `👤 کاربر: ${userInfo.name} (\`${userId}\`)\n` +
-                               `📦 پلن درخواستی: \`${plan.name}\` (${plan.price})`;
-
-        await bot.sendPhoto(ADMIN_CHAT_ID, photoFileId, { caption: captionToAdmin, parse_mode: 'Markdown', ...adminKeyboard }).catch(() => {});
-
-        delete db.userStates[chatId];
-        saveDatabase();
-
-        bot.sendMessage(chatId, '✅ **رسید خرید اشتراک دریافت شد.** پس از بررسی ادمین، لینک اشتراک برای شما ارسال می‌شود. ⏳', { parse_mode: 'Markdown' });
         return;
     }
 });
