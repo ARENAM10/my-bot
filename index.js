@@ -1195,15 +1195,15 @@ bot.on('callback_query', async (callbackQuery) => {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "💵 ۵۰,۰۰۰ تومان", callback_data: 'user_dep_50000' },
-                        { text: "💵 ۱۰۰,۰۰۰ تومان", callback_data: 'user_dep_100000' }
+                        { text: "50,000 تومان 💵", callback_data: 'user_dep_50000' },
+                        { text: "100,000 تومان 💵", callback_data: 'user_dep_100000' }
                     ],
                     [
-                        { text: "💵 ۲۰۰,۰۰۰ تومان", callback_data: 'user_dep_200000' },
-                        { text: "💵 ۵۰۰,۰۰۰ تومان", callback_data: 'user_dep_500000' }
+                        { text: "200,000 تومان 💵", callback_data: 'user_dep_200000' },
+                        { text: "500,000 تومان 🚀", callback_data: 'user_dep_500000' }
                     ],
                     [
-                        { text: '🔙 بازگشت', callback_data: 'wallet' }
+                        { text: '🔙 بازگشت به کیف پول', callback_data: 'wallet' }
                     ]
                 ]
             }
@@ -1233,7 +1233,12 @@ bot.on('callback_query', async (callbackQuery) => {
         await bot.editMessageText(depositMsg, {
             chat_id: chatId,
             message_id: msg.message_id,
-            parse_mode: 'Markdown'
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🔙 بازگشت', callback_data: 'wallet_deposit' }]
+                ]
+            }
         });
         return;
     }
