@@ -17,8 +17,10 @@ const ADMIN_WEB_PASSWORD = 'admin_secure_password';
 // --- مسیر ذخیره‌سازی داده‌ها ---
 const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
 const DB_FILE = path.join(DATA_DIR, 'database.json');
+const PURCHASES_LOG_FILE = path.join(DATA_DIR, 'purchases_log.txt');
 
-let db = {
+// ساختار پیش‌فرض پایه (برای اولین اجرا)
+const defaultDatabaseStructure = {
     CHANNEL_USERNAME: '@YourChannelUsername',
     isForceJoinEnabled: false,
     isTestServerEnabled: true,
@@ -83,38 +85,33 @@ let db = {
     paymentCardNumber: '6037-9971-xxxx-xxxx'
 };
 
+let db = JSON.parse(JSON.stringify(defaultDatabaseStructure));
+
+// --- تابع هوشمند برای ترکیب امن داده‌ها و محافظت از تنظیمات ادمین ---
 function loadDatabase() {
     try {
         if (fs.existsSync(DB_FILE)) {
             const data = fs.readFileSync(DB_FILE, 'utf8');
             const parsed = JSON.parse(data);
-            db = { ...db, ...parsed };
-            if (!db.userStates) db.userStates = {};
-            if (!db.menuNames) {
-                db.menuNames = {
-                    buy_sub: '🛒 خرید اشتراک پرسرعت ⚡️',
-                    free_sub: '🎁 اشتراک رایگان',
-                    test_server: '🧪 سرور تست',
-                    wallet: '💰 کیف پول من',
-                    invite: '👥 زیرمجموعه‌گیری',
-                    my_subs: '📱 اشتراک‌های من',
-                    tutorial: '📖 آموزش اتصال',
-                    support: '📞 پشتیبانی آنلاین'
-                };
-            }
-            if (!db.botTexts) {
-                db.botTexts = {
-                    start_message: '💜 **به ربات CONFIG ARENA خوش آمدید** 💜\n\n⚡️ **خرید کانفیگ‌های پرسرعت و پایدار**\n🚀 **کیفیت بالا + سرعت تضمینی**\n\nاز منوی زیر سرویس موردنظر خود را انتخاب کنید 👇\n\n🔥 **سرور بدون مرز | CONFIG ARENA** 🔥',
-                    tutorial_message: '📖 **آموزش ساده اتصال:** 💡\n\n1️⃣ اپلیکیشن V2Ray (مثل v2rayNG در اندروید یا FoXray در آیفون) را نصب کنید.\n2️⃣ لینک اشتراک اختصاصی خود را از بخش «اشتراک‌های من» کپی کنید.\n3️⃣ برنامه را باز کرده، روی علامت + یا Import بزنید تا لینک اضافه شود.\n4️⃣ روی دکمه اتصال بزنید و از اینترنت آزاد لذت ببرید! 🚀',
-                    support_prompt: '📞 پیام یا سوال خود را برای پشتیبانی ارسال کنید: 👇',
-                    support_success: '✅ پیام شما با موفقیت به پشتیبانی ارسال شد. به زودی پاسخ می‌دهیم! 🙏',
-                    store_title: '🛒 **فروشگاه اشتراک‌های پرسرعت و اختصاصی** 🚀\n\nلطفاً پلن مورد نظر خود را انتخاب کنید: 👇',
-                    no_plans: '🛒 در حال حاضر هیچ پلن فعالی موجود نیست. به زودی برمی‌گردیم! 🙏',
-                    wallet_title: '💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: \`{balance} تومان\`\n\n🆔 شناسه کاربری شما: \`{userId}\`',
-                    invite_title: '👥 **سیستم دعوت از دوستان** 🎁\n\nبا ارسال لینک زیر به دوستانتان پاداش بگیرید:\n\`{inviteLink}\`\n\n✨ تعداد زیرمجموعه‌های شما: **{count} نفر**',
-                    empty_subs: '📱 شما هنوز اشتراک فعالی ندارید. از فروشگاه تهیه کنید! 🛒'
-                };
-            }
+            
+            // جایگذاری دقیق کلیدها بدون از دست رفتن تنظیمات سفارشی ادمین
+            db = {
+                ...defaultDatabaseStructure,
+                ...parsed,
+                menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
+                botTexts: { ...defaultDatabaseStructure.botTexts, ...(parsed.botTexts || {}) },
+                userStates: parsed.userStates || {},
+                userWallets: parsed.userWallets || {},
+                pending_deposits: parsed.pending_deposits || {},
+                pending_card_purchases: parsed.pending_card_purchases || {},
+                allUsers: parsed.allUsers || [],
+                usersDetailMap: parsed.usersDetailMap || {},
+                receiptsHistory: parsed.receiptsHistory || [],
+                referals: parsed.referals || [],
+                userSubscriptions: parsed.userSubscriptions || {},
+                allSubscriptionsHistory: parsed.allSubscriptionsHistory || [],
+                customPlans: parsed.customPlans || defaultDatabaseStructure.customPlans
+            };
         } else {
             saveDatabase();
         }
@@ -123,7 +120,7 @@ function loadDatabase() {
     }
 }
 
-// --- ذخیره‌سازی امن و اتمیک (جلوگیری از خراب شدن فایل دیتابیس هنگام کرش) ---
+// --- ذخیره‌سازی امن و اتمیک (جلوگیری از خراب شدن فایل دیتابیس) ---
 function saveDatabase() {
     try {
         if (!fs.existsSync(DATA_DIR)) {
@@ -137,30 +134,57 @@ function saveDatabase() {
     }
 }
 
+// --- تابع ثبت کامل جزئیات خرید در فایل متنی مجزا ---
+function logPurchaseToFile(subObj) {
+    try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+        const logEntry = `----------------------------------------\n` +
+                         `تاریخ خرید: ${subObj.purchaseDate}\n` +
+                         `نام مشتری: ${subObj.userName}\n` +
+                         `شناسه کاربر (Chat ID): ${subObj.userId}\n` +
+                         `نام پلن: ${subObj.planName}\n` +
+                         `حجم کل: ${subObj.totalVolume || subObj.volume}\n` +
+                         `تاریخ انقضا: ${subObj.expiryDate}\n` +
+                         `لینک اشتراک:\n${subObj.configLink}\n` +
+                         `----------------------------------------\n\n`;
+
+        fs.appendFileSync(PURCHASES_LOG_FILE, logEntry, 'utf8');
+    } catch (e) {
+        console.log('❌ خطا در نوشتن لاگ خرید در فایل متنی:', e);
+    }
+}
+
 loadDatabase();
 
-// --- ارسال بکاپ با پسوند .txt جهت جلوگیری از باز شدن با فیلترشکن‌ها ---
+// --- ارسال بکاپ خودکار دیتابیس و فایل لاگ خریدها به ادمین ---
 async function sendBackupToAdmin() {
     const backupDir = path.join(DATA_DIR, 'backups');
-    if (!fs.existsSync(DB_FILE)) {
-        console.log('Database file not found for backup!');
-        return;
-    }
     if (!fs.existsSync(backupDir)) {
         fs.mkdirSync(backupDir, { recursive: true });
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupPath = path.join(backupDir, `backup_${timestamp}_database.txt`);
+    const backupDbPath = path.join(backupDir, `backup_${timestamp}_database.txt`);
+    const backupLogPath = path.join(backupDir, `backup_${timestamp}_purchases_log.txt`);
 
     try {
-        fs.copyFileSync(DB_FILE, backupPath);
-        await bot.sendDocument(ADMIN_CHAT_ID, backupPath, {
-            caption: `📦 **پشتیبان خودکار دیتابیس**\n👤 ادمین: arenam_10\n🕒 زمان: ${new Date().toLocaleString('fa-IR')}`
-        });
-        console.log('Backup sent successfully to arenam_10.');
+        if (fs.existsSync(DB_FILE)) {
+            fs.copyFileSync(DB_FILE, backupDbPath);
+            await bot.sendDocument(ADMIN_CHAT_ID, backupDbPath, {
+                caption: `📦 **پشتیبان خودکار دیتابیس ربات**\n👤 ادمین: arenam_10\n🕒 زمان: ${new Date().toLocaleString('fa-IR')}`
+            });
+        }
+        if (fs.existsSync(PURCHASES_LOG_FILE)) {
+            fs.copyFileSync(PURCHASES_LOG_FILE, backupLogPath);
+            await bot.sendDocument(ADMIN_CHAT_ID, backupLogPath, {
+                caption: `📑 **فایل کامل سوابق و جزئیات خریدهای انجام‌شده**\n👤 ادمین: arenam_10`
+            });
+        }
+        console.log('Backups sent successfully to arenam_10.');
     } catch (e) {
-        console.log('Error sending backup to admin:', e);
+        console.log('Error sending backups to admin:', e);
     }
 }
 
@@ -302,7 +326,6 @@ async function checkMembership(userId) {
         const status = chatMember.status;
         return ['creator', 'administrator', 'member'].includes(status);
     } catch (error) {
-        console.log('Error checking membership safely:', error.message);
         return false;
     }
 }
@@ -325,23 +348,14 @@ async function fetchAndParseConfig(url) {
             const hostname = parsedUrl.hostname.toLowerCase();
             
             if (
-                hostname === 'localhost' ||
-                hostname === '127.0.0.1' ||
-                hostname === '::1' ||
-                hostname.startsWith('10.') ||
-                hostname.startsWith('192.168.') ||
-                hostname.startsWith('172.16.') ||
-                hostname === '169.254.169.254'
+                hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' ||
+                hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('172.16.')
             ) {
-                console.log('⚠️ بلاک شد: تلاش برای دسترسی SSRF به شبکه داخلی:', hostname);
                 return resultInfo;
             }
 
             resultInfo.isSubLink = true;
-            const response = await axios.get(url, { 
-                timeout: 10000,
-                validateStatus: () => true 
-            });
+            const response = await axios.get(url, { timeout: 10000, validateStatus: () => true });
 
             const userInfoHeader = response.headers['subscription-userinfo'] || response.headers['X-Subscription-Userinfo'];
             if (userInfoHeader) {
@@ -387,9 +401,7 @@ async function fetchAndParseConfig(url) {
             resultInfo.rawContent = data;
             resultInfo.extractedConfigs = foundConfigs.length > 0 ? foundConfigs : [data];
         }
-    } catch (error) {
-        console.log('خطا در تحلیل لینک سابسکریپشن:', error.message);
-    }
+    } catch (error) {}
 
     return resultInfo;
 }
@@ -578,7 +590,7 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // --- مدیریت تایید یا رد شارژ کیف پول (جلوگیری از Double Spending) ---
+    // --- تایید یا رد شارژ کیف پول ---
     if (data.startsWith('approve_deposit_') || data.startsWith('reject_deposit_')) {
         if (!isAdmin(callbackQuery)) return;
         const parts = data.split('_');
@@ -613,7 +625,7 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- مدیریت تایید یا رد خرید کارت به کارت (جلوگیری از تکرار و تایید چندباره) ---
+    // --- تایید یا رد خرید کارت به کارت ---
     if (data.startsWith('approve_card_') || data.startsWith('reject_card_')) {
         if (!isAdmin(callbackQuery)) return;
         const parts = data.split('_');
@@ -635,7 +647,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const plan = db.customPlans.find(p => p.id === planId);
 
             if (plan && plan.links.length > 0) {
-                const assignedLink = plan.links.shift(); // برداشتن ایمن لینک
+                const assignedLink = plan.links.shift();
                 const parsedData = await fetchAndParseConfig(assignedLink);
                 const currentDateStr = new Date().toLocaleString('fa-IR');
                 const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر' };
@@ -659,6 +671,9 @@ bot.on('callback_query', async (callbackQuery) => {
                 }
                 db.userSubscriptions[targetUserId].push(subObj);
                 db.allSubscriptionsHistory.push(subObj);
+
+                // ثبت در فایل متنی مجزا
+                logPurchaseToFile(subObj);
 
                 delete db.pending_card_purchases[cardKey];
                 saveDatabase();
@@ -689,7 +704,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
     if (data === 'admin_send_backup') {
         if (!isAdmin(callbackQuery)) return;
-        bot.sendMessage(chatId, '⏳ در حال تهیه و ارسال فایل پشتیبان...');
+        bot.sendMessage(chatId, '⏳ در حال تهیه و ارسال فایل‌های پشتیبان و لاگ...');
         await sendBackupToAdmin();
         return;
     }
@@ -848,13 +863,6 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, '❌ شما هنوز در کانال عضو نشده‌اید یا خطایی رخ داده است. لطفاً جوین شوید و دوباره تلاش کنید. ⚠️');
         }
         return;
-    }
-
-    if (data.startsWith('admin_') || data.startsWith('plan_mgmt_') || data.startsWith('edit_plan_') || data.startsWith('del_plan_') || data.startsWith('edit_p_')) {
-        if (!isAdmin(callbackQuery)) {
-            bot.sendMessage(chatId, '❌ شما دسترسی ندارید.');
-            return;
-        }
     }
 
     if (data === 'admin_manage_plans') {
@@ -1098,7 +1106,7 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         db.userWallets[userId] = userBalance - priceNumber;
-        const assignedLink = plan.links.shift(); // برداشتن امن لینک از انبار
+        const assignedLink = plan.links.shift();
         delete db.userStates[chatId];
         saveDatabase();
 
@@ -1125,6 +1133,9 @@ bot.on('callback_query', async (callbackQuery) => {
         }
         db.userSubscriptions[userId].push(subObj);
         db.allSubscriptionsHistory.push(subObj);
+
+        // ثبت در فایل متنی مجزا
+        logPurchaseToFile(subObj);
 
         db.receiptsHistory.push({
             type: 'خرید با کیف پول',
