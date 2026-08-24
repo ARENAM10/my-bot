@@ -17,6 +17,23 @@ const ADMIN_WEB_PASSWORD = 'admin_secure_password';
 // اطلاعات کانال مقصد برای گزارش خریدها
 const CHANNEL_LOG_ID = '-1004488082323';
 
+// تابع ارسال رسید و اشتراک به کانال
+async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, receiptPhotoPath, channelId) {
+    try {
+        let caption = `🎉 **خرید اشتراک جدید!**\n\n` +
+                      `👤 شناسه کاربر: ${userId}\n` +
+                      `📦 جزئیات اشتراک:\n${subscriptionDetails}`;
+
+        // ارسال رسید (به صورت عکس) به همراه مشخصات اشتراک به کانال
+        await bot.sendPhoto(channelId, receiptPhotoPath, {
+            caption: caption,
+            parse_mode: 'Markdown'
+        });
+    } catch (error) {
+        console.log("خطا در ارسال رسید و اشتراک به کانال:", error);
+    }
+}
+
 // --- مسیر ذخیره‌سازی داده‌ها ---
 const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
 const DB_FILE = path.join(DATA_DIR, 'database.json');
@@ -102,7 +119,7 @@ function loadDatabase() {
                 ...parsed,
                 menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
                 botTexts: { ...defaultDatabaseStructure.botTexts, ...(parsed.botTexts || {}) },
-                userStates: {}, // پاکسازی استیت‌های موقت زمان ری‌استارت
+                userStates: {},
                 userWallets: parsed.userWallets || {},
                 pending_deposits: parsed.pending_deposits || {},
                 pending_card_purchases: parsed.pending_card_purchases || {},
@@ -157,7 +174,6 @@ function logPurchaseToFile(subObj) {
     }
 }
 
-// بارگذاری اولیه دیتابیس هنگام روشن شدن ربات
 loadDatabase();
 console.log('🔄 ربات مجدداً راه‌اندازی شد و تمامی اطلاعات کاربران و ویترین از دیتابیس بازیابی شد.');
 
@@ -513,6 +529,7 @@ function sendAdminPanel(chatId) {
     const freeSubStatus = db.isFreeSubEnabled ? '🟢 اشتراک رایگان: روشن' : '🔴 اشتراک رایگان: خاموش';
     const inviteStatus = db.isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
     
+    // به‌روزرسانی پنل مدیریت بر اساس ساختار درخواستی شما (حذف لیست کاربران از اینجا و قرارگیری آمار کلی به صورت تک‌نفره)
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
@@ -521,20 +538,19 @@ function sendAdminPanel(chatId) {
                     { text: '✏️ تغییر نام دکمه‌ها', callback_data: 'admin_edit_names_menu' }
                 ],
                 [
-                    { text: '📝 تغییر متن‌های ربات', callback_data: 'admin_edit_texts_menu' },
-                    { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' }
+                    { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' },
+                    { text: '✏️ تغییر متن‌های ربات', callback_data: 'admin_edit_texts_menu' }
                 ],
                 [
-                    { text: '💰 شارژ دستی کیف پول', callback_data: 'admin_charge_wallet' },
-                    { text: '📋 رسیدهای مالی', callback_data: 'admin_receipts' }
+                    { text: '💵 شارژ دستی کیف پول', callback_data: 'admin_charge_wallet' },
+                    { text: '📑 رسیدهای مالی', callback_data: 'admin_receipts' }
                 ],
                 [
-                    { text: '📊 آمار کلی', callback_data: 'admin_stats' },
-                    { text: '👥 لیست کاربران', callback_data: 'admin_users' }
+                    { text: '📊 آمار کلی', callback_data: 'admin_stats' }
                 ],
                 [
-                    { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' },
-                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' }
+                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' },
+                    { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' }
                 ],
                 [
                     { text: testServerStatus, callback_data: 'toggle_test_server' },
@@ -588,7 +604,6 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // --- مدیریت تعاملی کاربران (ارسال پیام یا شارژ کیف پول مستقیم برای کاربر خاص) ---
     if (data.startsWith('adm_msg_')) {
         if (!isAdmin(callbackQuery)) return;
         const targetUserId = parseInt(data.replace('adm_msg_', ''), 10);
@@ -607,7 +622,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- تایید یا رد شارژ کیف پول ---
     if (data.startsWith('approve_deposit_') || data.startsWith('reject_deposit_')) {
         if (!isAdmin(callbackQuery)) return;
         const parts = data.split('_');
@@ -642,7 +656,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- تایید یا رد خرید کارت به کارت ---
     if (data.startsWith('approve_card_') || data.startsWith('reject_card_')) {
         if (!isAdmin(callbackQuery)) return;
         const parts = data.split('_');
@@ -1013,44 +1026,6 @@ bot.on('callback_query', async (callbackQuery) => {
                            `🔗 لینک: \`${sub.configLink}\`\n\n`;
         });
         bot.sendMessage(chatId, historyText, { parse_mode: 'Markdown' });
-        return;
-    }
-
-    // --- لیست کاربران (فقط نمایش نام، آیدی و امکانات مدیریت) ---
-    if (data === 'admin_users') {
-        if (db.allUsers.length === 0) {
-            bot.sendMessage(chatId, '👥 هیچ کاربری ثبت نشده است.');
-            return;
-        }
-
-        bot.sendMessage(chatId, `👥 **لیست کل کاربران ربات (مجموع: ${db.allUsers.length} نفر):**\nدر حال ارسال مشخصات...`, { parse_mode: 'Markdown' });
-
-        for (const uId of db.allUsers) {
-            const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: 'نامشخص' };
-            const cleanUsername = info.username !== 'ندارد' ? info.username : 'فاقد یوزرنیم';
-
-            let userCardText = `👤 **اطلاعات کلی کاربر:**\n\n`;
-            userCardText += `▫️ **نام:** ${info.name}\n`;
-            userCardText += `▫️ **آیدی (یوزرنیم):** ${cleanUsername}\n`;
-            userCardText += `🆔 **شناسه عددی:** \`${uId}\``;
-
-            const userActionKeyboard = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            { text: '✉️ ارسال پیام', callback_data: `adm_msg_${uId}` },
-                            { text: '💰 شارژ کیف پول', callback_data: `adm_chg_${uId}` }
-                        ],
-                        [
-                            { text: '👤 پروفایل تلگرام', url: `tg://user?id=${uId}` }
-                        ]
-                    ]
-                }
-            };
-
-            await bot.sendMessage(chatId, userCardText, { parse_mode: 'Markdown', ...userActionKeyboard });
-            await new Promise(resolve => setTimeout(resolve, 80)); 
-        }
         return;
     }
 
@@ -1703,6 +1678,9 @@ bot.on('photo', async (msg) => {
                 date: currentDateStr
             });
             saveDatabase();
+
+            // فراخوانی تابع کمکی برای ارسال رسید به کانال گزارش (در صورت نیاز)
+            await sendSubscriptionAndReceiptToChannel(userId, `${plan.name} - ${plan.price}`, photoId, CHANNEL_LOG_ID);
 
             const adminCardKeyboard = {
                 reply_markup: {
