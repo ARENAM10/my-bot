@@ -1601,7 +1601,7 @@ bot.on('message', async (msg) => {
     }
 });
 
-// مدیریت دقیق عکس و رسیدهای ارسالی مشتریان به ادمین
+// مدیریت دقیق عکس و رسیدهای ارسالی مشتریان به ادمین (نسخه کامل و به‌روزرسانی‌شده)
 bot.on('photo', async (msg) => {
     loadDatabase();
     trackUserAndNotifyAdmin(msg);
@@ -1611,91 +1611,92 @@ bot.on('photo', async (msg) => {
     const photoId = msg.photo[msg.photo.length - 1].file_id;
     const currentDateStr = new Date().toLocaleString('fa-IR');
 
-    if (db.userStates[chatId]) {
-        if (db.userStates[chatId].step === 'get_wallet_deposit_receipt') {
-            const amount = db.userStates[chatId].depositAmount;
-            delete db.userStates[chatId];
+    const currentState = db.userStates[chatId] || {};
 
-            db.pending_deposits[`deposit_${userId}`] = { amount };
-            saveDatabase();
-            bot.sendMessage(chatId, '✅ رسید دریافت شد. پس از تایید مدیریت، موجودی شما شارژ خواهد شد. ⏳');
+    // بررسی رسید شارژ کیف پول
+    if (currentState.step === 'get_wallet_deposit_receipt') {
+        const amount = currentState.depositAmount;
+        delete db.userStates[chatId];
+        saveDatabase();
 
-            db.receiptsHistory.push({
-                type: 'شارژ کیف پول',
-                userId: userId,
-                userName: userInfo.name,
-                details: `${amount.toLocaleString()} تومان`,
-                status: 'در انتظار تایید',
-                date: currentDateStr
-            });
-            saveDatabase();
+        db.pending_deposits[`deposit_${userId}`] = { amount };
+        bot.sendMessage(chatId, '✅ رسید دریافت شد. پس از تایید مدیریت، موجودی شما شارژ خواهد شد. ⏳');
 
-            const adminDepositKeyboard = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            { text: '✅ تایید شارژ', callback_data: `approve_deposit_${userId}` },
-                            { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
-                        ]
+        db.receiptsHistory.push({
+            type: 'شارژ کیف پول',
+            userId: userId,
+            userName: userInfo.name,
+            details: `${amount.toLocaleString()} تومان`,
+            status: 'در انتظار تایید',
+            date: currentDateStr
+        });
+        saveDatabase();
+
+        const adminDepositKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ تایید شارژ', callback_data: `approve_deposit_${userId}` },
+                        { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
                     ]
-                }
-            };
-
-            // ارسال مستقیم رسید شارژ به ادمین
-            await bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
-                caption: `🔔 **رسید جدید شارژ کیف پول**\n\n👤 نام: ${userInfo.name}\n🆔 آیدی عددی: \`${userId}\`\n💵 مبلغ: \`${amount.toLocaleString()} تومان\``,
-                parse_mode: 'Markdown',
-                ...adminDepositKeyboard
-            });
-            return;
-        }
-
-        if (db.userStates[chatId].step === 'get_card_purchase_receipt') {
-            const planId = db.userStates[chatId].planId;
-            const plan = db.customPlans.find(p => p.id === planId);
-            delete db.userStates[chatId];
-
-            if (!plan || plan.links.length === 0) {
-                bot.sendMessage(chatId, '❌ متأسفانه این پلن تمام شده است.');
-                return;
+                ]
             }
+        };
 
-            db.pending_card_purchases[`card_pur_${userId}`] = { planId: plan.id };
-            saveDatabase();
-            bot.sendMessage(chatId, '✅ رسید خرید دریافت شد. پس از بررسی ادمین، لینک اشتراک ارسال می‌شود. ⏳');
+        await bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
+            caption: `🔔 **رسید جدید شارژ کیف پول**\n\n👤 نام: ${userInfo.name}\n🆔 آیدی عددی: \`${userId}\`\n💵 مبلغ: \`${amount.toLocaleString()} تومان\``,
+            parse_mode: 'Markdown',
+            ...adminDepositKeyboard
+        });
+        return;
+    }
 
-            db.receiptsHistory.push({
-                type: 'خرید کارت به کارت',
-                userId: userId,
-                userName: userInfo.name,
-                details: `${plan.name} (${plan.price})`,
-                status: 'در انتظار تایید',
-                date: currentDateStr
-            });
-            saveDatabase();
+    // بررسی رسید خرید اشتراک (اگر استیت ست شده باشد یا در غیر این صورت به عنوان پشتیبان از اولین پلن استفاده می‌شود)
+    const planId = currentState.planId || currentState.targetPlanId || (db.customPlans.length > 0 ? db.customPlans[0].id : null);
+    const plan = db.customPlans.find(p => p.id === planId) || db.customPlans[0];
 
-            // ارسال رسید به کانال گزارش (در صورت تمایل)
-            await sendSubscriptionAndReceiptToChannel(userId, `${plan.name} - ${plan.price}`, photoId, CHANNEL_LOG_ID);
+    if (plan && (currentState.step === 'get_card_purchase_receipt' || planId)) {
+        delete db.userStates[chatId];
+        db.pending_card_purchases[`card_pur_${userId}`] = { planId: plan.id };
+        saveDatabase();
+        
+        bot.sendMessage(chatId, '✅ رسید خرید دریافت شد. پس از بررسی ادمین، لینک اشتراک ارسال می‌شود. ⏳');
 
-            const adminCardKeyboard = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            { text: '✅ تایید و ارسال اشتراک', callback_data: `approve_card_${userId}_${plan.id}` },
-                            { text: '❌ رد رسید', callback_data: `reject_card_${userId}` }
-                        ]
+        db.receiptsHistory.push({
+            type: 'خرید کارت به کارت',
+            userId: userId,
+            userName: userInfo.name,
+            details: `${plan.name} (${plan.price})`,
+            status: 'در انتظار تایید',
+            date: currentDateStr
+        });
+        saveDatabase();
+
+        // ارسال رسید به کانال گزارش
+        await sendSubscriptionAndReceiptToChannel(userId, `${plan.name} - ${plan.price}`, photoId, CHANNEL_LOG_ID);
+
+        const adminCardKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ تایید و ارسال اشتراک', callback_data: `approve_card_${userId}_${plan.id}` },
+                        { text: '❌ رد رسید', callback_data: `reject_card_${userId}` }
                     ]
-                }
-            };
+                ]
+            }
+        };
 
-            // ارسال مستقیم رسید خرید به ادمین همراه با دکمه‌های تایید و رد
-            await bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
-                caption: `🔔 **رسید جدید خرید کارت به کارت**\n\n👤 نام: ${userInfo.name}\n🆔 آیدی عددی: \`${userId}\`\n📦 پلن: ${plan.name} (${plan.price})`,
-                parse_mode: 'Markdown',
-                ...adminCardKeyboard
-            });
-            return;
-        }
+        // ارسال مستقیم رسید خرید به ادمین همراه با دکمه‌های تایید و رد
+        await bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
+            caption: `🔔 **رسید جدید خرید کارت به کارت**\n\n👤 نام: ${userInfo.name}\n🆔 آیدی عددی: \`${userId}\`\n📦 پلن: ${plan.name} (${plan.price})`,
+            parse_mode: 'Markdown',
+            ...adminCardKeyboard
+        });
+        return;
+    }
+
+    if (chatId === ADMIN_CHAT_ID) {
+        bot.sendMessage(chatId, 'ℹ️ این عکس به عنوان رسید شناخته نشد.');
     }
 });
 
