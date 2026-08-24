@@ -23,9 +23,9 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, receiptPhotoPath, channelId) {
     try {
-        let caption = `🎉 **خرید اشتراک جدید!**\n\n` +
+        let caption = `🎉 **گزارش تراکنش / خرید جدید!**\n\n` +
                       `👤 شناسه کاربر: ${userId}\n` +
-                      `📦 جزئیات اشتراک:\n${subscriptionDetails}`;
+                      `📦 جزئیات:\n${subscriptionDetails}`;
 
         await bot.sendPhoto(channelId, receiptPhotoPath, {
             caption: caption,
@@ -1778,6 +1778,7 @@ bot.on('photo', async (msg) => {
 
     const currentState = db.userStates[chatId] || {};
 
+    // 1. اگر کاربر در حال ارسال رسید شارژ کیف پول باشد
     if (currentState.step === 'get_wallet_deposit_receipt') {
         const amount = currentState.depositAmount;
         delete db.userStates[chatId];
@@ -1795,6 +1796,9 @@ bot.on('photo', async (msg) => {
             date: currentDateStr
         });
         saveDatabase();
+
+        // ارسال عکس رسید شارژ کیف پول به کانال لاگ
+        await sendSubscriptionAndReceiptToChannel(userId, `شارژ کیف پول - ${amount.toLocaleString()} تومان`, photoId, CHANNEL_LOG_ID);
 
         const adminDepositKeyboard = {
             reply_markup: {
@@ -1815,6 +1819,7 @@ bot.on('photo', async (msg) => {
         return;
     }
 
+    // 2. اگر کاربر در حال ارسال رسید خرید اشتراک (کارت به کارت) باشد
     const planId = currentState.planId || currentState.targetPlanId || (db.customPlans.length > 0 ? db.customPlans[0].id : null);
     const plan = db.customPlans.find(p => p.id === planId) || db.customPlans[0];
 
