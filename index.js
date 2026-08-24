@@ -1195,12 +1195,12 @@ bot.on('callback_query', async (callbackQuery) => {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "50,000 تومان", callback_data: 'user_dep_50000' },
-                        { text: "100,000 تومان", callback_data: 'user_dep_100000' }
+                        { text: "➕ ۵۰ هزار تومان", callback_data: 'user_dep_50000' },
+                        { text: "➕ ۱۰۰ هزار تومان", callback_data: 'user_dep_100000' }
                     ],
                     [
-                        { text: "200,000 تومان", callback_data: 'user_dep_200000' },
-                        { text: "500,000 تومان", callback_data: 'user_dep_500000' }
+                        { text: "➕ ۲۰۰ هزار تومان", callback_data: 'user_dep_200000' },
+                        { text: "➕ ۵۰۰ هزار تومان", callback_data: 'user_dep_500000' }
                     ],
                     [
                         { text: '🔙 بازگشت', callback_data: 'wallet' }
@@ -1486,6 +1486,7 @@ bot.on('message', async (msg) => {
     loadDatabase();
     trackUserAndNotifyAdmin(msg);
     const chatId = msg.chat.id;
+    const userId = msg.from.id.toString();
     const text = msg.text;
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
