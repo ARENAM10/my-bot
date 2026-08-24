@@ -285,6 +285,32 @@ function parsePrice(priceStr) {
     return parseInt(digits, 10) || 0;
 }
 
+// تابع کمکی برای یافتن شناسه عددی کاربر از روی چت‌آیدی یا یوزرنیم
+function resolveUserId(input) {
+    if (!input) return null;
+    let cleanInput = input.trim();
+    
+    // اگر ورودی فقط عدد بود، همان Chat ID است
+    if (/^\d+$/.test(cleanInput)) {
+        return parseInt(cleanInput, 10);
+    }
+    
+    // اگر یوزرنیم بود (با یا بدون @)
+    if (cleanInput.startsWith('@')) {
+        cleanInput = cleanInput.substring(1);
+    }
+    cleanInput = cleanInput.toLowerCase();
+
+    // جستجو در لیست جزئیات کاربران ذخیره شده در دیتابیس
+    for (const [uId, info] of Object.entries(db.usersDetailMap)) {
+        if (info.username && info.username.replace('@', '').toLowerCase() === cleanInput) {
+            return parseInt(uId, 10);
+        }
+    }
+    
+    return null;
+}
+
 function trackUserAndNotifyAdmin(msg) {
     if (msg && msg.from && msg.from.id) {
         const userId = msg.from.id;
@@ -1350,23 +1376,29 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
-    // --- مدیریت مراحل مدیریت کیف پول مشتری‌ها ---
+    // --- مدیریت مراحل مدیریت کیف پول مشتری‌ها (ویرایش شده برای پشتیبانی از یوزرنیم و چت‌آیدی) ---
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId]) {
         const state = db.userStates[chatId];
 
         if (state.step === 'wallet_manager_waiting_for_user_id') {
-            const targetId = text.trim();
-            db.userStates[chatId] = { step: 'wallet_manager_waiting_for_action', targetUser: targetId };
+            const userInput = text.trim();
+            const resolvedId = resolveUserId(userInput);
+
+            if (!resolvedId) {
+                return bot.sendMessage(chatId, `❌ کاربری با مشخصات (\`${userInput}\`) در دیتابیس ربات یافت نشد.\nاطمینان حاصل کنید که کاربر قبلاً ربات را استارت کرده باشد.`);
+            }
+
+            db.userStates[chatId] = { step: 'wallet_manager_waiting_for_action', targetUser: resolvedId };
             saveDatabase();
             
             return bot.sendMessage(chatId, 
-                `👤 کاربر مورد نظر تنظیم شد: \`${targetId}\`\n\nلطفاً نوع عملیات را انتخاب کنید:`, {
+                `👤 کاربر مورد نظر با موفقیت شناسایی شد:\n🆔 شناسه عددی: \`${resolvedId}\`\n\nلطفاً نوع عملیات را انتخاب کنید:`, {
                     parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [
                             [
-                                { text: "➕ افزایش موجودی", callback_data: `wallet_inc_${targetId}` },
-                                { text: "➖ کاهش موجودی", callback_data: `wallet_dec_${targetId}` }
+                                { text: "➕ افزایش موجودی", callback_data: `wallet_inc_${resolvedId}` },
+                                { text: "➖ کاهش موجودی", callback_data: `wallet_dec_${resolvedId}` }
                             ],
                             [{ text: "❌ انصراف", callback_data: "admin_cancel" }]
                         ]
