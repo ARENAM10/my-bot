@@ -727,11 +727,13 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    // حرفه‌ای‌سازی تایید/رد رسید شارژ کیف پول با دریافت مقدار وجه از کلید
     if (data.startsWith('approve_deposit_') || data.startsWith('reject_deposit_')) {
         if (!isAdmin(callbackQuery)) return;
         const parts = data.split('_');
         const action = parts[0];
         const targetUserId = parts[2];
+        const amount = parseInt(parts[3], 10);
         const depositKey = `deposit_${targetUserId}`;
 
         const rec = db.receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید' && r.type === 'شارژ کیف پول');
@@ -744,19 +746,38 @@ bot.on('callback_query', async (callbackQuery) => {
         saveDatabase();
 
         if (action === 'approve') {
-            const depositInfo = db.pending_deposits[depositKey];
-            if (depositInfo) {
-                db.userWallets[targetUserId] = (db.userWallets[targetUserId] || 0) + depositInfo.amount;
-                delete db.pending_deposits[depositKey];
-                saveDatabase();
-                bot.sendMessage(targetUserId, `🎉 **شارژ کیف پول شما تایید شد!**\nمبلغ \`${depositInfo.amount.toLocaleString()} تومان\` به حسابتان واریز شد. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
-                bot.sendMessage(chatId, '✅ شارژ تایید شد.');
-            }
+            db.userWallets[targetUserId] = (db.userWallets[targetUserId] || 0) + amount;
+            delete db.pending_deposits[depositKey];
+            saveDatabase();
+            
+            bot.sendMessage(targetUserId, `🎉 **شارژ کیف پول شما تایید شد!**\nمبلغ \`${amount.toLocaleString()} تومان\` به حسابتان واریز شد. ✨\n💰 موجودی جدید: \`${db.userWallets[targetUserId].toLocaleString()} تومان\``, { parse_mode: 'Markdown' }).catch(() => {});
+            
+            try {
+                await bot.editMessageCaption(`✅ **شارژ کیف پول تایید و اعمال شد.**\n\n👤 کاربر: \`${targetUserId}\`\n💵 مبلغ: \`${amount.toLocaleString()} تومان\``, {
+                    chat_id: chatId,
+                    message_id: msg.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[{ text: '✅ انجام شده (تایید شده)', callback_data: 'noop' }]] }
+                });
+            } catch (e) {}
+
+            bot.sendMessage(chatId, `✅ شارژ مبلغ ${amount.toLocaleString()} تومانی کاربر ${targetUserId} با موفقیت تایید و اعمال شد.`);
         } else {
             delete db.pending_deposits[depositKey];
             saveDatabase();
-            bot.sendMessage(targetUserId, '❌ رسید شارژ کیف پول شما توسط ادمین رد شد.');
-            bot.sendMessage(chatId, '❌ رسید رد شد.');
+            
+            bot.sendMessage(targetUserId, '❌ رسید شارژ کیف پول شما توسط ادمین بررسی و رد شد. لطفاً در صورت داشتن سوال با پشتیبانی در ارتباط باشید. ⚠️', { parse_mode: 'Markdown' }).catch(() => {});
+            
+            try {
+                await bot.editMessageCaption(`❌ **این رسید رد شد.**\n\n👤 کاربر: \`${targetUserId}\`\n💵 مبلغ: \`${amount.toLocaleString()} تومان\``, {
+                    chat_id: chatId,
+                    message_id: msg.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[{ text: '❌ رد شده', callback_data: 'noop' }]] }
+                });
+            } catch (e) {}
+
+            bot.sendMessage(chatId, '❌ رسید شارژ کیف پول رد شد.');
         }
         return;
     }
@@ -1447,7 +1468,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
-// هندلر عکس‌ها (دریافت رسید و پردازش ادمین)
+// هندلر عکس‌ها (دریافت حرفه‌ای رسید شارژ کیف پول و ارسال مستقیم دکمه‌های تایید به ادمین)
 bot.on('photo', async (msg) => {
     loadDatabase();
     const chatId = msg.chat.id;
@@ -1478,27 +1499,34 @@ bot.on('photo', async (msg) => {
         });
         saveDatabase();
 
+        // دکمه‌های شیشه‌ای تایید و رد با انتقال دقیق مبلغ به کلیک ادمین
         const adminKeyboard = {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '✅ تایید شارژ کیف پول', callback_data: `approve_deposit_${userId}` },
-                        { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
+                        { text: '✅ تایید شارژ و واریز وجه', callback_data: `approve_deposit_${userId}_${amount}` },
+                        { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}_${amount}` }
                     ]
                 ]
             }
         };
 
-        const captionToAdmin = `🔔 **رسید جدید شارژ کیف پول!**\n\n` +
-                               `👤 کاربر: ${userInfo.name} (\`${userId}\`)\n` +
-                               `💵 مبلغ شارژ: \`${amount.toLocaleString()} تومان\``;
+        const rawUsername = userInfo.username || 'ندارد';
+        const cleanUsername = rawUsername.replace('@', '');
+        const captionToAdmin = `🔔 **رسید جدید شارژ کیف پول دریافت شد!**\n\n` +
+                               `👤 **نام کاربر:** ${userInfo.name}\n` +
+                               `🔗 **یوزرنیم:** @${cleanUsername}\n` +
+                               `🆔 **چت آیدی:** \`${userId}\`\n` +
+                               `💵 **مبلغ درخواستی:** \`${amount.toLocaleString()} تومان\`\n` +
+                               `⏰ **زمان ارسال:** ${currentDateStr}`;
 
+        // ارسال عکس رسید به همراه دکمه‌های کنترلی برای ادمین
         await bot.sendPhoto(ADMIN_CHAT_ID, photoFileId, { caption: captionToAdmin, parse_mode: 'Markdown', ...adminKeyboard }).catch(() => {});
         
         delete db.userStates[chatId];
         saveDatabase();
 
-        bot.sendMessage(chatId, '✅ **رسید شارژ کیف پول دریافت شد.** پس از بررسی ادمین، موجودی کیف پول شما شارژ خواهد شد. ⏳', { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, '✅ **رسید شارژ کیف پول با موفقیت ثبت و برای ادمین ارسال شد.**\nلطفاً تا بررسی و تایید نهایی توسط مدیریت صبور باشید. ⏳', { parse_mode: 'Markdown' });
         return;
     }
 
