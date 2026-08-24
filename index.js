@@ -137,7 +137,7 @@ function saveDatabase() {
 loadDatabase();
 
 // -----------------------------------------------------------------
-// 10. سیستم پشتیبان‌گیری خودکار و ارسال مستقیم فایل برای ادمین (arenam_10)
+// سیستم پشتیبان‌گیری خودکار و ارسال مستقیم فایل برای ادمین (arenam_10)
 // -----------------------------------------------------------------
 async function sendBackupToAdmin() {
     const backupDir = path.join(DATA_DIR, 'backups');
@@ -163,7 +163,6 @@ async function sendBackupToAdmin() {
     }
 }
 
-// اجرای خودکار بکاپ هر 24 ساعت یک‌بار
 setInterval(sendBackupToAdmin, 24 * 60 * 60 * 1000);
 
 const userStates = {};       
@@ -296,9 +295,6 @@ function trackUserAndNotifyAdmin(msg) {
     }
 }
 
-// -----------------------------------------------------------------
-// 9. بررسی امن جوین اجباری (جلوگیری از دور زدن در صورت قطعی یا خطای API)
-// -----------------------------------------------------------------
 async function checkMembership(userId) {
     if (!db.CHANNEL_USERNAME || db.CHANNEL_USERNAME === '@YourChannelUsername') return true;
     try {
@@ -307,7 +303,6 @@ async function checkMembership(userId) {
         return ['creator', 'administrator', 'member'].includes(status);
     } catch (error) {
         console.log('Error checking membership safely:', error.message);
-        // در صورت بروز خطای API تلگرام، دسترسی تایید نمی‌شود تا امنیت کامل حفظ گردد
         return false;
     }
 }
@@ -539,6 +534,7 @@ function sendAdminPanel(chatId) {
     });
 }
 
+// مدیریت سراسری دکمه‌های شیشه‌ای (Callback Query)
 bot.on('callback_query', async (callbackQuery) => {
     loadDatabase(); 
     const msg = callbackQuery.message;
@@ -565,6 +561,106 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // سیستم تایید/رد رسیدهای شارژ و خرید کارت به کارت
+    if (data.startsWith('approve_deposit_') || data.startsWith('reject_deposit_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const parts = data.split('_');
+        const action = parts[0];
+        const targetUserId = parts[2];
+        const depositKey = `deposit_${targetUserId}`;
+
+        const rec = db.receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید');
+        if (rec) {
+            rec.status = (action === 'approve') ? 'تایید شده' : 'رد شده';
+        }
+
+        if (action === 'approve') {
+            const depositInfo = db.pending_deposits[depositKey];
+            if (depositInfo) {
+                db.userWallets[targetUserId] = (db.userWallets[targetUserId] || 0) + depositInfo.amount;
+                delete db.pending_deposits[depositKey];
+                saveDatabase();
+                bot.sendMessage(targetUserId, `🎉 **شارژ کیف پول شما تایید شد!**\nمبلغ \`${depositInfo.amount.toLocaleString()} تومان\` به حسابتان واریز شد. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
+                bot.sendMessage(chatId, '✅ شارژ تایید شد.');
+            }
+        } else {
+            delete db.pending_deposits[depositKey];
+            saveDatabase();
+            bot.sendMessage(targetUserId, '❌ رسید شارژ کیف پول شما توسط ادمین رد شد.');
+            bot.sendMessage(chatId, '❌ رسید رد شد.');
+        }
+        return;
+    }
+
+    if (data.startsWith('approve_card_') || data.startsWith('reject_card_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const parts = data.split('_');
+        const action = parts[0];
+        const targetUserId = parts[2];
+        const cardKey = `card_pur_${targetUserId}`;
+
+        const rec = db.receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید');
+        if (rec) {
+            rec.status = (action === 'approve') ? 'تایید شده و صادر گردید' : 'رد شده';
+        }
+
+        if (action === 'approve') {
+            const planId = parseInt(parts[3]);
+            const plan = db.customPlans.find(p => p.id === planId);
+
+            if (plan && plan.links.length > 0) {
+                const assignedLink = plan.links.shift();
+                const parsedData = await fetchAndParseConfig(assignedLink);
+                const currentDateStr = new Date().toLocaleString('fa-IR');
+                const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر' };
+
+                const subObj = {
+                    userId: targetUserId,
+                    userName: userInfo.name,
+                    planName: plan.name,
+                    expiryDate: parsedData.expireDate !== 'نامشخص' ? parsedData.expireDate : plan.duration,
+                    volume: plan.volume,
+                    totalVolume: parsedData.total,
+                    upload: parsedData.upload,
+                    download: parsedData.download,
+                    configLink: assignedLink,
+                    extractedConfigs: parsedData.extractedConfigs,
+                    purchaseDate: currentDateStr
+                };
+
+                if (!db.userSubscriptions[targetUserId]) {
+                    db.userSubscriptions[targetUserId] = [];
+                }
+                db.userSubscriptions[targetUserId].push(subObj);
+                db.allSubscriptionsHistory.push(subObj);
+
+                delete db.pending_card_purchases[cardKey];
+                saveDatabase();
+
+                let successMsg = `🎉 **خرید شما تایید شد و اشتراک صادر گردید!** 🚀\n\n` +
+                                 `📦 پلن: \`${plan.name}\`\n` +
+                                 `🌐 حجم: \`${parsedData.total}\`\n` +
+                                 `⏳ انقضا: \`${subObj.expiryDate}\`\n\n` +
+                                 `🔗 **لینک اشتراک اختصاصی شما:**\n\`${assignedLink}\``;
+
+                if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
+                    successMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
+                }
+
+                bot.sendMessage(targetUserId, successMsg, { parse_mode: 'Markdown' }).catch(() => {});
+                bot.sendMessage(chatId, '✅ خرید تایید شد و لینک اشتراک برای کاربر ارسال گردید.');
+            } else {
+                bot.sendMessage(chatId, '❌ خطا: این پلن دیگر لینک بازی ندارد.');
+            }
+        } else {
+            delete db.pending_card_purchases[cardKey];
+            saveDatabase();
+            bot.sendMessage(targetUserId, '❌ رسید خرید کارت به کارت شما توسط ادمین رد شد.');
+            bot.sendMessage(chatId, '❌ رسید رد شد.');
+        }
+        return;
+    }
 
     if (data === 'admin_send_backup') {
         if (!isAdmin(callbackQuery)) return;
@@ -723,7 +819,7 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data.startsWith('admin_') || data.startsWith('approve_') || data.startsWith('reject_') || data.startsWith('plan_mgmt_') || data.startsWith('edit_plan_') || data.startsWith('del_plan_') || data.startsWith('edit_p_')) {
+    if (data.startsWith('admin_') || data.startsWith('plan_mgmt_') || data.startsWith('edit_plan_') || data.startsWith('del_plan_') || data.startsWith('edit_p_')) {
         if (!isAdmin(callbackQuery)) {
             bot.sendMessage(chatId, '❌ شما دسترسی ندارید.');
             return;
@@ -1417,110 +1513,6 @@ bot.on('photo', async (msg) => {
     }
 });
 
-bot.on('callback_query', async (callbackQuery) => {
-    loadDatabase();
-    const data = callbackQuery.data;
-    const chatId = callbackQuery.message.chat.id;
-
-    if (data.startsWith('approve_deposit_') || data.startsWith('reject_deposit_')) {
-        if (!isAdmin(callbackQuery)) return;
-        const parts = data.split('_');
-        const action = parts[0];
-        const targetUserId = parts[2];
-        const depositKey = `deposit_${targetUserId}`;
-
-        const rec = db.receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید');
-        if (rec) {
-            rec.status = (action === 'approve') ? 'تایید شده' : 'رد شده';
-        }
-
-        if (action === 'approve') {
-            const depositInfo = db.pending_deposits[depositKey];
-            if (depositInfo) {
-                db.userWallets[targetUserId] = (db.userWallets[targetUserId] || 0) + depositInfo.amount;
-                delete db.pending_deposits[depositKey];
-                saveDatabase();
-                bot.sendMessage(targetUserId, `🎉 **شارژ کیف پول شما تایید شد!**\nمبلغ \`${depositInfo.amount.toLocaleString()} تومان\` به حسابتان واریز شد. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
-                bot.sendMessage(chatId, '✅ شارژ تایید شد.');
-            }
-        } else {
-            delete db.pending_deposits[depositKey];
-            saveDatabase();
-            bot.sendMessage(targetUserId, '❌ رسید شارژ کیف پول شما توسط ادمین رد شد.');
-            bot.sendMessage(chatId, '❌ رسید رد شد.');
-        }
-    }
-
-    if (data.startsWith('approve_card_') || data.startsWith('reject_card_')) {
-        if (!isAdmin(callbackQuery)) return;
-        const parts = data.split('_');
-        const action = parts[0];
-        const targetUserId = parts[2];
-        const cardKey = `card_pur_${targetUserId}`;
-
-        const rec = db.receiptsHistory.find(r => r.userId.toString() === targetUserId.toString() && r.status === 'در انتظار تایید');
-        if (rec) {
-            rec.status = (action === 'approve') ? 'تایید شده و صادر گردید' : 'رد شده';
-        }
-
-        if (action === 'approve') {
-            const planId = parseInt(parts[3]);
-            const plan = db.customPlans.find(p => p.id === planId);
-
-            if (plan && plan.links.length > 0) {
-                const assignedLink = plan.links.shift();
-                const parsedData = await fetchAndParseConfig(assignedLink);
-                const currentDateStr = new Date().toLocaleString('fa-IR');
-                const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر' };
-
-                const subObj = {
-                    userId: targetUserId,
-                    userName: userInfo.name,
-                    planName: plan.name,
-                    expiryDate: parsedData.expireDate !== 'نامشخص' ? parsedData.expireDate : plan.duration,
-                    volume: plan.volume,
-                    totalVolume: parsedData.total,
-                    upload: parsedData.upload,
-                    download: parsedData.download,
-                    configLink: assignedLink,
-                    extractedConfigs: parsedData.extractedConfigs,
-                    purchaseDate: currentDateStr
-                };
-
-                if (!db.userSubscriptions[targetUserId]) {
-                    db.userSubscriptions[targetUserId] = [];
-                }
-                db.userSubscriptions[targetUserId].push(subObj);
-                db.allSubscriptionsHistory.push(subObj);
-
-                delete db.pending_card_purchases[cardKey];
-                saveDatabase();
-
-                let successMsg = `🎉 **خرید شما تایید شد و اشتراک صادر گردید!** 🚀\n\n` +
-                                 `📦 پلن: \`${plan.name}\`\n` +
-                                 `🌐 حجم: \`${parsedData.total}\`\n` +
-                                 `⏳ انقضا: \`${subObj.expiryDate}\`\n\n` +
-                                 `🔗 **لینک اشتراک اختصاصی شما:**\n\`${assignedLink}\``;
-
-                if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
-                    successMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
-                }
-
-                bot.sendMessage(targetUserId, successMsg, { parse_mode: 'Markdown' }).catch(() => {});
-                bot.sendMessage(chatId, '✅ خرید تایید شد و لینک اشتراک برای کاربر ارسال گردید.');
-            } else {
-                bot.sendMessage(chatId, '❌ خطا: این پلن دیگر لینک بازی ندارد.');
-            }
-        } else {
-            delete db.pending_card_purchases[cardKey];
-            saveDatabase();
-            bot.sendMessage(targetUserId, '❌ رسید خرید کارت به کارت شما توسط ادمین رد شد.');
-            bot.sendMessage(chatId, '❌ رسید رد شد.');
-        }
-    }
-});
-
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با موفقیت آپدیت شد و بخش‌های امنیتی و پشتیبان‌گیری خودکار تنظیم گردید.');
