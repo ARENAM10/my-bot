@@ -607,11 +607,11 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // --- مدیریت کیف پول مشتری‌ها (بخش دکمه‌ای شیشه‌ای جدید و کاملاً پایدار) ---
+    // --- مدیریت کیف پول مشتری‌ها (نمایش کامل و بدون محدودیت کاربران) ---
     if (data === 'manage_wallets') {
         if (!isAdmin(callbackQuery)) return;
         try {
-            const userIds = db.allUsers.slice(-10).reverse(); // گرفتن ۱۰ کاربر آخر
+            const userIds = [...db.allUsers]; // نمایش تمامی کاربران بدون محدودیت و برش
             if (!userIds || userIds.length === 0) {
                 return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ هیچ کاربری در ربات ثبت‌نام نکرده است.", show_alert: true });
             }
@@ -622,14 +622,14 @@ bot.on('callback_query', async (callbackQuery) => {
                 let uname = info.username && info.username !== 'ندارد' ? info.username : uId;
                 let balance = db.userWallets[uId] || 0;
                 return [{
-                    text: `👤 ${name} (${uname}) - 💰 ${balance} تومان`,
+                    text: `👤 ${name} (${uname}) - 💰 ${balance.toLocaleString()} تومان`,
                     callback_data: `wallet_user_${uId}`
                 }];
             });
 
             buttons.push([{ text: "🔙 بازگشت به پنل مدیریت", callback_data: "admin_back_to_panel" }]);
 
-            await bot.editMessageText("💼 **بخش مدیریت کیف پول مشتری‌ها**\n\nکاربر مورد نظر خود را از لیست زیر انتخاب کنید:", {
+            await bot.editMessageText(`💼 **بخش مدیریت کیف پول مشتری‌ها**\n\nتعداد کل کاربران: ${userIds.length} نفر\nکاربر مورد نظر خود را از لیست زیر انتخاب کنید:`, {
                 chat_id: chatId,
                 message_id: msg.message_id,
                 parse_mode: 'Markdown',
@@ -1397,7 +1397,7 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
-    // --- [بخش اصلاح‌شده و اولویت‌دار] مدیریت دریافت مبلغ شارژ/کاهش موجودی کیف پول در پنل ادمین ---
+    // --- مدیریت دریافت مبلغ شارژ / کاهش موجودی کیف پول در پنل ادمین ---
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'wallet_manager_waiting_for_amount') {
         const state = db.userStates[chatId];
         const amount = parseInt((text || '').replace(/[^0-9]/g, ''), 10);
