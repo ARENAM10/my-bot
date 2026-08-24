@@ -1195,12 +1195,12 @@ bot.on('callback_query', async (callbackQuery) => {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: "➕ ۵۰ هزار تومان", callback_data: 'user_dep_50000' },
-                        { text: "➕ ۱۰۰ هزار تومان", callback_data: 'user_dep_100000' }
+                        { text: "💵 ۵۰,۰۰۰ تومان", callback_data: 'user_dep_50000' },
+                        { text: "💵 ۱۰۰,۰۰۰ تومان", callback_data: 'user_dep_100000' }
                     ],
                     [
-                        { text: "➕ ۲۰۰ هزار تومان", callback_data: 'user_dep_200000' },
-                        { text: "➕ ۵۰۰ هزار تومان", callback_data: 'user_dep_500000' }
+                        { text: "💵 ۲۰۰,۰۰۰ تومان", callback_data: 'user_dep_200000' },
+                        { text: "💵 ۵۰۰,۰۰۰ تومان", callback_data: 'user_dep_500000' }
                     ],
                     [
                         { text: '🔙 بازگشت', callback_data: 'wallet' }
@@ -1209,10 +1209,10 @@ bot.on('callback_query', async (callbackQuery) => {
             }
         };
 
-        db.userStates[chatId] = { step: 'get_wallet_deposit_amount' };
+        delete db.userStates[chatId];
         saveDatabase();
         
-        await bot.editMessageText('💳 **افزایش موجودی کیف پول**\n\nلطفاً یکی از مبالغ زیر را انتخاب کنید یا مبلغ دلخواه خود را به صورت عدد در چت ارسال کنید: 👇', {
+        await bot.editMessageText('💳 **افزایش موجودی کیف پول**\n\nلطفاً یکی از مبالغ زیر را برای شارژ حساب انتخاب کنید: 👇', {
             chat_id: chatId,
             message_id: msg.message_id,
             parse_mode: 'Markdown',
@@ -1613,22 +1613,6 @@ bot.on('message', async (msg) => {
             sendAdminPanel(chatId);
             return;
         }
-    }
-
-    if (db.userStates[chatId] && db.userStates[chatId].step === 'get_wallet_deposit_amount') {
-        const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
-        if (!amount || amount <= 0) {
-            bot.sendMessage(chatId, '❌ لطفاً یک مبلغ معتبر وارد کنید.');
-            return;
-        }
-        db.userStates[chatId] = { step: 'get_wallet_deposit_receipt', depositAmount: amount };
-        saveDatabase();
-        
-        const depositMsg = `💳 **فاکتور شارژ کیف پول**\n\n` +
-                           `💵 مبلغ: \`${amount.toLocaleString()} تومان\`\n\n` +
-                           `به شماره کارت زیر واریز کرده و عکس رسید را بفرستید: 👇\n\`${db.paymentCardNumber}\``;
-        bot.sendMessage(chatId, depositMsg, { parse_mode: 'Markdown' });
-        return;
     }
 
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId]) {
