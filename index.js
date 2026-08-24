@@ -1008,9 +1008,32 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'admin_charge_wallet') {
+        if (!isAdmin(callbackQuery)) return;
         db.userStates[chatId] = { step: 'admin_get_charge_user_id' };
         saveDatabase();
-        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً **شناسه عددی (Chat ID)** کاربر مورد نظر را ارسال کنید:', { parse_mode: 'Markdown' });
+        
+        const cancelKeyboard = {
+            reply_markup: {
+                inline_keyboard: [[{ text: '❌ انصراف و بازگشت', callback_data: 'admin_back_to_panel' }]]
+            }
+        };
+        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول (مرحله ۱ از ۲)**\n\nلطفاً **شناسه عددی (Chat ID)** یا یوزرنیم کاربر مورد نظر را ارسال کنید:', { parse_mode: 'Markdown', ...cancelKeyboard });
+        return;
+    }
+
+    // انتخاب مبلغ سریع با دکمه‌های شیشه‌ای
+    if (data.startsWith('fast_charge_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const parts = data.split('_');
+        const targetId = parseInt(parts[2], 10);
+        const amount = parseInt(parts[3], 10);
+
+        db.userWallets[targetId] = (db.userWallets[targetId] || 0) + amount;
+        delete db.userStates[chatId];
+        saveDatabase();
+
+        bot.sendMessage(chatId, `✅ **شارژ موفق!**\nمبلغ \`${amount.toLocaleString()} تومان\` به کیف پول کاربر \`${targetId}\` اضافه شد.`, { parse_mode: 'Markdown' });
+        bot.sendMessage(targetId, `🎉 **کیف پول شما توسط مدیریت شارژ شد!** 💳\nمبلغ \`${amount.toLocaleString()} تومان\` به حساب شما واریز گردید. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -1412,27 +1435,69 @@ bot.on('message', async (msg) => {
             return;
         }
         if (state.step === 'admin_get_charge_user_id') {
-            const targetId = parseInt(text.trim(), 10);
+            const inputVal = text.trim();
+            let targetId = parseInt(inputVal.replace(/[^0-9]/g, ''), 10);
+            
+            // اگر ادمین یوزرنیم فرستاده بود یا آیدی عددی
             if (!targetId || isNaN(targetId)) {
-                bot.sendMessage(chatId, '❌ شناسه عددی نامعتبر است.');
-                return;
+                // جستجو در دیتابیس بر اساس یوزرنیم
+                const foundEntry = Object.entries(db.usersDetailMap).find(([id, info]) => 
+                    info.username && info.username.toLowerCase() === inputVal.toLowerCase().replace('@', '')
+                );
+                if (foundEntry) {
+                    targetId = parseInt(foundEntry[0], 10);
+                }
             }
+
+            if (!targetId || isNaN(targetId)) {
+                return bot.sendMessage(chatId, '❌ کاربری با این مشخصات یافت نشد. لطفاً Chat ID معتبر یا یوزرنیم صحیح بفرستید:');
+            }
+
+            // ذخیره آیدی و رفتن به مرحله گرفتن مبلغ با نمایش اطلاعات کاربر
             db.userStates[chatId] = { step: 'admin_get_charge_amount', targetChargeUserId: targetId };
             saveDatabase();
-            bot.sendMessage(chatId, `✅ کاربر شناسایی شد (\`${targetId}\`).\n\nمبلغ شارژ (به تومان) را وارد کنید:`, { parse_mode: 'Markdown' });
+
+            const userInfo = db.usersDetailMap[targetId] || { name: 'نامشخص', username: 'ندارد' };
+            const currentWallet = db.userWallets[targetId] || 0;
+
+            const fastAmountsKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '➕ ۵۰,۰۰۰ تومان', callback_data: `fast_charge_${targetId}_50000` },
+                            { text: '➕ ۱۰۰,۰۰۰ تومان', callback_data: `fast_charge_${targetId}_100000` }
+                        ],
+                        [
+                            { text: '➕ ۲۰۰,۰۰۰ تومان', callback_data: `fast_charge_${targetId}_200000` },
+                            { text: '➕ ۵۰۰,۰۰۰ تومان', callback_data: `fast_charge_${targetId}_500000` }
+                        ],
+                        [{ text: '❌ انصراف', callback_data: 'admin_back_to_panel' }]
+                    ]
+                }
+            };
+
+            bot.sendMessage(chatId, 
+                `👤 **مشخصات کاربر تایید شد:**\n` +
+                `▫️ نام: ${userInfo.name}\n` +
+                `▫️ یوزرنیم: @${userInfo.username ? userInfo.username.replace('@','') : 'ندارد'}\n` +
+                `▫️ موجودی فعلی: \`${currentWallet.toLocaleString()} تومان\`\n\n` +
+                `💵 **مبلغ شارژ (به تومان) را تایپ کنید یا از دکمه‌های زیر انتخاب کنید:**`, 
+                { parse_mode: 'Markdown', ...fastAmountsKeyboard }
+            );
             return;
-        } else if (state.step === 'admin_get_charge_amount') {
+        } 
+        else if (state.step === 'admin_get_charge_amount') {
             const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
             if (!amount || amount <= 0) {
-                bot.sendMessage(chatId, '❌ مبلغ نامعتبر است.');
-                return;
+                return bot.sendMessage(chatId, '❌ مبلغ نامعتبر است. لطفاً یک عدد صحیح به تومان وارد کنید:');
             }
+            
             const targetId = state.targetChargeUserId;
             db.userWallets[targetId] = (db.userWallets[targetId] || 0) + amount;
             delete db.userStates[chatId];
             saveDatabase();
 
-            bot.sendMessage(chatId, `🎉 کیف پول کاربر \`${targetId}\` به مبلغ \`${amount.toLocaleString()} تومان\` شارژ شد.`);
+            bot.sendMessage(chatId, `🎉 **شارژ کیف پول انجام شد!**\nمبلغ \`${amount.toLocaleString()} تومان\` به کیف پول کاربر \`${targetId}\` اضافه گردید.`, { parse_mode: 'Markdown' });
             bot.sendMessage(targetId, `🎉 **کیف پول شما توسط مدیریت شارژ شد!** 💳\nمبلغ \`${amount.toLocaleString()} تومان\` به موجودی شما اضافه گردید. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
