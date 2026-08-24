@@ -294,7 +294,6 @@ function trackUserAndNotifyAdmin(msg) {
         }
         saveDatabase();
 
-        // ارسال پیام فقط برای کاربرانی که برای بار اول ربات را استارت کرده‌اند
         if (isBrandNew && chatId !== ADMIN_CHAT_ID) {
             const keyboard = {
                 reply_markup: {
@@ -671,7 +670,6 @@ bot.on('callback_query', async (callbackQuery) => {
                 delete db.pending_card_purchases[cardKey];
                 saveDatabase();
 
-                // ارسال گزارش خرید و لینک اشتراک به کانال مقصد همراه با دکمه پروفایل
                 const rawUsername = userInfo.username || 'ندارد';
                 const cleanUsername = rawUsername.replace('@', '');
                 const purchaseMessage = `🛒 **خرید جدید ثبت شد:**\n` +
@@ -994,19 +992,40 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    // --- نمایش کامل کل کاربران ربات با تفکیک و خوانایی بالا ---
     if (data === 'admin_users') {
         if (db.allUsers.length === 0) {
             bot.sendMessage(chatId, '👥 هیچ کاربری ثبت نشده است.');
             return;
         }
-        let usersText = `👥 **لیست کل کاربران ربات (${db.allUsers.length} نفر):**\n\n`;
+
+        let usersText = `👥 **لیست کل کاربران ربات (مجموع: ${db.allUsers.length} نفر):**\n\n`;
         let counter = 1;
-        db.allUsers.forEach(uId => {
+        
+        // ساخت پیام‌ها بخش به بخش (در صورت طولانی شدن لیست برای جلوگیری از خطای تلگرام)
+        for (const uId of db.allUsers) {
             const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: 'نامشخص' };
-            usersText += `${counter}. ${info.name} | ${info.username} | آیدی: \`${uId}\`\n`;
+            const wallet = db.userWallets[uId] || 0;
+            const cleanUsername = info.username !== 'ندارد' ? info.username : 'فاقد یوزرنیم';
+
+            usersText += `${counter}. **${info.name}**\n` +
+                         `   🔗 یوزرنیم: ${cleanUsername}\n` +
+                         `   🆔 شناسه: \`${uId}\`\n` +
+                         `   💰 کیف پول: \`${wallet.toLocaleString()} تومان\`\n` +
+                         `   📅 عضویت: ${info.joinedAt}\n\n`;
+
             counter++;
-        });
-        bot.sendMessage(chatId, usersText, { parse_mode: 'Markdown' });
+
+            // اگر متن خیلی طولانی شد، ارسال کند و ادامه دهد
+            if (usersText.length > 3500) {
+                await bot.sendMessage(chatId, usersText, { parse_mode: 'Markdown' });
+                usersText = '';
+            }
+        }
+
+        if (usersText.length > 0) {
+            bot.sendMessage(chatId, usersText, { parse_mode: 'Markdown' });
+        }
         return;
     }
 
@@ -1156,7 +1175,6 @@ bot.on('callback_query', async (callbackQuery) => {
         });
         saveDatabase();
 
-        // ارسال گزارش خرید و لینک اشتراک به کانال مقصد همراه با دکمه پروفایل
         const rawUsername = userInfo.username || 'ندارد';
         const cleanUsername = rawUsername.replace('@', '');
         const purchaseMessage = `🛒 **خرید جدید ثبت شد:**\n` +
@@ -1513,11 +1531,32 @@ bot.on('message', async (msg) => {
         return;
     }
 
+    // --- بخش ارسال پیام پشتیبانی به ادمین به همراه اطلاعات کامل کاربر و دکمه مستقیم پیام ---
     if (db.userStates[chatId] && db.userStates[chatId].awaiting_support_message) {
         delete db.userStates[chatId];
         saveDatabase();
+        
         bot.sendMessage(chatId, db.botTexts.support_success);
-        bot.sendMessage(ADMIN_CHAT_ID, `💬 **پیام جدید پشتیبانی از کاربر:**\n🆔 آیدی: \`${chatId}\`\n\n${text}`);
+
+        const userInfo = db.usersDetailMap[chatId] || { name: 'کاربر', username: 'ندارد' };
+        const rawUsername = userInfo.username || 'ندارد';
+        const cleanUsername = rawUsername.replace('@', '');
+
+        const supportMsg = `💬 **پیام جدید پشتیبانی از کاربر:**\n\n` +
+                           `👤 **نام کاربر:** ${userInfo.name}\n` +
+                           `🔗 **یوزرنیم:** @${cleanUsername}\n` +
+                           `🆔 **شناسه عددی:** \`${chatId}\`\n\n` +
+                           `✉️ **متن پیام:**\n${text}`;
+
+        const supportKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '👤 پروفایل و پیام مستقیم به کاربر', url: `tg://user?id=${chatId}` }]
+                ]
+            }
+        };
+
+        bot.sendMessage(ADMIN_CHAT_ID, supportMsg, { parse_mode: 'Markdown', ...supportKeyboard });
         return;
     }
 });
