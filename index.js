@@ -13,28 +13,12 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 const ADMIN_WEB_PASSWORD = 'admin_secure_password';
-
 const CHANNEL_LOG_ID = '-1004488082323';
 
 const userCooldowns = new Map();
 const COOLDOWN_TIME = 1200;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, receiptPhotoPath, channelId) {
-    try {
-        let caption = `🎉 **گزارش تراکنش / خرید جدید!**\n\n` +
-                      `👤 شناسه کاربر: ${userId}\n` +
-                      `📦 جزئیات:\n${subscriptionDetails}`;
-
-        await bot.sendPhoto(channelId, receiptPhotoPath, {
-            caption: caption,
-            parse_mode: 'Markdown'
-        });
-    } catch (error) {
-        console.log("خطا در ارسال رسید و اشتراک به کانال:", error);
-    }
-}
 
 const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
 const DB_FILE = path.join(DATA_DIR, 'database.json');
@@ -1463,7 +1447,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
-// هندلر اختصاصی عکس‌ها (رفع مشکل ارسال رسید به ادمین)
+// هندلر عکس‌ها (دریافت رسید و پردازش ادمین)
 bot.on('photo', async (msg) => {
     loadDatabase();
     const chatId = msg.chat.id;
@@ -1475,7 +1459,6 @@ bot.on('photo', async (msg) => {
     const userState = db.userStates[chatId];
     if (!userState) return;
 
-    // ۱. بررسی رسید شارژ کیف پول
     if (userState.step === 'get_wallet_deposit_receipt') {
         const amount = userState.depositAmount;
         const photoFileId = msg.photo[msg.photo.length - 1].file_id;
@@ -1519,7 +1502,6 @@ bot.on('photo', async (msg) => {
         return;
     }
 
-    // ۲. بررسی رسید خرید کارت‌به‌کارت اشتراک
     if (userState.step === 'get_card_purchase_receipt') {
         const planId = userState.planId;
         const plan = db.customPlans.find(p => p.id === planId);
@@ -1567,7 +1549,7 @@ bot.on('photo', async (msg) => {
     }
 });
 
-// مدیریت پیام‌های متنی
+// هندلر پیام‌های متنی
 bot.on('message', async (msg) => {
     loadDatabase();
     const chatId = msg.chat.id;
@@ -1581,7 +1563,6 @@ bot.on('message', async (msg) => {
 
     const text = msg.text;
 
-    // ۱. اگر کاربر در حال ارسال مقدار برای مدیریت کیف پول (توسط ادمین) باشد:
     if (userState.step === 'wallet_manager_waiting_for_amount' && text) {
         if (!isAdmin(msg)) return;
         const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
@@ -1615,7 +1596,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // ۲. ارسال پیام پشتیبانی
     if (userState.step === 'waiting_for_support_message' && text) {
         delete db.userStates[chatId];
         saveDatabase();
