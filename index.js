@@ -676,27 +676,28 @@ bot.on('callback_query', async (callbackQuery) => {
         const actionTitle = action === 'inc' ? 'افزایش' : 'کاهش';
 
         const quickAmountsKeyboard = {
-            inline_keyboard: [
-                [
-                    { text: "➕ ۱۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_10000` },
-                    { text: "➕ ۲۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_20000` }
-                ],
-                [
-                    { text: "➕ ۵۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_50000` },
-                    { text: "➕ ۱۰۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_100000` }
-                ],
-                [
-                    { text: "🔙 بازگشت", callback_data: `wallet_user_${targetUser}` }
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "➕ ۵۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_50000` },
+                        { text: "➕ ۱۰۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_100000` }
+                    ],
+                    [
+                        { text: "➕ ۲۰۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_200000` },
+                        { text: "➕ ۵۰۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_500000` }
+                    ],
+                    [
+                        { text: "🔙 بازگشت", callback_data: `wallet_user_${targetUser}` }
+                    ]
                 ]
-            ]
+            }
         };
 
-        // تغییر متن دکمه‌ها برای حالت کاهش
         if (action === 'dec') {
-            quickAmountsKeyboard.inline_keyboard[0][0].text = "➖ ۱۰ هزار تومان";
-            quickAmountsKeyboard.inline_keyboard[0][1].text = "➖ ۲۰ هزار تومان";
-            quickAmountsKeyboard.inline_keyboard[1][0].text = "➖ ۵۰ هزار تومان";
-            quickAmountsKeyboard.inline_keyboard[1][1].text = "➖ ۱۰۰ هزار تومان";
+            quickAmountsKeyboard.inline_keyboard[0][0].text = "➖ ۵۰ هزار تومان";
+            quickAmountsKeyboard.inline_keyboard[0][1].text = "➖ ۱۰۰ هزار تومان";
+            quickAmountsKeyboard.inline_keyboard[1][0].text = "➖ ۲۰۰ هزار تومان";
+            quickAmountsKeyboard.inline_keyboard[1][1].text = "➖ ۵۰۰ هزار تومان";
         }
 
         db.userStates[chatId] = { step: 'wallet_manager_waiting_for_amount', targetUser, action };
@@ -714,7 +715,7 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data.startsWith('w_amt_')) {
         if (!isAdmin(callbackQuery)) return;
         const parts = data.split('_');
-        const action = parts[2]; // inc یا dec
+        const action = parts[2]; 
         const targetUser = parts[3];
         const amount = parseInt(parts[4], 10);
 
@@ -1190,9 +1191,50 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data === 'wallet_deposit') {
+        const depositAmountsKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "➕ ۵۰ هزار تومان", callback_data: 'user_dep_50000' },
+                        { text: "➕ ۱۰۰ هزار تومان", callback_data: 'user_dep_100000' }
+                    ],
+                    [
+                        { text: "➕ ۲۰۰ هزار تومان", callback_data: 'user_dep_200000' },
+                        { text: "➕ ۵۰۰ هزار تومان", callback_data: 'user_dep_500000' }
+                    ],
+                    [
+                        { text: "🔙 بازگشت", callback_data: 'wallet' }
+                    ]
+                ]
+            }
+        };
+
         db.userStates[chatId] = { step: 'get_wallet_deposit_amount' };
         saveDatabase();
-        bot.sendMessage(chatId, '💳 **افزایش موجودی کیف پول**\n\nلطفاً مبلغ مورد نظر به تومان (مثلاً `50000`) را وارد کنید:', { parse_mode: 'Markdown' });
+        
+        await bot.editMessageText('💳 **افزایش موجودی کیف پول**\n\nلطفاً یکی از مبالغ زیر را انتخاب کنید یا مبلغ دلخواه خود را به صورت عدد در چت ارسال کنید: 👇', {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: depositAmountsKeyboard
+        });
+        return;
+    }
+
+    if (data.startsWith('user_dep_')) {
+        const amount = parseInt(data.replace('user_dep_', ''), 10);
+        db.userStates[chatId] = { step: 'get_wallet_deposit_receipt', depositAmount: amount };
+        saveDatabase();
+
+        const depositMsg = `💳 **فاکتور شارژ کیف پول**\n\n` +
+                           `💵 مبلغ انتخابی: \`${amount.toLocaleString()} تومان\`\n\n` +
+                           `به شماره کارت زیر واریز کرده و **عکس رسید** را همینجا بفرستید: 👇\n\`${db.paymentCardNumber}\``;
+        
+        await bot.editMessageText(depositMsg, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown'
+        });
         return;
     }
 
