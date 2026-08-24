@@ -1463,7 +1463,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
-// هندلر اختصاصی عکس‌ها (برای جلوگیری از گم شدن رسیدها)
+// هندلر اختصاصی عکس‌ها (رفع مشکل ارسال رسید به ادمین)
 bot.on('photo', async (msg) => {
     loadDatabase();
     const chatId = msg.chat.id;
