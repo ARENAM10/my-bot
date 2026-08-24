@@ -1397,42 +1397,40 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
-    // --- مدیریت دریافت مبلغ شارژ/کاهش موجودی کیف پول در پنل ادمین ---
-    if (chatId === ADMIN_CHAT_ID && db.userStates[chatId]) {
+    // --- [بخش اصلاح‌شده و اولویت‌دار] مدیریت دریافت مبلغ شارژ/کاهش موجودی کیف پول در پنل ادمین ---
+    if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'wallet_manager_waiting_for_amount') {
         const state = db.userStates[chatId];
-
-        if (state.step === 'wallet_manager_waiting_for_amount') {
-            const amount = parseInt((text || '').replace(/[^0-9]/g, ''), 10);
-            if (isNaN(amount) || amount <= 0) {
-                return bot.sendMessage(chatId, "⚠️ لطفاً یک مبلغ معتبر به صورت عدد وارد کنید:");
-            }
-
-            const { targetUser, action } = state;
-            const currentBalance = db.userWallets[targetUser] || 0;
-
-            if (action === 'inc') {
-                db.userWallets[targetUser] = currentBalance + amount;
-            } else {
-                db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
-            }
-
-            delete db.userStates[chatId];
-            saveDatabase();
-
-            const actionText = action === 'inc' ? 'افزایش یافته' : 'کاهش یافته';
-            
-            await bot.sendMessage(chatId, `✅ عملیات با موفقیت انجام شد.\nمبلغ ${amount.toLocaleString()} تومان به حساب کاربر ${targetUser} ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`);
-            
-            try {
-                const notifyText = action === 'inc' 
-                    ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
-                    : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
-                await bot.sendMessage(targetUser, notifyText);
-            } catch (e) {}
-            return;
+        const amount = parseInt((text || '').replace(/[^0-9]/g, ''), 10);
+        
+        if (isNaN(amount) || amount <= 0) {
+            return bot.sendMessage(chatId, "⚠️ لطفاً یک مبلغ معتبر به صورت عدد وارد کنید (مثلاً 50000):");
         }
+
+        const { targetUser, action } = state;
+        const currentBalance = db.userWallets[targetUser] || 0;
+
+        if (action === 'inc') {
+            db.userWallets[targetUser] = currentBalance + amount;
+        } else {
+            db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
+        }
+
+        delete db.userStates[chatId];
+        saveDatabase();
+
+        const actionText = action === 'inc' ? 'افزایش یافته' : 'کاهش یافته';
+        
+        await bot.sendMessage(chatId, `✅ عملیات با موفقیت انجام شد.\nمبلغ ${amount.toLocaleString()} تومان به حساب کاربر \`${targetUser}\` ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' });
+        
+        try {
+            const notifyText = action === 'inc' 
+                ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
+                : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
+            await bot.sendMessage(targetUser, notifyText);
+        } catch (e) {}
+        return;
     }
-    // ---------------------------------------------
+    // -----------------------------------------------------------------------------------------
 
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_direct_message_user') {
         const targetUserId = db.userStates[chatId].targetUserId;
