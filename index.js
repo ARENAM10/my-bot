@@ -17,6 +17,13 @@ const ADMIN_WEB_PASSWORD = 'admin_secure_password';
 // اطلاعات کانال مقصد برای گزارش خریدها
 const CHANNEL_LOG_ID = '-1004488082323';
 
+// نقشه برای جلوگیری از کلیک‌های متوالی و سریع روی دکمه‌ها (Rate Limiting ملایم)
+const userCooldowns = new Map();
+const COOLDOWN_TIME = 1200; // ۱.۲ ثانیه مکث برای جلوگیری از کلیک سریع
+
+// تابع تاخیر ملایم برای کنترل سرعت ربات
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // تابع ارسال رسید و اشتراک به کانال
 async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, receiptPhotoPath, channelId) {
     try {
@@ -24,7 +31,6 @@ async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, 
                       `👤 شناسه کاربر: ${userId}\n` +
                       `📦 جزئیات اشتراک:\n${subscriptionDetails}`;
 
-        // ارسال رسید (به صورت عکس) به همراه مشخصات اشتراک به کانال
         await bot.sendPhoto(channelId, receiptPhotoPath, {
             caption: caption,
             parse_mode: 'Markdown'
@@ -39,7 +45,6 @@ const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
 const DB_FILE = path.join(DATA_DIR, 'database.json');
 const PURCHASES_LOG_FILE = path.join(DATA_DIR, 'purchases_log.txt');
 
-// ساختار پیش‌فرض پایه (برای اولین اجرا)
 const defaultDatabaseStructure = {
     CHANNEL_USERNAME: '@YourChannelUsername',
     isForceJoinEnabled: false,
@@ -86,10 +91,7 @@ const defaultDatabaseStructure = {
             volume: '10 گیگابایت', 
             duration: '30 روزه', 
             price: '95,000 تومان', 
-            links: [
-                'https://example.com/sub/1-1', 
-                'https://example.com/sub/1-2'
-            ] 
+            links: ['https://example.com/sub/1-1', 'https://example.com/sub/1-2'] 
         },
         { 
             id: 2, 
@@ -97,9 +99,7 @@ const defaultDatabaseStructure = {
             volume: 'نامحدود (VIP)', 
             duration: '30 روزه', 
             price: '180,000 تومان', 
-            links: [
-                'https://example.com/sub/2-1'
-            ] 
+            links: ['https://example.com/sub/2-1'] 
         }
     ],
     paymentCardNumber: '6037-9971-xxxx-xxxx',
@@ -113,7 +113,6 @@ function loadDatabase() {
         if (fs.existsSync(DB_FILE)) {
             const data = fs.readFileSync(DB_FILE, 'utf8');
             const parsed = JSON.parse(data);
-            
             db = {
                 ...defaultDatabaseStructure,
                 ...parsed,
@@ -167,7 +166,6 @@ function logPurchaseToFile(subObj) {
                          `تاریخ انقضا: ${subObj.expiryDate}\n` +
                          `لینک اشتراک:\n${subObj.configLink}\n` +
                          `----------------------------------------\n\n`;
-
         fs.appendFileSync(PURCHASES_LOG_FILE, logEntry, 'utf8');
     } catch (e) {
         console.log('❌ خطا در نوشتن لاگ خرید در فایل متنی:', e);
@@ -182,7 +180,6 @@ async function sendBackupToAdmin() {
     if (!fs.existsSync(backupDir)) {
         fs.mkdirSync(backupDir, { recursive: true });
     }
-
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupDbPath = path.join(backupDir, `backup_${timestamp}_database.txt`);
     const backupLogPath = path.join(backupDir, `backup_${timestamp}_purchases_log.txt`);
@@ -204,7 +201,6 @@ async function sendBackupToAdmin() {
 }
 
 setInterval(sendBackupToAdmin, 24 * 60 * 60 * 1000);
-
 const REWARD_AMOUNT = 5000;  
 
 app.use(express.urlencoded({ extended: true }));
@@ -360,11 +356,7 @@ async function fetchAndParseConfig(url) {
         if (url.startsWith('http://') || url.startsWith('https://')) {
             const parsedUrl = new URL(url);
             const hostname = parsedUrl.hostname.toLowerCase();
-            
-            if (
-                hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' ||
-                hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('172.16.')
-            ) {
+            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('172.16.')) {
                 return resultInfo;
             }
 
@@ -400,7 +392,6 @@ async function fetchAndParseConfig(url) {
 
             const data = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
             let decodedContent = data;
-            
             try {
                 const buff = Buffer.from(data.trim(), 'base64');
                 const str = buff.toString('utf8');
@@ -481,12 +472,10 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     saveDatabase();
 
     trackUserAndNotifyAdmin(msg);
-
     const canProceed = await handleForceJoin(msg);
     if (!canProceed) return;
 
     const refId = match ? match[1] : null; 
-
     if (db.isInviteSystemEnabled && refId && refId !== chatId.toString()) {
         if (!db.userWallets[`referred_${chatId}`]) {
             db.userWallets[`referred_${chatId}`] = true; 
@@ -529,7 +518,6 @@ function sendAdminPanel(chatId) {
     const freeSubStatus = db.isFreeSubEnabled ? '🟢 اشتراک رایگان: روشن' : '🔴 اشتراک رایگان: خاموش';
     const inviteStatus = db.isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
     
-    // به‌روزرسانی پنل مدیریت بر اساس ساختار درخواستی شما (حذف لیست کاربران از اینجا و قرارگیری آمار کلی به صورت تک‌نفره)
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
@@ -577,14 +565,31 @@ function sendAdminPanel(chatId) {
     });
 }
 
+// مدیریت کلیک دکمه‌ها همراه با محدودسازی سرعت (Anti-Spam) و تاخیر متوسط
 bot.on('callback_query', async (callbackQuery) => {
     loadDatabase(); 
     const msg = callbackQuery.message;
     const data = callbackQuery.data;
     const chatId = msg.chat.id;
     const userId = callbackQuery.from.id;
-    const userObj = callbackQuery.from;
+    const currentTime = Date.now();
 
+    // بررسی محدودسازی کلیک پشت‌سرهم (Anti-Spam)
+    if (userCooldowns.has(userId)) {
+        const lastClickTime = userCooldowns.get(userId);
+        if (currentTime - lastClickTime < COOLDOWN_TIME) {
+            return bot.answerCallbackQuery(callbackQuery.id, {
+                text: '⚠️ لطفاً کمی آهسته‌تر دکمه‌ها را بزنید...',
+                show_alert: false
+            }).catch(() => {});
+        }
+    }
+    userCooldowns.set(userId, currentTime);
+
+    // اعمال تاخیر ملایم برای تنظیم سرعت متوسط ربات
+    await sleep(400);
+
+    const userObj = callbackQuery.from;
     if (userObj) {
         const name = userObj.first_name || userObj.last_name || 'بدون نام';
         const username = userObj.username ? `@${userObj.username}` : 'ندارد';
@@ -703,7 +708,6 @@ bot.on('callback_query', async (callbackQuery) => {
                 db.allSubscriptionsHistory.push(subObj);
 
                 logPurchaseToFile(subObj);
-
                 delete db.pending_card_purchases[cardKey];
                 saveDatabase();
 
@@ -1164,7 +1168,6 @@ bot.on('callback_query', async (callbackQuery) => {
         db.allSubscriptionsHistory.push(subObj);
 
         logPurchaseToFile(subObj);
-
         db.receiptsHistory.push({
             type: 'خرید با کیف پول',
             userId: userId,
@@ -1227,7 +1230,6 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, '❌ بخش اشتراک رایگان غیرفعال است.');
             return;
         }
-        
         const parsedFree = await fetchAndParseConfig(db.freeSubConfig);
         let freeMsg = `🎁 **هدیه اشتراک رایگان شما:** 🌟\n\n` +
                       `🌐 حجم کل: \`${parsedFree.total}\`\n` +
@@ -1246,7 +1248,6 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, '❌ سرور تست غیرفعال است.');
             return;
         }
-
         const parsedTest = await fetchAndParseConfig(db.testServerConfig);
         let testMsg = `🧪 **سرور تست پرسرعت** ⚡️\n\n` +
                       `🌐 حجم: \`${parsedTest.total}\` | ⏳ انقضا: \`${parsedTest.expireDate}\`\n\n` +
@@ -1255,14 +1256,12 @@ bot.on('callback_query', async (callbackQuery) => {
         if (parsedTest.extractedConfigs && parsedTest.extractedConfigs.length > 0) {
             testMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${parsedTest.extractedConfigs.join('\n\n')}\n\`\`\``;
         }
-        
         bot.sendMessage(chatId, testMsg, { parse_mode: 'Markdown' });
         return;
     }
 
     if (data === 'my_subs') {
         const subs = db.userSubscriptions[userId];
-        
         if (subs && Array.isArray(subs) && subs.length > 0) {
             let subText = `📱 **اشتراک‌های فعال شما (${subs.length} عدد):** 🌟\n\n`;
             subs.forEach((sub, idx) => {
@@ -1370,7 +1369,6 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId]) {
         const state = db.userStates[chatId];
-
         if (state.step === 'get_new_menu_name') {
             const targetKey = state.targetKey;
             db.menuNames[targetKey] = text.trim();
@@ -1380,7 +1378,6 @@ bot.on('message', async (msg) => {
             sendAdminPanel(chatId);
             return;
         }
-
         if (state.step === 'get_new_bot_text') {
             const targetKey = state.targetTextKey;
             db.botTexts[targetKey] = text.trim();
@@ -1390,7 +1387,6 @@ bot.on('message', async (msg) => {
             sendAdminPanel(chatId);
             return;
         }
-
         if (state.step === 'get_new_channel_username') {
             db.CHANNEL_USERNAME = text.trim();
             delete db.userStates[chatId];
@@ -1460,7 +1456,6 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId]) {
         const state = db.userStates[chatId];
-        
         if (state.step === 'edit_plan_get_name') {
             state.editName = text.trim();
             state.step = 'edit_plan_get_volume';
@@ -1579,7 +1574,6 @@ bot.on('message', async (msg) => {
     if (db.userStates[chatId] && db.userStates[chatId].awaiting_support_message) {
         delete db.userStates[chatId];
         saveDatabase();
-        
         bot.sendMessage(chatId, db.botTexts.support_success);
 
         const userInfo = db.usersDetailMap[chatId] || { name: 'کاربر', username: 'ندارد' };
@@ -1601,13 +1595,13 @@ bot.on('message', async (msg) => {
         };
 
         const sentAdminMsg = await bot.sendMessage(ADMIN_CHAT_ID, supportMsg, { parse_mode: 'Markdown', ...supportKeyboard });
-        
         db.messagesMap[sentAdminMsg.message_id] = chatId;
         saveDatabase();
         return;
     }
 });
 
+// مدیریت دقیق عکس و رسیدهای ارسالی مشتریان به ادمین
 bot.on('photo', async (msg) => {
     loadDatabase();
     trackUserAndNotifyAdmin(msg);
@@ -1647,7 +1641,8 @@ bot.on('photo', async (msg) => {
                 }
             };
 
-            bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
+            // ارسال مستقیم رسید شارژ به ادمین
+            await bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
                 caption: `🔔 **رسید جدید شارژ کیف پول**\n\n👤 نام: ${userInfo.name}\n🆔 آیدی عددی: \`${userId}\`\n💵 مبلغ: \`${amount.toLocaleString()} تومان\``,
                 parse_mode: 'Markdown',
                 ...adminDepositKeyboard
@@ -1679,7 +1674,7 @@ bot.on('photo', async (msg) => {
             });
             saveDatabase();
 
-            // فراخوانی تابع کمکی برای ارسال رسید به کانال گزارش (در صورت نیاز)
+            // ارسال رسید به کانال گزارش (در صورت تمایل)
             await sendSubscriptionAndReceiptToChannel(userId, `${plan.name} - ${plan.price}`, photoId, CHANNEL_LOG_ID);
 
             const adminCardKeyboard = {
@@ -1693,7 +1688,8 @@ bot.on('photo', async (msg) => {
                 }
             };
 
-            bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
+            // ارسال مستقیم رسید خرید به ادمین همراه با دکمه‌های تایید و رد
+            await bot.sendPhoto(ADMIN_CHAT_ID, photoId, {
                 caption: `🔔 **رسید جدید خرید کارت به کارت**\n\n👤 نام: ${userInfo.name}\n🆔 آیدی عددی: \`${userId}\`\n📦 پلن: ${plan.name} (${plan.price})`,
                 parse_mode: 'Markdown',
                 ...adminCardKeyboard
