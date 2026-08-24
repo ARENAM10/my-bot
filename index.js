@@ -102,7 +102,7 @@ function loadDatabase() {
                 ...parsed,
                 menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
                 botTexts: { ...defaultDatabaseStructure.botTexts, ...(parsed.botTexts || {}) },
-                userStates: parsed.userStates || {},
+                userStates: {}, // پاکسازی استیت‌های موقت زمان ری‌استارت
                 userWallets: parsed.userWallets || {},
                 pending_deposits: parsed.pending_deposits || {},
                 pending_card_purchases: parsed.pending_card_purchases || {},
@@ -157,7 +157,9 @@ function logPurchaseToFile(subObj) {
     }
 }
 
+// بارگذاری اولیه دیتابیس هنگام روشن شدن ربات
 loadDatabase();
+console.log('🔄 ربات مجدداً راه‌اندازی شد و تمامی اطلاعات کاربران و ویترین از دیتابیس بازیابی شد.');
 
 async function sendBackupToAdmin() {
     const backupDir = path.join(DATA_DIR, 'backups');
@@ -227,6 +229,7 @@ app.post('/admin/login', (req, res) => {
 });
 
 app.get('/admin/dashboard', (req, res) => {
+    loadDatabase();
     let usersListHtml = '';
     db.allUsers.forEach(uId => {
         const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: 'نامشخص' };
@@ -990,7 +993,7 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'admin_charge_wallet') {
         db.userStates[chatId] = { step: 'admin_get_charge_user_id' };
         saveDatabase();
-        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً **شناسه عددی (Chat ID)** کاربر مورد نظر را ارسال کنید:', { parse_Mode: 'Markdown' });
+        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً **شناسه عددی (Chat ID)** کاربر مورد نظر را ارسال کنید:', { parse_mode: 'Markdown' });
         return;
     }
 
