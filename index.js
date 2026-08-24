@@ -707,7 +707,7 @@ bot.on('callback_query', async (callbackQuery) => {
             chat_id: chatId,
             message_id: msg.message_id,
             parse_mode: 'Markdown',
-            reply_markup: quickAmountsKeyboard
+            reply_markup: quickAmountsKeyboard.reply_markup
         });
         return;
     }
@@ -1216,7 +1216,7 @@ bot.on('callback_query', async (callbackQuery) => {
             chat_id: chatId,
             message_id: msg.message_id,
             parse_mode: 'Markdown',
-            reply_markup: depositAmountsKeyboard
+            reply_markup: depositAmountsKeyboard.reply_markup
         });
         return;
     }
