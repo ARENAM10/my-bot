@@ -136,6 +136,36 @@ function saveDatabase() {
 
 loadDatabase();
 
+// -----------------------------------------------------------------
+// 10. سیستم پشتیبان‌گیری خودکار و ارسال مستقیم فایل برای ادمین (arenam_10)
+// -----------------------------------------------------------------
+async function sendBackupToAdmin() {
+    const backupDir = path.join(DATA_DIR, 'backups');
+    if (!fs.existsSync(DB_FILE)) {
+        console.log('Database file not found for backup!');
+        return;
+    }
+    if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupPath = path.join(backupDir, `backup_${timestamp}_database.json`);
+
+    try {
+        fs.copyFileSync(DB_FILE, backupPath);
+        await bot.sendDocument(ADMIN_CHAT_ID, backupPath, {
+            caption: `📦 **پشتیبان خودکار دیتابیس**\n👤 ادمین: arenam_10\n🕒 زمان: ${new Date().toLocaleString('fa-IR')}`
+        });
+        console.log('Backup sent successfully to arenam_10.');
+    } catch (e) {
+        console.log('Error sending backup to admin:', e);
+    }
+}
+
+// اجرای خودکار بکاپ هر 24 ساعت یک‌بار
+setInterval(sendBackupToAdmin, 24 * 60 * 60 * 1000);
+
 const userStates = {};       
 const REWARD_AMOUNT = 5000;  
 
@@ -266,6 +296,9 @@ function trackUserAndNotifyAdmin(msg) {
     }
 }
 
+// -----------------------------------------------------------------
+// 9. بررسی امن جوین اجباری (جلوگیری از دور زدن در صورت قطعی یا خطای API)
+// -----------------------------------------------------------------
 async function checkMembership(userId) {
     if (!db.CHANNEL_USERNAME || db.CHANNEL_USERNAME === '@YourChannelUsername') return true;
     try {
@@ -273,7 +306,9 @@ async function checkMembership(userId) {
         const status = chatMember.status;
         return ['creator', 'administrator', 'member'].includes(status);
     } catch (error) {
-        return true; 
+        console.log('Error checking membership safely:', error.message);
+        // در صورت بروز خطای API تلگرام، دسترسی تایید نمی‌شود تا امنیت کامل حفظ گردد
+        return false;
     }
 }
 
@@ -490,6 +525,9 @@ function sendAdminPanel(chatId) {
                 [
                     { text: inviteStatus, callback_data: 'toggle_invite_system' },
                     { text: forceJoinStatus, callback_data: 'admin_force_join_menu' }
+                ],
+                [
+                    { text: '📦 دریافت دستی بکاپ', callback_data: 'admin_send_backup' }
                 ]
             ]
         }
@@ -527,6 +565,13 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    if (data === 'admin_send_backup') {
+        if (!isAdmin(callbackQuery)) return;
+        bot.sendMessage(chatId, '⏳ در حال تهیه و ارسال فایل پشتیبان...');
+        await sendBackupToAdmin();
+        return;
+    }
 
     if (data === 'restart_bot') {
         delete userStates[chatId];
@@ -673,7 +718,7 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, '✅ عضویت شما تایید شد! حالا می‌توانید از ربات لذت ببرید. 🎉');
             sendMainMenu(chatId);
         } else {
-            bot.sendMessage(chatId, '❌ شما هنوز در کانال عضو نشده‌اید. لطفاً جوین شوید. ⚠️');
+            bot.sendMessage(chatId, '❌ شما هنوز در کانال عضو نشده‌اید یا خطایی رخ داده است. لطفاً جوین شوید و دوباره تلاش کنید. ⚠️');
         }
         return;
     }
@@ -1478,4 +1523,4 @@ bot.on('callback_query', async (callbackQuery) => {
 process.on('uncaughtException', (err) => {
     console.log('Caught exception:', err);
 });
-console.log('🤖 ربات با موفقیت آپدیت شد و متن استارت و بخش‌ها تنظیم گردید.');
+console.log('🤖 ربات با موفقیت آپدیت شد و بخش‌های امنیتی و پشتیبان‌گیری خودکار تنظیم گردید.');
