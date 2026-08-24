@@ -14,17 +14,13 @@ const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 const ADMIN_WEB_PASSWORD = 'admin_secure_password';
 
-// اطلاعات کانال مقصد برای گزارش خریدها
 const CHANNEL_LOG_ID = '-1004488082323';
 
-// نقشه برای جلوگیری از کلیک‌های متوالی و سریع روی دکمه‌ها (Rate Limiting ملایم)
 const userCooldowns = new Map();
-const COOLDOWN_TIME = 1200; // ۱.۲ ثانیه مکث برای جلوگیری از کلیک سریع
+const COOLDOWN_TIME = 1200;
 
-// تابع تاخیر ملایم برای کنترل سرعت ربات
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// تابع ارسال رسید و اشتراک به کانال
 async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, receiptPhotoPath, channelId) {
     try {
         let caption = `🎉 **خرید اشتراک جدید!**\n\n` +
@@ -40,7 +36,6 @@ async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, 
     }
 }
 
-// --- مسیر ذخیره‌سازی داده‌ها ---
 const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
 const DB_FILE = path.join(DATA_DIR, 'database.json');
 const PURCHASES_LOG_FILE = path.join(DATA_DIR, 'purchases_log.txt');
@@ -173,7 +168,6 @@ function logPurchaseToFile(subObj) {
 }
 
 loadDatabase();
-console.log('🔄 ربات مجدداً راه‌اندازی شد و تمامی اطلاعات کاربران و ویترین از دیتابیس بازیابی شد.');
 
 async function sendBackupToAdmin() {
     const backupDir = path.join(DATA_DIR, 'backups');
@@ -565,7 +559,6 @@ function sendAdminPanel(chatId) {
     });
 }
 
-// مدیریت کلیک دکمه‌ها همراه با محدودسازی سرعت (Anti-Spam) و تاخیر متوسط
 bot.on('callback_query', async (callbackQuery) => {
     loadDatabase(); 
     const msg = callbackQuery.message;
@@ -607,11 +600,10 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // --- مدیریت کیف پول مشتری‌ها (نمایش کامل و بدون محدودیت کاربران) ---
     if (data === 'manage_wallets') {
         if (!isAdmin(callbackQuery)) return;
         try {
-            const userIds = [...db.allUsers]; // نمایش تمامی کاربران بدون محدودیت و برش
+            const userIds = [...db.allUsers];
             if (!userIds || userIds.length === 0) {
                 return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ هیچ کاربری در ربات ثبت‌نام نکرده است.", show_alert: true });
             }
@@ -681,15 +673,74 @@ bot.on('callback_query', async (callbackQuery) => {
         const parts = data.split('_');
         const action = parts[1] === 'inc' ? 'inc' : 'dec';
         const targetUser = parts[2];
+        const actionTitle = action === 'inc' ? 'افزایش' : 'کاهش';
+
+        const quickAmountsKeyboard = {
+            inline_keyboard: [
+                [
+                    { text: "➕ ۱۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_10000` },
+                    { text: "➕ ۲۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_20000` }
+                ],
+                [
+                    { text: "➕ ۵۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_50000` },
+                    { text: "➕ ۱۰۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_100000` }
+                ],
+                [
+                    { text: "🔙 بازگشت", callback_data: `wallet_user_${targetUser}` }
+                ]
+            ]
+        };
+
+        // تغییر متن دکمه‌ها برای حالت کاهش
+        if (action === 'dec') {
+            quickAmountsKeyboard.inline_keyboard[0][0].text = "➖ ۱۰ هزار تومان";
+            quickAmountsKeyboard.inline_keyboard[0][1].text = "➖ ۲۰ هزار تومان";
+            quickAmountsKeyboard.inline_keyboard[1][0].text = "➖ ۵۰ هزار تومان";
+            quickAmountsKeyboard.inline_keyboard[1][1].text = "➖ ۱۰۰ هزار تومان";
+        }
 
         db.userStates[chatId] = { step: 'wallet_manager_waiting_for_amount', targetUser, action };
         saveDatabase();
-        
-        const actionTitle = action === 'inc' ? 'افزایش' : 'کاهش';
-        await bot.sendMessage(chatId, `💵 لطفاً مبلغ مورد نظر برای ${actionTitle} موجودی (به تومان) را ارسال کنید:`);
+
+        await bot.editMessageText(`💵 لطفاً یکی از مبالغ زیر را برای **${actionTitle}** موجودی انتخاب کنید یا مبلغ دلخواه خود را به صورت عدد در چت ارسال کنید:`, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: quickAmountsKeyboard
+        });
         return;
     }
-    // ------------------------------------
+
+    if (data.startsWith('w_amt_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const parts = data.split('_');
+        const action = parts[2]; // inc یا dec
+        const targetUser = parts[3];
+        const amount = parseInt(parts[4], 10);
+
+        const currentBalance = db.userWallets[targetUser] || 0;
+        if (action === 'inc') {
+            db.userWallets[targetUser] = currentBalance + amount;
+        } else {
+            db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
+        }
+
+        delete db.userStates[chatId];
+        saveDatabase();
+
+        const actionText = action === 'inc' ? 'افزایش یافته' : 'کاهش یافته';
+        
+        await bot.answerCallbackQuery(callbackQuery.id, { text: `✅ با موفقیت اعمال شد.`, show_alert: false });
+        await bot.sendMessage(chatId, `✅ عملیات با موفقیت انجام شد.\nمبلغ ${amount.toLocaleString()} تومان به حساب کاربر \`${targetUser}\` ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' });
+        
+        try {
+            const notifyText = action === 'inc' 
+                ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
+                : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
+            await bot.sendMessage(targetUser, notifyText);
+        } catch (e) {}
+        return;
+    }
 
     if (data.startsWith('adm_msg_')) {
         if (!isAdmin(callbackQuery)) return;
@@ -1397,7 +1448,6 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
-    // --- مدیریت دریافت مبلغ شارژ / کاهش موجودی کیف پول در پنل ادمین ---
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'wallet_manager_waiting_for_amount') {
         const state = db.userStates[chatId];
         const amount = parseInt((text || '').replace(/[^0-9]/g, ''), 10);
@@ -1430,7 +1480,6 @@ bot.on('message', async (msg) => {
         } catch (e) {}
         return;
     }
-    // -----------------------------------------------------------------------------------------
 
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_direct_message_user') {
         const targetUserId = db.userStates[chatId].targetUserId;
