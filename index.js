@@ -85,7 +85,8 @@ const defaultDatabaseStructure = {
             ] 
         }
     ],
-    paymentCardNumber: '6037-9971-xxxx-xxxx'
+    paymentCardNumber: '6037-9971-xxxx-xxxx',
+    messagesMap: {} // نگهداری ارتباط پیام‌های ادمین و کاربران برای پاسخ با ریپلی
 };
 
 let db = JSON.parse(JSON.stringify(defaultDatabaseStructure));
@@ -111,7 +112,8 @@ function loadDatabase() {
                 referals: parsed.referals || [],
                 userSubscriptions: parsed.userSubscriptions || {},
                 allSubscriptionsHistory: parsed.allSubscriptionsHistory || [],
-                customPlans: parsed.customPlans || defaultDatabaseStructure.customPlans
+                customPlans: parsed.customPlans || defaultDatabaseStructure.customPlans,
+                messagesMap: parsed.messagesMap || {}
             };
         } else {
             saveDatabase();
@@ -1002,7 +1004,6 @@ bot.on('callback_query', async (callbackQuery) => {
         let usersText = `👥 **لیست کل کاربران ربات (مجموع: ${db.allUsers.length} نفر):**\n\n`;
         let counter = 1;
         
-        // ساخت پیام‌ها بخش به بخش (در صورت طولانی شدن لیست برای جلوگیری از خطای تلگرام)
         for (const uId of db.allUsers) {
             const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: 'نامشخص' };
             const wallet = db.userWallets[uId] || 0;
@@ -1016,7 +1017,6 @@ bot.on('callback_query', async (callbackQuery) => {
 
             counter++;
 
-            // اگر متن خیلی طولانی شد، ارسال کند و ادامه دهد
             if (usersText.length > 3500) {
                 await bot.sendMessage(chatId, usersText, { parse_mode: 'Markdown' });
                 usersText = '';
@@ -1323,6 +1323,21 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
+    // --- هندل کردن پاسخ مستقیم (Reply) ادمین به پیام پشتیبانی کاربر ---
+    if (chatId === ADMIN_CHAT_ID && msg.reply_to_message) {
+        const repliedMsgId = msg.reply_to_message.message_id;
+        const targetUserId = db.messagesMap[repliedMsgId];
+
+        if (targetUserId) {
+            try {
+                await bot.sendMessage(targetUserId, `پاسخ مدیریت:\n\n${text || '[پیام غیرمتنی]'}`);
+                return bot.sendMessage(ADMIN_CHAT_ID, '✅ پاسخ با موفقیت برای مشتری ارسال شد.');
+            } catch (e) {
+                return bot.sendMessage(ADMIN_CHAT_ID, '❌ خطا در ارسال پیام به مشتری (احتمالاً ربات را بلاک کرده است).');
+            }
+        }
+    }
+
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId]) {
         const state = db.userStates[chatId];
 
@@ -1531,7 +1546,7 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // --- بخش ارسال پیام پشتیبانی به ادمین به همراه اطلاعات کامل کاربر و دکمه مستقیم پیام ---
+    // --- بخش ارسال پیام پشتیبانی به ادمین به همراه اطلاعات کامل کاربر و ذخیره برای پاسخ مستقیم ---
     if (db.userStates[chatId] && db.userStates[chatId].awaiting_support_message) {
         delete db.userStates[chatId];
         saveDatabase();
@@ -1556,7 +1571,11 @@ bot.on('message', async (msg) => {
             }
         };
 
-        bot.sendMessage(ADMIN_CHAT_ID, supportMsg, { parse_mode: 'Markdown', ...supportKeyboard });
+        const sentAdminMsg = await bot.sendMessage(ADMIN_CHAT_ID, supportMsg, { parse_mode: 'Markdown', ...supportKeyboard });
+        
+        // ذخیره آیدی پیام ادمین به همراه آیدی کاربر برای هندل کردن Reply
+        db.messagesMap[sentAdminMsg.message_id] = chatId;
+        saveDatabase();
         return;
     }
 });
