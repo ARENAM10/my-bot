@@ -285,32 +285,6 @@ function parsePrice(priceStr) {
     return parseInt(digits, 10) || 0;
 }
 
-// تابع کمکی برای یافتن شناسه عددی کاربر از روی چت‌آیدی یا یوزرنیم
-function resolveUserId(input) {
-    if (!input) return null;
-    let cleanInput = input.trim();
-    
-    // اگر ورودی فقط عدد بود، همان Chat ID است
-    if (/^\d+$/.test(cleanInput)) {
-        return parseInt(cleanInput, 10);
-    }
-    
-    // اگر یوزرنیم بود (با یا بدون @)
-    if (cleanInput.startsWith('@')) {
-        cleanInput = cleanInput.substring(1);
-    }
-    cleanInput = cleanInput.toLowerCase();
-
-    // جستجو در لیست جزئیات کاربران ذخیره شده در دیتابیس
-    for (const [uId, info] of Object.entries(db.usersDetailMap)) {
-        if (info.username && info.username.replace('@', '').toLowerCase() === cleanInput) {
-            return parseInt(uId, 10);
-        }
-    }
-    
-    return null;
-}
-
 function trackUserAndNotifyAdmin(msg) {
     if (msg && msg.from && msg.from.id) {
         const userId = msg.from.id;
@@ -556,7 +530,7 @@ function sendAdminPanel(chatId) {
                     { text: '✏️ تغییر متن‌های ربات', callback_data: 'admin_edit_texts_menu' }
                 ],
                 [
-                    { text: '💰 مدیریت کیف پول مشتری‌ها', callback_data: 'admin_wallet_manager' },
+                    { text: '💰 مدیریت کیف پول مشتری‌ها', callback_data: 'manage_wallets' },
                     { text: '📁 رسیدهای مالی', callback_data: 'admin_receipts' }
                 ],
                 [
@@ -600,7 +574,6 @@ bot.on('callback_query', async (callbackQuery) => {
     const userId = callbackQuery.from.id;
     const currentTime = Date.now();
 
-    // بررسی محدودسازی کلیک پشت‌سرهم (Anti-Spam)
     if (userCooldowns.has(userId)) {
         const lastClickTime = userCooldowns.get(userId);
         if (currentTime - lastClickTime < COOLDOWN_TIME) {
@@ -612,7 +585,6 @@ bot.on('callback_query', async (callbackQuery) => {
     }
     userCooldowns.set(userId, currentTime);
 
-    // اعمال تاخیر ملایم برای تنظیم سرعت متوسط ربات
     await sleep(400);
 
     const userObj = callbackQuery.from;
@@ -635,19 +607,76 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // --- مدیریت کیف پول مشتری‌ها ---
-    if (data === 'admin_wallet_manager') {
+    // --- مدیریت کیف پول مشتری‌ها (بخش دکمه‌ای شیشه‌ای جدید و کاملاً پایدار) ---
+    if (data === 'manage_wallets') {
         if (!isAdmin(callbackQuery)) return;
-        db.userStates[chatId] = { step: 'wallet_manager_waiting_for_user_id' };
-        saveDatabase();
-        await bot.sendMessage(chatId, 
-            `💰 **بخش مدیریت کیف پول مشتری‌ها**\n\nلطفاً شناسه عددی (Chat ID) یا یوزرنیم کاربر مورد نظر را ارسال کنید:`,
-            { parse_mode: 'Markdown' }
-        );
+        try {
+            const userIds = db.allUsers.slice(-10).reverse(); // گرفتن ۱۰ کاربر آخر
+            if (!userIds || userIds.length === 0) {
+                return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ هیچ کاربری در ربات ثبت‌نام نکرده است.", show_alert: true });
+            }
+
+            let buttons = userIds.map(uId => {
+                let info = db.usersDetailMap[uId] || { name: 'بدون نام', username: 'ندارد' };
+                let name = info.name;
+                let uname = info.username && info.username !== 'ندارد' ? info.username : uId;
+                let balance = db.userWallets[uId] || 0;
+                return [{
+                    text: `👤 ${name} (${uname}) - 💰 ${balance} تومان`,
+                    callback_data: `wallet_user_${uId}`
+                }];
+            });
+
+            buttons.push([{ text: "🔙 بازگشت به پنل مدیریت", callback_data: "admin_back_to_panel" }]);
+
+            await bot.editMessageText("💼 **بخش مدیریت کیف پول مشتری‌ها**\n\nکاربر مورد نظر خود را از لیست زیر انتخاب کنید:", {
+                chat_id: chatId,
+                message_id: msg.message_id,
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: buttons }
+            });
+        } catch (e) {
+            console.error(e);
+        }
         return;
     }
 
-    if (data.startsWith('wallet_inc_') || data.startsWith('wallet_dec_')) {
+    if (data.startsWith('wallet_user_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const targetChatId = data.replace('wallet_user_', '');
+        const userInfo = db.usersDetailMap[targetChatId] || { name: 'نامشخص', username: 'ندارد' };
+        const balance = db.userWallets[targetChatId] || 0;
+
+        const walletMsg = `
+💼 **مدیریت کیف پول کاربر:**
+👤 نام: ${userInfo.name}
+🆔 یوزرنیم: ${userInfo.username}
+🔢 چت آیدی: \`${targetChatId}\`
+💰 موجودی فعلی: **${balance.toLocaleString()} تومان**
+
+لطفاً عملیات مورد نظر را انتخاب کنید:
+        `;
+
+        await bot.editMessageText(walletMsg, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: "➕ افزایش موجودی", callback_data: `w_inc_${targetChatId}` },
+                        { text: "➖ کاهش موجودی", callback_data: `w_dec_${targetChatId}` }
+                    ],
+                    [
+                        { text: "🔙 بازگشت به لیست کاربران", callback_data: "manage_wallets" }
+                    ]
+                ]
+            }
+        });
+        return;
+    }
+
+    if (data.startsWith('w_inc_') || data.startsWith('w_dec_')) {
         if (!isAdmin(callbackQuery)) return;
         const parts = data.split('_');
         const action = parts[1] === 'inc' ? 'inc' : 'dec';
@@ -658,14 +687,6 @@ bot.on('callback_query', async (callbackQuery) => {
         
         const actionTitle = action === 'inc' ? 'افزایش' : 'کاهش';
         await bot.sendMessage(chatId, `💵 لطفاً مبلغ مورد نظر برای ${actionTitle} موجودی (به تومان) را ارسال کنید:`);
-        return;
-    }
-
-    if (data === 'admin_cancel') {
-        if (!isAdmin(callbackQuery)) return;
-        delete db.userStates[chatId];
-        saveDatabase();
-        await bot.sendMessage(chatId, "❌ عملیات لغو شد.");
         return;
     }
     // ------------------------------------
@@ -1376,38 +1397,12 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
-    // --- مدیریت مراحل مدیریت کیف پول مشتری‌ها (ویرایش شده برای پشتیبانی از یوزرنیم و چت‌آیدی) ---
+    // --- مدیریت دریافت مبلغ شارژ/کاهش موجودی کیف پول در پنل ادمین ---
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId]) {
         const state = db.userStates[chatId];
 
-        if (state.step === 'wallet_manager_waiting_for_user_id') {
-            const userInput = text.trim();
-            const resolvedId = resolveUserId(userInput);
-
-            if (!resolvedId) {
-                return bot.sendMessage(chatId, `❌ کاربری با مشخصات (\`${userInput}\`) در دیتابیس ربات یافت نشد.\nاطمینان حاصل کنید که کاربر قبلاً ربات را استارت کرده باشد.`);
-            }
-
-            db.userStates[chatId] = { step: 'wallet_manager_waiting_for_action', targetUser: resolvedId };
-            saveDatabase();
-            
-            return bot.sendMessage(chatId, 
-                `👤 کاربر مورد نظر با موفقیت شناسایی شد:\n🆔 شناسه عددی: \`${resolvedId}\`\n\nلطفاً نوع عملیات را انتخاب کنید:`, {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [
-                                { text: "➕ افزایش موجودی", callback_data: `wallet_inc_${resolvedId}` },
-                                { text: "➖ کاهش موجودی", callback_data: `wallet_dec_${resolvedId}` }
-                            ],
-                            [{ text: "❌ انصراف", callback_data: "admin_cancel" }]
-                        ]
-                    }
-                });
-        }
-
         if (state.step === 'wallet_manager_waiting_for_amount') {
-            const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
+            const amount = parseInt((text || '').replace(/[^0-9]/g, ''), 10);
             if (isNaN(amount) || amount <= 0) {
                 return bot.sendMessage(chatId, "⚠️ لطفاً یک مبلغ معتبر به صورت عدد وارد کنید:");
             }
@@ -1693,7 +1688,6 @@ bot.on('message', async (msg) => {
     }
 });
 
-// مدیریت دقیق عکس و رسیدهای ارسالی مشتریان به ادمین
 bot.on('photo', async (msg) => {
     loadDatabase();
     trackUserAndNotifyAdmin(msg);
