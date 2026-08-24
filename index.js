@@ -26,9 +26,7 @@ let db = {
     isFreeSubEnabled: true,
     freeSubConfig: 'vless://example-free-sub-link',
     isInviteSystemEnabled: true,
-    // --- ذخیره‌سازی وضعیت‌ها در دیتابیس برای جلوگیری از پریدن با Restart ---
     userStates: {},
-    // --- نام دکمه‌ها و منوها ---
     menuNames: {
         buy_sub: '🛒 خرید اشتراک پرسرعت ⚡️',
         free_sub: '🎁 اشتراک رایگان',
@@ -39,7 +37,6 @@ let db = {
         tutorial: '📖 آموزش اتصال',
         support: '📞 پشتیبانی آنلاین'
     },
-    // --- متن‌های قابل تغییر تمامی بخش‌های ربات ---
     botTexts: {
         start_message: '💜 **به ربات CONFIG ARENA خوش آمدید** 💜\n\n⚡️ **خرید کانفیگ‌های پرسرعت و پایدار**\n🚀 **کیفیت بالا + سرعت تضمینی**\n\nاز منوی زیر سرویس موردنظر خود را انتخاب کنید 👇\n\n🔥 **سرور بدون مرز | CONFIG ARENA** 🔥',
         tutorial_message: '📖 **آموزش ساده اتصال:** 💡\n\n1️⃣ اپلیکیشن V2Ray (مثل v2rayNG در اندروید یا FoXray در آیفون) را نصب کنید.\n2️⃣ لینک اشتراک اختصاصی خود را از بخش «اشتراک‌های من» کپی کنید.\n3️⃣ برنامه را باز کرده، روی علامت + یا Import بزنید تا لینک اضافه شود.\n4️⃣ روی دکمه اتصال بزنید و از اینترنت آزاد لذت ببرید! 🚀',
@@ -139,9 +136,7 @@ function saveDatabase() {
 
 loadDatabase();
 
-// -----------------------------------------------------------------
-// سیستم پشتیبان‌گیری خودکار و ارسال مستقیم فایل برای ادمین (arenam_10)
-// -----------------------------------------------------------------
+// --- ارسال بکاپ با پسوند .txt جهت جلوگیری از باز شدن با فیلترشکن‌ها ---
 async function sendBackupToAdmin() {
     const backupDir = path.join(DATA_DIR, 'backups');
     if (!fs.existsSync(DB_FILE)) {
@@ -153,7 +148,7 @@ async function sendBackupToAdmin() {
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupPath = path.join(backupDir, `backup_${timestamp}_database.json`);
+    const backupPath = path.join(backupDir, `backup_${timestamp}_database.txt`);
 
     try {
         fs.copyFileSync(DB_FILE, backupPath);
@@ -309,7 +304,6 @@ async function checkMembership(userId) {
     }
 }
 
-// --- ایمن‌شده در برابر حملات SSRF ---
 async function fetchAndParseConfig(url) {
     let resultInfo = {
         isSubLink: false,
@@ -1446,7 +1440,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // --- مدیریت Broadcast با تاخیر امن برای جلوگیری از Flood Wait ---
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'get_broadcast_content') {
         delete db.userStates[chatId];
         saveDatabase();
@@ -1460,7 +1453,7 @@ bot.on('message', async (msg) => {
                 try {
                     await bot.sendMessage(uId, text);
                     successCount++;
-                    await new Promise(resolve => setTimeout(resolve, 50)); // ۵۰ میلی‌ثانیه تاخیر بین پیام‌ها
+                    await new Promise(resolve => setTimeout(resolve, 50));
                 } catch (err) {
                     blockCount++;
                 }
