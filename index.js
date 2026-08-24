@@ -86,7 +86,7 @@ const defaultDatabaseStructure = {
         }
     ],
     paymentCardNumber: '6037-9971-xxxx-xxxx',
-    messagesMap: {} // نگهداری ارتباط پیام‌های ادمین و کاربران برای پاسخ با ریپلی
+    messagesMap: {}
 };
 
 let db = JSON.parse(JSON.stringify(defaultDatabaseStructure));
@@ -527,7 +527,7 @@ function sendAdminPanel(chatId) {
                 ],
                 [
                     { text: '📊 آمار کلی', callback_data: 'admin_stats' },
-                    { text: '👥 لیست کاربران', callback_data: 'admin_users' }
+                    { text: '👥 لیست کاربران حرفه‌ای', callback_data: 'admin_users' }
                 ],
                 [
                     { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' },
@@ -584,6 +584,25 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // --- مدیریت تعاملی کاربران (ارسال پیام یا شارژ کیف پول مستقیم برای کاربر خاص) ---
+    if (data.startsWith('adm_msg_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const targetUserId = parseInt(data.replace('adm_msg_', ''), 10);
+        db.userStates[chatId] = { step: 'admin_direct_message_user', targetUserId: targetUserId };
+        saveDatabase();
+        bot.sendMessage(chatId, `✉️ **ارسال پیام مستقیم به کاربر** (\`${targetUserId}\`)\n\nمتن پیام خود را ارسال کنید:`, { parse_mode: 'Markdown' });
+        return;
+    }
+
+    if (data.startsWith('adm_chg_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const targetUserId = parseInt(data.replace('adm_chg_', ''), 10);
+        db.userStates[chatId] = { step: 'admin_direct_charge_user', targetUserId: targetUserId };
+        saveDatabase();
+        bot.sendMessage(chatId, `💰 **شارژ مستقیم کیف پول کاربر** (\`${targetUserId}\`)\n\nمبلغ به تومان را وارد کنید (مثلاً \`50000\`):`, { parse_mode: 'Markdown' });
+        return;
+    }
 
     // --- تایید یا رد شارژ کیف پول ---
     if (data.startsWith('approve_deposit_') || data.startsWith('reject_deposit_')) {
@@ -971,7 +990,7 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'admin_charge_wallet') {
         db.userStates[chatId] = { step: 'admin_get_charge_user_id' };
         saveDatabase();
-        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً **شناسه عددی (Chat ID)** کاربر مورد نظر را ارسال کنید:', { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, '💰 **شارژ دستی کیف پول**\n\nلطفاً **شناسه عددی (Chat ID)** کاربر مورد نظر را ارسال کنید:', { parse_Mode: 'Markdown' });
         return;
     }
 
@@ -984,7 +1003,7 @@ bot.on('callback_query', async (callbackQuery) => {
         db.allSubscriptionsHistory.forEach((sub, index) => {
             historyText += `🔹 **شماره ${index + 1}**\n` +
                            `👤 آیدی مشتری: \`${sub.userId}\`\n` +
-                           `📛 نام: ${sub.userName}\n` +
+                           `📛 نام: ${sub.planName}\n` +
                            `📦 پلن: ${sub.planName}\n` +
                            `🌐 حجم: ${sub.totalVolume || sub.volume}\n` +
                            `⏳ انقضا: ${sub.expiryDate}\n` +
@@ -994,37 +1013,42 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- نمایش کامل کل کاربران ربات با تفکیک و خوانایی بالا ---
+    // --- لیست حرفه‌ای کاربران همراه با دکمه‌های تعاملی اختصاصی برای هر کاربر ---
     if (data === 'admin_users') {
         if (db.allUsers.length === 0) {
             bot.sendMessage(chatId, '👥 هیچ کاربری ثبت نشده است.');
             return;
         }
 
-        let usersText = `👥 **لیست کل کاربران ربات (مجموع: ${db.allUsers.length} نفر):**\n\n`;
-        let counter = 1;
-        
+        bot.sendMessage(chatId, `👥 **لیست کل کاربران ربات (مجموع: ${db.allUsers.length} نفر):**\nدر حال ارسال مشخصات و دکمه‌های مدیریتی...`, { parse_mode: 'Markdown' });
+
         for (const uId of db.allUsers) {
             const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: 'نامشخص' };
             const wallet = db.userWallets[uId] || 0;
             const cleanUsername = info.username !== 'ندارد' ? info.username : 'فاقد یوزرنیم';
 
-            usersText += `${counter}. **${info.name}**\n` +
-                         `   🔗 یوزرنیم: ${cleanUsername}\n` +
-                         `   🆔 شناسه: \`${uId}\`\n` +
-                         `   💰 کیف پول: \`${wallet.toLocaleString()} تومان\`\n` +
-                         `   📅 عضویت: ${info.joinedAt}\n\n`;
+            const userCardText = `👤 **نام:** ${info.name}\n` +
+                                 `🔗 **یوزرنیم:** ${cleanUsername}\n` +
+                                 `🆔 **شناسه (Chat ID):** \`${uId}\`\n` +
+                                 `💰 **کیف پول:** \`${wallet.toLocaleString()} تومان\`\n` +
+                                 `📅 **تاریخ عضویت:** ${info.joinedAt}`;
 
-            counter++;
+            const userActionKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '✉️ ارسال پیام', callback_data: `adm_msg_${uId}` },
+                            { text: '💰 شارژ کیف پول', callback_data: `adm_chg_${uId}` }
+                        ],
+                        [
+                            { text: '👤 پروفایل تلگرام', url: `tg://user?id=${uId}` }
+                        ]
+                    ]
+                }
+            };
 
-            if (usersText.length > 3500) {
-                await bot.sendMessage(chatId, usersText, { parse_mode: 'Markdown' });
-                usersText = '';
-            }
-        }
-
-        if (usersText.length > 0) {
-            bot.sendMessage(chatId, usersText, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, userCardText, { parse_mode: 'Markdown', ...userActionKeyboard });
+            await new Promise(resolve => setTimeout(resolve, 80)); // تاخیر کوتاه برای جلوگیری از محدودیت ارسال در تلگرام
         }
         return;
     }
@@ -1323,6 +1347,39 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
+    // --- مدیریت فرآیند ارسال پیام مستقیم ادمین به کاربر از طریق دکمه لیست کاربران ---
+    if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_direct_message_user') {
+        const targetUserId = db.userStates[chatId].targetUserId;
+        delete db.userStates[chatId];
+        saveDatabase();
+
+        try {
+            await bot.sendMessage(targetUserId, `✉️ **پیام مدیریت:**\n\n${text}`);
+            return bot.sendMessage(ADMIN_CHAT_ID, `✅ پیام با موفقیت به کاربر \`${targetUserId}\` ارسال شد.`);
+        } catch (e) {
+            return bot.sendMessage(ADMIN_CHAT_ID, `❌ خطا در ارسال پیام به کاربر (احتمالاً ربات را بلاک کرده است).`);
+        }
+    }
+
+    // --- مدیریت فرآیند شارژ کیف پول مستقیم ادمین برای کاربر از طریق لیست کاربران ---
+    if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_direct_charge_user') {
+        const targetUserId = db.userStates[chatId].targetUserId;
+        const amount = parseInt((text || '').replace(/[^0-9]/g, ''), 10);
+        delete db.userStates[chatId];
+        saveDatabase();
+
+        if (!amount || amount <= 0) {
+            return bot.sendMessage(ADMIN_CHAT_ID, '❌ مبلغ نامعتبر است.');
+        }
+
+        db.userWallets[targetUserId] = (db.userWallets[targetUserId] || 0) + amount;
+        saveDatabase();
+
+        bot.sendMessage(ADMIN_CHAT_ID, `✅ مبلغ \`${amount.toLocaleString()} تومان\` به کیف پول کاربر \`${targetUserId}\` اضافه شد.`);
+        bot.sendMessage(targetUserId, `🎉 **کیف پول شما توسط مدیریت شارژ شد!** 💳\nمبلغ \`${amount.toLocaleString()} تومان\` به حساب شما واریز گردید. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
     // --- هندل کردن پاسخ مستقیم (Reply) ادمین به پیام پشتیبانی کاربر ---
     if (chatId === ADMIN_CHAT_ID && msg.reply_to_message) {
         const repliedMsgId = msg.reply_to_message.message_id;
@@ -1546,7 +1603,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // --- بخش ارسال پیام پشتیبانی به ادمین به همراه اطلاعات کامل کاربر و ذخیره برای پاسخ مستقیم ---
     if (db.userStates[chatId] && db.userStates[chatId].awaiting_support_message) {
         delete db.userStates[chatId];
         saveDatabase();
@@ -1573,7 +1629,6 @@ bot.on('message', async (msg) => {
 
         const sentAdminMsg = await bot.sendMessage(ADMIN_CHAT_ID, supportMsg, { parse_mode: 'Markdown', ...supportKeyboard });
         
-        // ذخیره آیدی پیام ادمین به همراه آیدی کاربر برای هندل کردن Reply
         db.messagesMap[sentAdminMsg.message_id] = chatId;
         saveDatabase();
         return;
