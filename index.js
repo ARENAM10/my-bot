@@ -14,6 +14,9 @@ const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 const ADMIN_WEB_PASSWORD = 'admin_secure_password';
 
+// اطلاعات کانال مقصد برای گزارش خریدها
+const CHANNEL_LOG_ID = '-1004488082323';
+
 // --- مسیر ذخیره‌سازی داده‌ها ---
 const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
 const DB_FILE = path.join(DATA_DIR, 'database.json');
@@ -87,14 +90,12 @@ const defaultDatabaseStructure = {
 
 let db = JSON.parse(JSON.stringify(defaultDatabaseStructure));
 
-// --- تابع هوشمند برای ترکیب امن داده‌ها و محافظت از تنظیمات ادمین ---
 function loadDatabase() {
     try {
         if (fs.existsSync(DB_FILE)) {
             const data = fs.readFileSync(DB_FILE, 'utf8');
             const parsed = JSON.parse(data);
             
-            // جایگذاری دقیق کلیدها بدون از دست رفتن تنظیمات سفارشی ادمین
             db = {
                 ...defaultDatabaseStructure,
                 ...parsed,
@@ -120,7 +121,6 @@ function loadDatabase() {
     }
 }
 
-// --- ذخیره‌سازی امن و اتمیک (جلوگیری از خراب شدن فایل دیتابیس) ---
 function saveDatabase() {
     try {
         if (!fs.existsSync(DATA_DIR)) {
@@ -134,7 +134,6 @@ function saveDatabase() {
     }
 }
 
-// --- تابع ثبت کامل جزئیات خرید در فایل متنی مجزا ---
 function logPurchaseToFile(subObj) {
     try {
         if (!fs.existsSync(DATA_DIR)) {
@@ -158,7 +157,6 @@ function logPurchaseToFile(subObj) {
 
 loadDatabase();
 
-// --- ارسال بکاپ خودکار دیتابیس و فایل لاگ خریدها به ادمین ---
 async function sendBackupToAdmin() {
     const backupDir = path.join(DATA_DIR, 'backups');
     if (!fs.existsSync(backupDir)) {
@@ -182,17 +180,13 @@ async function sendBackupToAdmin() {
                 caption: `📑 **فایل کامل سوابق و جزئیات خریدهای انجام‌شده**\n👤 ادمین: arenam_10`
             });
         }
-        console.log('Backups sent successfully to arenam_10.');
-    } catch (e) {
-        console.log('Error sending backups to admin:', e);
-    }
+    } catch (e) {}
 }
 
 setInterval(sendBackupToAdmin, 24 * 60 * 60 * 1000);
 
 const REWARD_AMOUNT = 5000;  
 
-// --- بخش وب‌سایت و پنل مدیریت ---
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -569,11 +563,11 @@ bot.on('callback_query', async (callbackQuery) => {
     const data = callbackQuery.data;
     const chatId = msg.chat.id;
     const userId = callbackQuery.from.id;
+    const userObj = callbackQuery.from;
 
-    if (callbackQuery.from) {
-        const u = callbackQuery.from;
-        const name = u.first_name || u.last_name || 'بدون نام';
-        const username = u.username ? `@${u.username}` : 'ندارد';
+    if (userObj) {
+        const name = userObj.first_name || userObj.last_name || 'بدون نام';
+        const username = userObj.username ? `@${userObj.username}` : 'ندارد';
         if (!db.usersDetailMap[userId]) {
             db.usersDetailMap[userId] = { name, username, joinedAt: new Date().toLocaleString('fa-IR') };
         } else {
@@ -650,7 +644,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 const assignedLink = plan.links.shift();
                 const parsedData = await fetchAndParseConfig(assignedLink);
                 const currentDateStr = new Date().toLocaleString('fa-IR');
-                const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر' };
+                const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر', username: 'ندارد' };
 
                 const subObj = {
                     userId: targetUserId,
@@ -672,11 +666,19 @@ bot.on('callback_query', async (callbackQuery) => {
                 db.userSubscriptions[targetUserId].push(subObj);
                 db.allSubscriptionsHistory.push(subObj);
 
-                // ثبت در فایل متنی مجزا
                 logPurchaseToFile(subObj);
 
                 delete db.pending_card_purchases[cardKey];
                 saveDatabase();
+
+                // ارسال گزارش خرید به کانال مقصد
+                const cleanUsername = userInfo.username.replace('@', '');
+                const purchaseMessage = `🛒 **خرید جدید ثبت شد:**\n` +
+                                        `👤 **نام کاربری:** @${cleanUsername}\n` +
+                                        `⏰ **زمان خرید:** ${currentDateStr}\n` +
+                                        `📦 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}`;
+                
+                await bot.sendMessage(CHANNEL_LOG_ID, purchaseMessage, { parse_mode: 'Markdown' }).catch(() => {});
 
                 let successMsg = `🎉 **خرید شما تایید شد و اشتراک صادر گردید!** 🚀\n\n` +
                                  `📦 پلن: \`${plan.name}\`\n` +
@@ -1112,7 +1114,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
         const parsedData = await fetchAndParseConfig(assignedLink);
         const currentDateStr = new Date().toLocaleString('fa-IR');
-        const userInfo = db.usersDetailMap[userId] || { name: 'کاربر' };
+        const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
 
         const subObj = {
             userId: userId,
@@ -1134,7 +1136,6 @@ bot.on('callback_query', async (callbackQuery) => {
         db.userSubscriptions[userId].push(subObj);
         db.allSubscriptionsHistory.push(subObj);
 
-        // ثبت در فایل متنی مجزا
         logPurchaseToFile(subObj);
 
         db.receiptsHistory.push({
@@ -1146,6 +1147,15 @@ bot.on('callback_query', async (callbackQuery) => {
             date: currentDateStr
         });
         saveDatabase();
+
+        // ارسال گزارش خرید به کانال مقصد
+        const cleanUsername = userInfo.username.replace('@', '');
+        const purchaseMessage = `🛒 **خرید جدید ثبت شد:**\n` +
+                                `👤 **نام کاربری:** @${cleanUsername}\n` +
+                                `⏰ **زمان خرید:** ${currentDateStr}\n` +
+                                `📦 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}`;
+        
+        await bot.sendMessage(CHANNEL_LOG_ID, purchaseMessage, { parse_mode: 'Markdown' }).catch(() => {});
 
         let userMsg = `🎉 **خرید موفقیت‌آمیز انجام شد!** 🚀\n\n` +
                       `📦 پلن: \`${plan.name}\`\n` +
@@ -1501,7 +1511,7 @@ bot.on('photo', async (msg) => {
     trackUserAndNotifyAdmin(msg);
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-    const userInfo = db.usersDetailMap[userId] || { name: 'کاربر' };
+    const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
     const photoId = msg.photo[msg.photo.length - 1].file_id;
     const currentDateStr = new Date().toLocaleString('fa-IR');
 
