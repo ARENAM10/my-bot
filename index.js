@@ -461,36 +461,13 @@ async function fetchAndParseConfig(url) {
 }
 
 // ----------------------------------------------------
-// توابع مدیریت کیبوردها (شیشه‌ای و ثابت پایین صفحه)
+// توابع مدیریت کیبوردها (حذف دکمه‌های تکراری از پنل شیشه‌ای)
 // ----------------------------------------------------
 function getMainKeyboard() {
-    const names = db.menuNames;
+    // پنل شیشه‌ای خالی شد چون تمامی دکمه‌ها به کیبورد ثابت پایین صفحه منتقل شدند
     return {
         reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: `🛒 ${names.buy_sub}`, callback_data: 'buy_sub' }
-                ],
-                [
-                    ...(db.isFreeSubEnabled ? [{ text: `🎁 ${names.free_sub}`, callback_data: 'free_sub' }] : []),
-                    ...(db.isTestServerEnabled ? [{ text: `🧪 ${names.test_server}`, callback_data: 'test_server' }] : [])
-                ],
-                [
-                    { text: `💰 ${names.wallet}`, callback_data: 'wallet' },
-                    ...(db.isInviteSystemEnabled ? [{ text: `👥 ${names.invite}`, callback_data: 'invite' }] : [])
-                ],
-                [
-                    { text: `📱 ${names.my_subs}`, callback_data: 'my_subscriptions' },
-                    { text: `🤝 ${names.agency_request}`, callback_data: 'agency_request' }
-                ],
-                [
-                    { text: `📖 ${names.tutorial}`, callback_data: 'tutorial' },
-                    { text: `📞 ${names.support}`, callback_data: 'support' }
-                ],
-                [
-                    { text: '🔄 بازگشت به منوی اصلی', callback_data: 'restart_bot' }
-                ]
-            ]
+            inline_keyboard: []
         }
     };
 }
@@ -525,9 +502,8 @@ function getPersistentMenuKeyboard() {
 }
 
 async function sendMainMenu(chatId) {
-    // ارسال پیام منو همراه با کیبورد شیشه‌ای و فعال‌سازی کیبورد ثابت پایین صفحه
-    await bot.sendMessage(chatId, '🏠 منوی اصلی ربات:', getPersistentMenuKeyboard());
-    bot.sendMessage(chatId, db.botTexts.start_message, { parse_mode: 'Markdown', ...getMainKeyboard() });
+    // ارسال پیام منو همراه با کیبورد ثابت پایین صفحه
+    await bot.sendMessage(chatId, db.botTexts.start_message, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() });
 }
 
 async function handleForceJoin(msg) {
