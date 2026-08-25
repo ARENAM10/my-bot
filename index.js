@@ -596,7 +596,6 @@ bot.on('callback_query', async (callbackQuery) => {
     const userId = callbackQuery.from.id;
     const currentTime = Date.now();
 
-    // 🔒 سیستم ضداسپم (جلوگیری از کلیک‌های سریع و پشت‌سر‌هم)
     if (userCooldowns.has(userId)) {
         const lastClickTime = userCooldowns.get(userId);
         if (currentTime - lastClickTime < COOLDOWN_TIME) {
@@ -633,14 +632,19 @@ bot.on('callback_query', async (callbackQuery) => {
     // ==========================================
     // 📱 مدیریت اشتراک مشتریان در پنل ادمین
     // ==========================================
+    if (data === 'adm_add_sub_by_identifier') {
+        if (!isAdmin(callbackQuery)) return;
+        db.userStates[chatId] = { step: 'admin_waiting_for_user_identifier' };
+        saveDatabase();
+        bot.sendMessage(chatId, `🔍 **افزایش اشتراک با شناسه/یوزرنیم**\n\nلطفاً **آیدی عددی (Chat ID)** یا **نام کاربری (مثل @username یا username)** کاربر مورد نظر را ارسال کنید:`, { parse_mode: 'Markdown' });
+        return;
+    }
+
     if (data === 'manage_user_subs') {
         if (!isAdmin(callbackQuery)) return;
         try {
             const userIds = Object.keys(db.userSubscriptions).filter(uId => db.userSubscriptions[uId] && db.userSubscriptions[uId].length > 0);
-            if (userIds.length === 0) {
-                return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ هیچ کاربری اشتراک فعالی ندارد.", show_alert: true });
-            }
-
+            
             let buttons = userIds.map(uId => {
                 let info = db.usersDetailMap[uId] || { name: 'بدون نام', username: 'ندارد' };
                 let name = info.name;
@@ -651,9 +655,10 @@ bot.on('callback_query', async (callbackQuery) => {
                 }];
             });
 
+            buttons.unshift([{ text: "➕ افزودن اشتراک با آیدی یا یوزرنیم جدید 🔍", callback_data: "adm_add_sub_by_identifier" }]);
             buttons.push([{ text: "🔙 بازگشت به پنل مدیریت", callback_data: "admin_back_to_panel" }]);
 
-            await bot.editMessageText(`📱 **بخش مدیریت اشتراک مشتریان**\n\nکاربر مورد نظر را جهت مشاهده یا حذف اشتراک‌ها انتخاب کنید:`, {
+            await bot.editMessageText(`📱 **بخش مدیریت اشتراک مشتریان**\n\nمی‌توانید برای کاربران فعلی اشتراک مدیریت کنید یا با دکمه بالا به یک کاربر جدید با آیدی/یوزرنیم اشتراک بدهید:`, {
                 chat_id: chatId,
                 message_id: msg.message_id,
                 parse_mode: 'Markdown',
@@ -708,10 +713,6 @@ bot.on('callback_query', async (callbackQuery) => {
         } else {
             bot.answerCallbackQuery(callbackQuery.id, { text: '❌ اشتراک یافت نشد.', show_alert: true });
         }
-
-        // بازگشت به منوی اشتراک‌های آن کاربر
-        const fakeCallback = { message: msg, from: callbackQuery.from, data: `adm_user_subs_${targetUserId}` };
-        // بازخوانی صفحه مدیریت کاربر
         return;
     }
 
@@ -724,7 +725,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // ایجاد فاکتور و انتظار عکس رسید برای شارژ کیف پول
     if (data.startsWith('user_dep_')) {
         const amount = parseInt(data.replace('user_dep_', ''), 10);
         
@@ -1707,7 +1707,40 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // افزودن اشتراک دستی توسط ادمین
+    // مرحله اول: دریافت آیدی یا یوزرنیم کاربر برای افزودن اشتراک
+    if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_waiting_for_user_identifier') {
+        let inputVal = text.trim();
+        let targetUserId = null;
+
+        if (/^\d+$/.test(inputVal)) {
+            targetUserId = inputVal;
+        } else {
+            let cleanUname = inputVal.replace('@', '').toLowerCase();
+            let foundKey = Object.keys(db.usersDetailMap).find(uId => {
+                let uDetail = db.usersDetailMap[uId];
+                return uDetail && uDetail.username && uDetail.username.replace('@', '').toLowerCase() === cleanUname;
+            });
+
+            if (foundKey) {
+                targetUserId = foundKey;
+            } else {
+                targetUserId = `uname_${cleanUname}`;
+                db.usersDetailMap[targetUserId] = {
+                    name: `کاربر (${inputVal})`,
+                    username: inputVal.startsWith('@') ? inputVal : `@${inputVal}`,
+                    joinedAt: new Date().toLocaleString('fa-IR')
+                };
+            }
+        }
+
+        db.userStates[chatId] = { step: 'admin_manual_add_sub_link', targetUserId };
+        saveDatabase();
+
+        bot.sendMessage(ADMIN_CHAT_ID, `✅ کاربر شناسایی شد (شناسه ثبت‌شده: \`${targetUserId}\`).\n\nاکنون لطفاً **لینک کانفیگ یا سابسکریپشن** مورد نظر را برای این کاربر ارسال کنید:`, { parse_mode: 'Markdown' });
+        return;
+    }
+
+    // مرحله دوم: دریافت لینک سابسکریپشن و ثبت برای کاربر
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_manual_add_sub_link') {
         const targetUserId = db.userStates[chatId].targetUserId;
         const configLink = text.trim();
@@ -1740,7 +1773,10 @@ bot.on('message', async (msg) => {
         saveDatabase();
 
         bot.sendMessage(ADMIN_CHAT_ID, `✅ اشتراک جدید با موفقیت برای کاربر \`${targetUserId}\` ثبت و افزوده شد.`);
-        bot.sendMessage(targetUserId, `🎉 **اشتراک جدیدی توسط مدیریت به حساب شما اضافه شد!** 🚀\n\n🔗 **لینک اشتراک:**\n\`${configLink}\``, { parse_mode: 'Markdown' }).catch(() => {});
+        
+        if (/^\d+$/.test(targetUserId)) {
+            bot.sendMessage(targetUserId, `🎉 **اشتراک جدیدی توسط مدیریت به حساب شما اضافه شد!** 🚀\n\n🔗 **لینک اشتراک:**\n\`${configLink}\``, { parse_mode: 'Markdown' }).catch(() => {});
+        }
         return;
     }
 
@@ -1813,37 +1849,6 @@ bot.on('message', async (msg) => {
                 : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
             await bot.sendMessage(targetUser, notifyText);
         } catch (e) {}
-        return;
-    }
-
-    if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_direct_message_user') {
-        const targetUserId = db.userStates[chatId].targetUserId;
-        delete db.userStates[chatId];
-        saveDatabase();
-
-        try {
-            await bot.sendMessage(targetUserId, `✉️ **پیام مدیریت:**\n\n${text}`);
-            return bot.sendMessage(ADMIN_CHAT_ID, `✅ پیام با موفقیت به کاربر \`${targetUserId}\` ارسال شد.`);
-        } catch (e) {
-            return bot.sendMessage(ADMIN_CHAT_ID, `❌ خطا در ارسال پیام به کاربر (احتمالاً ربات را بلاک کرده است).`);
-        }
-    }
-
-    if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_direct_charge_user') {
-        const targetUserId = db.userStates[chatId].targetUserId;
-        const amount = parseInt((text || '').replace(/[^0-9]/g, ''), 10);
-        delete db.userStates[chatId];
-        saveDatabase();
-
-        if (!amount || amount <= 0) {
-            return bot.sendMessage(ADMIN_CHAT_ID, '❌ مبلغ نامعتبر است.');
-        }
-
-        db.userWallets[targetUserId] = (db.userWallets[targetUserId] || 0) + amount;
-        saveDatabase();
-
-        bot.sendMessage(ADMIN_CHAT_ID, `✅ مبلغ \`${amount.toLocaleString()} تومان\` به کیف پول کاربر \`${targetUserId}\` اضافه شد.`);
-        bot.sendMessage(targetUserId, `🎉 **کیف پول شما توسط مدیریت شارژ شد!** 💳\nمبلغ \`${amount.toLocaleString()} تومان\` به حساب شما واریز گردید. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -2055,7 +2060,6 @@ bot.on('message', async (msg) => {
     }
 });
 
-// مدیریت عکس‌های رسید
 bot.on('photo', async (msg) => {
     loadDatabase();
     trackUserAndNotifyAdmin(msg);
