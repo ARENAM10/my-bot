@@ -1763,7 +1763,7 @@ bot.on('message', async (msg) => {
     const names = db.menuNames;
     const userState = db.userStates[chatId];
 
-    // هندل کردن عکس‌های ارسالی کاربران (برای رسید شارژ کیف پول و خرید کارت به کارت)
+    // هندل کردن عکس‌های ارسالی کاربران (برای رسید شارژ کیف پول و خرید کارت به کارت و ارسال همزمان به کانال لاگ)
     if (msg.photo && userState && userState.step) {
         const step = userState.step;
         const photo = msg.photo[msg.photo.length - 1];
@@ -1805,7 +1805,11 @@ bot.on('message', async (msg) => {
                 }
             };
 
+            // ارسال عکس رسید به ادمین همراه با دکمه‌های تایید/رد
             bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminReceiptCaption, parse_mode: 'Markdown', ...adminReceiptKeyboard }).catch(() => {});
+            
+            // ارسال عکس رسید به کانال لاگ (CHANNEL_LOG_ID)
+            bot.sendPhoto(CHANNEL_LOG_ID, fileId, { caption: adminReceiptCaption, parse_mode: 'Markdown', reply_markup: adminReceiptKeyboard.reply_markup }).catch(() => {});
             return;
         }
 
@@ -1850,7 +1854,11 @@ bot.on('message', async (msg) => {
                 }
             };
 
+            // ارسال عکس رسید به ادمین همراه با دکمه‌های تایید/رد
             bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminCardCaption, parse_mode: 'Markdown', ...adminCardKeyboard }).catch(() => {});
+            
+            // ارسال عکس رسید به کانال لاگ (CHANNEL_LOG_ID)
+            bot.sendPhoto(CHANNEL_LOG_ID, fileId, { caption: adminCardCaption, parse_mode: 'Markdown', reply_markup: adminCardKeyboard.reply_markup }).catch(() => {});
             return;
         }
     }
