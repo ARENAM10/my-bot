@@ -619,6 +619,73 @@ function sendAdminPanel(chatId) {
     });
 }
 
+// تابع کمکی برای نمایش لیست اشتراک‌ها با قابلیت صفحه‌بندی
+async function sendUserSubscriptionsPage(chatId, messageId, userId, page = 0) {
+    const userSubs = db.userSubscriptions[userId] || [];
+    
+    if (userSubs.length === 0) {
+        await bot.answerCallbackQuery(callbackQuery.id, {
+            text: '❌ شما در حال حاضر هیچ اشتراک فعالی ندارید.',
+            show_alert: true
+        });
+        return;
+    }
+
+    const ITEMS_PER_PAGE = 5;
+    const totalPages = Math.ceil(userSubs.length / ITEMS_PER_PAGE);
+    const validPage = Math.max(0, Math.min(page, totalPages - 1));
+    
+    const startIndex = validPage * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    const currentItems = userSubs.slice(startIndex, endIndex);
+
+    let responseText = `🛒 اشتراک های خریداری شده توسط شما\n\n` +
+                       `⚠️ برای مشاهده اطلاعات و مدیریت روی نام کاربری کلیک کنید\n\n` +
+                       `🔴 همچنین برای پیدا کردن سریع سرویس خود و مدیریت آن می توانید از دکمه " جستجو سریع " استفاده کنید\n\n` +
+                       `📄 صفحه ${validPage + 1} از ${totalPages} | 📊 کل: ${userSubs.length} سرویس`;
+
+    let inlineKeyboard = [];
+
+    currentItems.forEach((sub, localIndex) => {
+        const globalIndex = startIndex + localIndex;
+        const shortId = sub.configLink ? sub.configLink.split('/').pop().substring(0, 10) : `sub_${globalIndex + 1}`;
+        const buttonText = `✨ ${userId}_${shortId} ✨`;
+        
+        inlineKeyboard.push([{ text: buttonText, callback_data: `view_sub_${globalIndex}` }]);
+    });
+
+    let paginationRow = [];
+    if (validPage > 0) {
+        paginationRow.push({ text: '⬅️ صفحه قبل', callback_data: `sub_page_${validPage - 1}` });
+    }
+    if (validPage < totalPages - 1) {
+        paginationRow.push({ text: 'صفحه بعد ➡️', callback_data: `sub_page_${validPage + 1}` });
+    }
+    if (paginationRow.length > 0) {
+        inlineKeyboard.push(paginationRow);
+    }
+
+    inlineKeyboard.push([{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]);
+
+    const replyMarkup = { inline_keyboard: inlineKeyboard };
+
+    try {
+        if (messageId) {
+            await bot.editMessageText(responseText, {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: replyMarkup
+            });
+        } else {
+            await bot.sendMessage(chatId, responseText, {
+                parse_mode: 'Markdown',
+                reply_markup: replyMarkup
+            });
+        }
+    } catch (e) {}
+}
+
 bot.on('callback_query', async (callbackQuery) => {
     loadDatabase(); 
     const msg = callbackQuery.message;
@@ -665,50 +732,46 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
+    // مدیریت کلیک روی دکمه «اشتراک‌های من» و صفحه‌بندی‌ها در callback_query:
     if (data === 'my_subscriptions') {
-        if (!db.userSubscriptions || !db.userSubscriptions[userId] || db.userSubscriptions[userId].length === 0) {
-            await bot.answerCallbackQuery(callbackQuery.id, {
-                text: '❌ شما در حال حاضر هیچ اشتراک فعالی ندارید.',
-                show_alert: true
-            });
-            return;
-        }
+        await sendUserSubscriptionsPage(chatId, msg.message_id, userId, 0);
+        await bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
+        return;
+    }
 
-        const userSubs = db.userSubscriptions[userId];
-        let responseText = "📋 **اشتراک‌های فعال شما:**\n\n";
+    if (data.startsWith('sub_page_')) {
+        const targetPage = parseInt(data.replace('sub_page_', ''), 10);
+        await sendUserSubscriptionsPage(chatId, msg.message_id, userId, targetPage);
+        await bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
+        return;
+    }
 
-        userSubs.forEach((sub, index) => {
-            responseText += `🔹 **اشتراک شماره ${index + 1}**\n`;
-            responseText += `📦 پلن: ${sub.planName || 'نامشخص'}\n`;
-            responseText += `⏳ تاریخ انقضا: ${sub.expiryDate || 'نامشخص'}\n`;
-            responseText += `🔗 **لینک اتصال (کانفیگ):**\n\`${sub.configLink}\`\n\n`;
-            responseText += `----------------------------------------\n`;
-        });
+    if (data.startsWith('view_sub_')) {
+        const subIndex = parseInt(data.replace('view_sub_', ''), 10);
+        const subs = db.userSubscriptions[userId];
+        if (subs && subs[subIndex]) {
+            const sub = subs[subIndex];
+            let subDetailMsg = `📱 **جزئیات سرویس انتخابی:**\n\n` +
+                               `📦 پلن: \`${sub.planName}\`\n` +
+                               `🌐 حجم کل: \`${sub.totalVolume || sub.volume}\`\n` +
+                               `⏳ انقضا: \`${sub.expiryDate}\`\n\n` +
+                               `🔗 **لینک اشتراک اختصاصی:**\n\`${sub.configLink}\``;
 
-        try {
-            await bot.editMessageText(responseText, {
+            if (sub.extractedConfigs && sub.extractedConfigs.length > 0) {
+                subDetailMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${sub.extractedConfigs.join('\n\n')}\n\`\`\``;
+            }
+
+            await bot.editMessageText(subDetailMsg, {
                 chat_id: chatId,
                 message_id: msg.message_id,
                 parse_mode: 'Markdown',
                 reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🔄 به‌روزرسانی لیست', callback_data: 'my_subscriptions' }],
-                        [{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]
-                    ]
+                    inline_keyboard: [[{ text: '🔙 بازگشت به لیست اشتراک‌ها', callback_data: 'my_subscriptions' }]]
                 }
             });
-        } catch (error) {
-            await bot.sendMessage(chatId, responseText, {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]
-                    ]
-                }
-            });
+        } else {
+            bot.answerCallbackQuery(callbackQuery.id, { text: '❌ این اشتراک دیگر یافت نشد.', show_alert: true });
         }
-
-        await bot.answerCallbackQuery(callbackQuery.id);
         return;
     }
 
@@ -1439,7 +1502,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // بخش آمار کاربران (مشاهده دقیق نام کاربری، آیدی عددی، نام و تاریخ/ساعت شمسی)
     if (data === 'admin_stats') {
         if (!isAdmin(callbackQuery)) return;
         
@@ -1457,7 +1519,6 @@ bot.on('callback_query', async (callbackQuery) => {
                            `   🕒 عضویت: ${uInfo.joinedAt || getPersianDateTime()}\n\n`;
         });
 
-        // اگر پیام طولانی باشد، تلگرام ممکن است خطا بدهد؛ بنابراین آن را مدیریت یا تکه تکه ارسال می‌کنیم
         if (statsReport.length > 4000) {
             bot.sendMessage(chatId, `📊 **آمار کلی ربات:**\n\n👥 کل کاربران: \`${db.allUsers.length}\`\n📦 کل اشتراک‌ها: \`${db.allSubscriptionsHistory.length}\``, { parse_mode: 'Markdown' });
         } else {
@@ -1733,33 +1794,6 @@ bot.on('callback_query', async (callbackQuery) => {
             testMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${parsedTest.extractedConfigs.join('\n\n')}\n\`\`\``;
         }
         bot.sendMessage(chatId, testMsg, { parse_mode: 'Markdown' });
-        return;
-    }
-
-    if (data.startsWith('view_sub_')) {
-        const subIndex = parseInt(data.replace('view_sub_', ''), 10);
-        const subs = db.userSubscriptions[userId];
-        if (subs && subs[subIndex]) {
-            const sub = subs[subIndex];
-            let subDetailMsg = `📱 **جزئیات اشتراک:**\n\n` +
-                               `📦 پلن: \`${sub.planName}\`\n` +
-                               `🌐 حجم کل: \`${sub.totalVolume || sub.volume}\`\n` +
-                               `⏳ انقضا: \`${sub.expiryDate}\`\n\n` +
-                               `🔗 **لینک اشتراک اختصاصی:**\n\`${sub.configLink}\``;
-
-            if (sub.extractedConfigs && sub.extractedConfigs.length > 0) {
-                subDetailMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${sub.extractedConfigs.join('\n\n')}\n\`\`\``;
-            }
-
-            bot.sendMessage(chatId, subDetailMsg, {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [[{ text: '🔙 بازگشت به لیست اشتراک‌ها', callback_data: 'my_subscriptions' }]]
-                }
-            });
-        } else {
-            bot.answerCallbackQuery(callbackQuery.id, { text: '❌ این اشتراک دیگر یافت نشد.', show_alert: true });
-        }
         return;
     }
 
@@ -2317,16 +2351,6 @@ bot.on('photo', async (msg) => {
     }
 
     if (chatId === ADMIN_CHAT_ID) {
-        bot.sendMessage(chatId, 'ℹ️ این عکس به عنوان رسید شناخته نشد.');
-    } else {
-        bot.sendMessage(chatId, '⚠️ شما در حال انجام تراکنش فعلی نیستید.');
+        bot.sendMessage(chatId, '⚠️ برای پاسخ به تیکت‌ها از قابلیت Reply روی پیام کاربر استفاده کنید.');
     }
-});
-
-process.on('uncaughtException', (err) => {
-    console.log('Caught exception:', err);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.log('Unhandled Rejection at:', promise, 'reason:', reason);
 });
