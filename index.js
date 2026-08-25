@@ -21,6 +21,29 @@ const COOLDOWN_TIME = 1200;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// تابع کمکی برای دریافت تاریخ و ساعت شمسی دقیق و خودکار
+function getPersianDateTime() {
+    try {
+        const now = new Date();
+        const dateStr = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).format(now);
+        
+        const timeStr = now.toLocaleTimeString('fa-IR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+        
+        return `${dateStr} - ${timeStr}`;
+    } catch (e) {
+        return new Date().toLocaleString('fa-IR');
+    }
+}
+
 async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, receiptPhotoPath, channelId) {
     try {
         let caption = `🎉 **خرید اشتراک جدید!**\n\n` +
@@ -212,7 +235,7 @@ async function sendBackupToAdmin() {
         if (fs.existsSync(DB_FILE)) {
             fs.copyFileSync(DB_FILE, backupDbPath);
             await bot.sendDocument(ADMIN_CHAT_ID, backupDbPath, {
-                caption: `📦 **پشتیبان خودکار دیتابیس ربات**\n👤 ادمین: arenam_10\n🕒 زمان: ${new Date().toLocaleString('fa-IR')}`
+                caption: `📦 **پشتیبان خودکار دیتابیس ربات**\n👤 ادمین: arenam_10\n🕒 زمان: ${getPersianDateTime()}`
             });
         }
         if (fs.existsSync(PURCHASES_LOG_FILE)) {
@@ -268,9 +291,9 @@ app.get('/admin/dashboard', (req, res) => {
     loadDatabase();
     let usersListHtml = '';
     db.allUsers.forEach(uId => {
-        const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: 'نامشخص' };
+        const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: getPersianDateTime() };
         const wallet = db.userWallets[uId] || 0;
-        usersListHtml += `<tr><td>${uId}</td><td>${info.name}</td><td>${info.username}</td><td>${wallet.toLocaleString()} تومان</td><td>${info.joinedAt}</td></tr>`;
+        usersListHtml += `<tr><td>${uId}</td><td>${info.name}</td><td>${info.username}</td><td>${wallet.toLocaleString()} تومان</td><td>${info.joinedAt || getPersianDateTime()}</td></tr>`;
     });
 
     res.send(`
@@ -283,7 +306,7 @@ app.get('/admin/dashboard', (req, res) => {
                 <p><b>تعداد کل اشتراک‌های صادر شده:</b> ${db.allSubscriptionsHistory.length} عدد</p>
                 <h3>👥 لیست کاربران ربات</h3>
                 <table>
-                    <tr><th>شناسه</th><th>نام</th><th>یوزرنیم</th><th>کیف پول</th><th>تاریخ عضویت</th></tr>
+                    <tr><th>آیدی عددی</th><th>نام</th><th>نام کاربری</th><th>کیف پول</th><th>تاریخ عضویت</th></tr>
                     ${usersListHtml}
                 </table>
                 <br><a href="/admin" style="color:red;text-decoration:none;font-weight:bold;">خروج از پنل</a>
@@ -316,6 +339,7 @@ function trackUserAndNotifyAdmin(msg) {
         const name = user.first_name || user.last_name || 'بدون نام';
         const username = user.username ? `@${user.username}` : 'ندارد (فاقد یوزرنیم)';
         const chatId = msg.chat ? msg.chat.id : userId;
+        const currentPersianTime = getPersianDateTime();
 
         let isBrandNew = false;
         if (!db.allUsers.includes(userId)) {
@@ -324,13 +348,13 @@ function trackUserAndNotifyAdmin(msg) {
         }
 
         if (!db.usersDetailMap[userId]) {
-            db.usersDetailMap[userId] = { name, username, joinedAt: new Date().toLocaleString('fa-IR') };
+            db.usersDetailMap[userId] = { name, username, joinedAt: currentPersianTime };
             isBrandNew = true;
         } else {
             db.usersDetailMap[userId].name = name;
             db.usersDetailMap[userId].username = username;
             if (!db.usersDetailMap[userId].joinedAt) {
-                db.usersDetailMap[userId].joinedAt = new Date().toLocaleString('fa-IR');
+                db.usersDetailMap[userId].joinedAt = currentPersianTime;
             }
         }
         saveDatabase();
@@ -346,7 +370,8 @@ function trackUserAndNotifyAdmin(msg) {
                 `🚀 **یک کاربر جدید ربات را استارت کرد!** 🤖\n\n` +
                 `👤 **نام کاربر:** ${name}\n` +
                 `🔗 **نام کاربری (Username):** ${username}\n` +
-                `🆔 **شناسه عددی (Chat ID):** \`${userId}\``, 
+                `🆔 **شناسه عددی (Chat ID):** \`${userId}\`\n` +
+                `🕒 **تاریخ و ساعت ثبت:** ${currentPersianTime}`, 
                 { parse_mode: 'Markdown', ...keyboard }
             ).catch(() => {});
         }
@@ -408,7 +433,7 @@ async function fetchAndParseConfig(url) {
                         if (key.toLowerCase() === 'total') resultInfo.total = formatBytes(numVal);
                         if (key.toLowerCase() === 'expire') {
                             const date = new Date(numVal * 1000);
-                            resultInfo.expireDate = date.toLocaleDateString('fa-IR');
+                            resultInfo.expireDate = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
                         }
                     }
                 });
@@ -619,11 +644,16 @@ bot.on('callback_query', async (callbackQuery) => {
     if (userObj) {
         const name = userObj.first_name || userObj.last_name || 'بدون نام';
         const username = userObj.username ? `@${userObj.username}` : 'ندارد';
+        const currentPersianTime = getPersianDateTime();
+        
         if (!db.usersDetailMap[userId]) {
-            db.usersDetailMap[userId] = { name, username, joinedAt: new Date().toLocaleString('fa-IR') };
+            db.usersDetailMap[userId] = { name, username, joinedAt: currentPersianTime };
         } else {
             db.usersDetailMap[userId].name = name;
             db.usersDetailMap[userId].username = username;
+            if (!db.usersDetailMap[userId].joinedAt) {
+                db.usersDetailMap[userId].joinedAt = currentPersianTime;
+            }
         }
         if (!db.allUsers.includes(userId)) {
             db.allUsers.push(userId);
@@ -635,7 +665,6 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // هندلر دکمه "اشتراک‌های من"
     if (data === 'my_subscriptions') {
         if (!db.userSubscriptions || !db.userSubscriptions[userId] || db.userSubscriptions[userId].length === 0) {
             await bot.answerCallbackQuery(callbackQuery.id, {
@@ -1065,7 +1094,7 @@ bot.on('callback_query', async (callbackQuery) => {
             if (plan && plan.links.length > 0) {
                 const assignedLink = plan.links.shift();
                 const parsedData = await fetchAndParseConfig(assignedLink);
-                const currentDateStr = new Date().toLocaleString('fa-IR');
+                const currentDateStr = getPersianDateTime();
                 const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر', username: 'ندارد' };
 
                 const subObj = {
@@ -1410,8 +1439,30 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
+    // بخش آمار کاربران (مشاهده دقیق نام کاربری، آیدی عددی، نام و تاریخ/ساعت شمسی)
     if (data === 'admin_stats') {
-        bot.sendMessage(chatId, `📊 **آمار کلی ربات:**\n\n👥 کل کاربران: \`${db.allUsers.length}\`\n📦 کل اشتراک‌ها: \`${db.allSubscriptionsHistory.length}\`\n📋 کل رسیدها: \`${db.receiptsHistory.length}\``, { parse_mode: 'Markdown' });
+        if (!isAdmin(callbackQuery)) return;
+        
+        let statsReport = `📊 **آمار کلی و لیست کاربران ربات:**\n\n` +
+                          `👥 کل کاربران ثبت‌نامی: \`${db.allUsers.length}\`\n` +
+                          `📦 کل اشتراک‌ها: \`${db.allSubscriptionsHistory.length}\`\n` +
+                          `📋 کل رسیدها: \`${db.receiptsHistory.length}\`\n\n` +
+                          `👤 **لیست کاربران:**\n`;
+
+        db.allUsers.forEach((uId, idx) => {
+            const uInfo = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: getPersianDateTime() };
+            statsReport += `${idx + 1}. نام: **${uInfo.name}**\n` +
+                           `   🆔 آیدی عددی: \`${uId}\`\n` +
+                           `   🔗 نام کاربری: ${uInfo.username}\n` +
+                           `   🕒 عضویت: ${uInfo.joinedAt || getPersianDateTime()}\n\n`;
+        });
+
+        // اگر پیام طولانی باشد، تلگرام ممکن است خطا بدهد؛ بنابراین آن را مدیریت یا تکه تکه ارسال می‌کنیم
+        if (statsReport.length > 4000) {
+            bot.sendMessage(chatId, `📊 **آمار کلی ربات:**\n\n👥 کل کاربران: \`${db.allUsers.length}\`\n📦 کل اشتراک‌ها: \`${db.allSubscriptionsHistory.length}\``, { parse_mode: 'Markdown' });
+        } else {
+            bot.sendMessage(chatId, statsReport, { parse_mode: 'Markdown' });
+        }
         return;
     }
 
@@ -1561,7 +1612,7 @@ bot.on('callback_query', async (callbackQuery) => {
         saveDatabase();
 
         const parsedData = await fetchAndParseConfig(assignedLink);
-        const currentDateStr = new Date().toLocaleString('fa-IR');
+        const currentDateStr = getPersianDateTime();
         const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
 
         const subObj = {
@@ -1827,7 +1878,7 @@ bot.on('message', async (msg) => {
                 db.usersDetailMap[targetUserId] = {
                     name: `کاربر (${inputVal})`,
                     username: inputVal.startsWith('@') ? inputVal : `@${inputVal}`,
-                    joinedAt: new Date().toLocaleString('fa-IR')
+                    joinedAt: getPersianDateTime()
                 };
             }
         }
@@ -1846,7 +1897,7 @@ bot.on('message', async (msg) => {
         saveDatabase();
 
         const parsedData = await fetchAndParseConfig(configLink);
-        const currentDateStr = new Date().toLocaleString('fa-IR');
+        const currentDateStr = getPersianDateTime();
         const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر', username: 'ندارد' };
 
         const newSubObj = {
@@ -2165,7 +2216,7 @@ bot.on('photo', async (msg) => {
     const userId = msg.from.id;
     const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
     const photoId = msg.photo[msg.photo.length - 1].file_id;
-    const currentDateStr = new Date().toLocaleString('fa-IR');
+    const currentDateStr = getPersianDateTime();
 
     const currentState = db.userStates[chatId] || {};
 
