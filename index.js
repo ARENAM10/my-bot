@@ -247,12 +247,13 @@ const REWARD_AMOUNT = 5000;
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+// صفحه اصلی وب‌سرور (فقط راهنمای ورود به پنل ادمین)
 app.get('/', (req, res) => {
     res.send(`
-        <html dir="rtl"><head><title>ربات فعال است</title></head>
-        <body style="font-family:Tahoma;text-align:center;padding-top:50px;background:#f4f7f6;">
-            <h2>🤖 ربات تلگرام و پنل مدیریت با موفقیت آنلاین است</h2>
-            <p>برای ورود به پنل مدیریت وب کلیک کنید: <a href="/admin">ورود به پنل مدیریت</a></p>
+        <html dir="rtl"><head><title>پنل مدیریت آرنا</title></head>
+        <body style="font-family:Tahoma;text-align:center;padding-top:80px;background:#f4f7f6;">
+            <h2>🛡️ سامانه مدیریت اختصاصی ربات آرنا</h2>
+            <p>برای ورود به پنل مدیریت کلیک کنید: <a href="/admin" style="color:#28a745;font-weight:bold;text-decoration:none;">ورود به پنل ادمین</a></p>
         </body></html>
     `);
 });
@@ -266,7 +267,7 @@ app.get('/admin', (req, res) => {
                 <h3>🔐 ورود به پنل ادمین</h3>
                 <form action="/admin/login" method="POST">
                     <input type="password" name="password" placeholder="رمز عبور ادمین" required>
-                    <button type="submit">ورود</button>
+                    <button type="submit">ورود به پنل</button>
                 </form>
             </div>
         </body></html>
@@ -281,6 +282,7 @@ app.post('/admin/login', (req, res) => {
     }
 });
 
+// داشبورد اختصاصی ادمین (کاملاً پاکسازی‌شده از کدهای مشتریان)
 app.get('/admin/dashboard', (req, res) => {
     loadDatabase();
     let usersListHtml = '';
@@ -293,18 +295,29 @@ app.get('/admin/dashboard', (req, res) => {
 
     res.send(`
         <html dir="rtl"><head><title>داشبورد مدیریت</title>
-        <style>body{font-family:Tahoma;background:#f8f9fa;margin:0;padding:20px;} .container{max-width:1000px;margin:auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.05);} h2{color:#333;border-bottom:2px solid #28a745;padding-bottom:10px;} table{width:100%;border-collapse:collapse;margin-top:15px;} th,td{border:1px solid #dee2e6;padding:10px;text-align:center;font-size:14px;} th{background:#343a40;color:white;}</style>
+        <style>
+            body{font-family:Tahoma;background:#f8f9fa;margin:0;padding:20px;} 
+            .container{max-width:1100px;margin:auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.05);} 
+            h2{color:#333;border-bottom:2px solid #28a745;padding-bottom:10px;} 
+            table{width:100%;border-collapse:collapse;margin-top:15px;} 
+            th,td{border:1px solid #dee2e6;padding:10px;text-align:center;font-size:14px;} 
+            th{background:#343a40;color:white;}
+            .stats-box{display:flex;gap:15px;margin:20px 0;}
+            .stat-card{background:#e9ecef;padding:15px;border-radius:8px;flex:1;text-align:center;}
+        </style>
         </head><body>
             <div class="container">
-                <h2>🚀 داشبورد مدیریت وب ربات</h2>
-                <p><b>تعداد کل کاربران:</b> ${uniqueUsers.length} نفر</p>
-                <p><b>تعداد کل اشتراک‌های صادر شده:</b> ${db.allSubscriptionsHistory.length} عدد</p>
+                <h2>👑 داشبورد اختصاصی پنل مدیریت ادمین</h2>
+                <div class="stats-box">
+                    <div class="stat-card"><b>تعداد کل کاربران:</b><br>${uniqueUsers.length} نفر</div>
+                    <div class="stat-card"><b>کل اشتراک‌های صادر شده:</b><br>${db.allSubscriptionsHistory.length} عدد</div>
+                </div>
                 <h3>👥 لیست کاربران ربات</h3>
                 <table>
                     <tr><th>آیدی عددی</th><th>نام</th><th>نام کاربری</th><th>کیف پول</th><th>تاریخ عضویت</th></tr>
                     ${usersListHtml}
                 </table>
-                <br><a href="/admin" style="color:red;text-decoration:none;font-weight:bold;">خروج از پنل</a>
+                <br><a href="/admin" style="color:red;text-decoration:none;font-weight:bold;">🚪 خروج از پنل مدیریت</a>
             </div>
         </body></html>
     `);
@@ -576,7 +589,6 @@ function sendAdminPanel(chatId) {
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
-                // 👇 اضافه شدن دکمه پنل ادمین (وب) در بالای منو
                 [
                     { text: '🌐 ورود به پنل ادمین (وب)', url: `http://localhost:${PORT}/admin` }
                 ],
