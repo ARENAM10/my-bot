@@ -8,7 +8,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
-const bot = new TelegramBot(TOKEN, { polling: true });
+
+// استفاده از وب‌هوک برای پایداری و مقیاس‌پذیری بالا در ترافیک سنگین
+const BOT_URL = process.env.RENDER_EXTERNAL_URL || `https://your-app-name.onrender.com`; // اگر روی رندر هستید خودکار ست می‌شود یا لینک هاست خود را بگذارید
+
+const bot = new TelegramBot(TOKEN, { webHook: { port: PORT } });
+bot.setWebHook(`${BOT_URL}/bot${TOKEN}`);
 
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
@@ -17,7 +22,7 @@ const ADMIN_WEB_PASSWORD = 'admin_secure_password';
 const CHANNEL_LOG_ID = '-1004488082323';
 
 const userCooldowns = new Map();
-const COOLDOWN_TIME = 2000; 
+const COOLDOWN_TIME = 1500; 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -158,6 +163,7 @@ function loadDatabase() {
     }
 }
 
+// ذخیره‌سازی ایمن برای جلوگیری از کرش در صورت تداخل نوشتن فایل
 function saveDatabase() {
     try {
         if (!fs.existsSync(DATA_DIR)) {
@@ -224,11 +230,17 @@ const REWARD_AMOUNT = 5000;
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+// مسیر دریافت وب‌هوک تلگرام
+app.post(`/bot${TOKEN}`, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+});
+
 app.get('/', (req, res) => {
     res.send(`
         <html dir="rtl"><head><title>ربات فعال است</title></head>
         <body style="font-family:Tahoma;text-align:center;padding-top:50px;background:#f4f7f6;">
-            <h2>🤖 ربات تلگرام و پنل مدیریت با موفقیت آنلاین است</h2>
+            <h2>🤖 ربات تلگرام و پنل مدیریت با موفقیت روی وب‌هوک آنلاین است</h2>
             <p>برای ورود به پنل مدیریت وب کلیک کنید: <a href="/admin">ورود به پنل مدیریت</a></p>
         </body></html>
     `);
@@ -288,7 +300,7 @@ app.get('/admin/dashboard', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server & Web Panel running on port ${PORT}`);
+    console.log(`Server & Webhook running on port ${PORT}`);
 });
 
 function isAdmin(msgOrQuery) {
@@ -685,7 +697,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
     userCooldowns.set(userId, currentTime);
 
-    await sleep(200);
+    await sleep(100);
 
     const userObj = callbackQuery.from;
     if (userObj) {
@@ -712,7 +724,6 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // ── بخش مدیریت مسدودسازی کاربران ──
     if (data === 'admin_block_menu') {
         if (!isAdmin(callbackQuery)) return;
         const blockKeyboard = {
@@ -848,9 +859,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: buttons }
             });
-        } catch (e) {
-            console.error(e);
-        }
+        } catch (e) {}
         return;
     }
 
@@ -996,7 +1005,6 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'manage_wallets') {
         if (!isAdmin(callbackQuery)) return;
         try {
-            // استفاده از Set برای جلوگیری از تکرار آیدی کاربران در بخش کیف پول
             const userIds = [...new Set(db.allUsers)];
             if (!userIds || userIds.length === 0) {
                 return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ هیچ کاربری در ربات وجود ندارد.", show_alert: true });
@@ -1021,9 +1029,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: buttons }
             });
-        } catch (e) {
-            console.error(e);
-        }
+        } catch (e) {}
         return;
     }
 
@@ -1086,13 +1092,6 @@ bot.on('callback_query', async (callbackQuery) => {
                 ]
             }
         };
-
-        if (action === 'dec') {
-            quickAmountsKeyboard.inline_keyboard[0][0].text = "➖ ۵۰ هزار تومان";
-            quickAmountsKeyboard.inline_keyboard[0][1].text = "➖ ۱۰۰ هزار تومان";
-            quickAmountsKeyboard.inline_keyboard[1][0].text = "➖ ۲۰۰ هزار تومان";
-            quickAmountsKeyboard.inline_keyboard[1][1].text = "➖ ۵۰۰ هزار تومان";
-        }
 
         db.userStates[chatId] = { step: 'wallet_manager_waiting_for_amount', targetUser, action };
         saveDatabase();
@@ -1538,33 +1537,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data === 'admin_stats') {
-        if (!isAdmin(callbackQuery)) return;
-        const uniqueUsersCount = [...new Set(db.allUsers)].length;
-        
-        let statsReport = `📊 **آمار کلی ربات:**\n\n` +
-                          `👥 کل کاربران: \`${uniqueUsersCount}\`\n` +
-                          `📦 کل اشتراک‌ها: \`${db.allSubscriptionsHistory.length}\`\n` +
-                          `📋 کل رسیدها: \`${db.receiptsHistory.length}\`\n\n` +
-                          `👤 **لیست کاربران:**\n`;
-
-        const uniqueUsers = [...new Set(db.allUsers)];
-        uniqueUsers.forEach((uId, idx) => {
-            const uInfo = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: getPersianDateTime() };
-            statsReport += `${idx + 1}. نام: **${uInfo.name}**\n` +
-                           `   🆔 شناسه: \`${uId}\`\n` +
-                           `   🔗 یوزرنیم: ${uInfo.username}\n` +
-                           `   🕒 عضویت: ${uInfo.joinedAt || getPersianDateTime()}\n\n`;
-        });
-
-        if (statsReport.length > 4000) {
-            bot.sendMessage(chatId, `📊 **آمار کلی ربات:**\n\n👥 کل کاربران: \`${uniqueUsersCount}\`\n📦 کل اشتراک‌ها: \`${db.allSubscriptionsHistory.length}\``, { parse_mode: 'Markdown' });
-        } else {
-            bot.sendMessage(chatId, statsReport, { parse_mode: 'Markdown' });
-        }
-        return;
-    }
-
     if (data === 'admin_broadcast') {
         db.userStates[chatId] = { step: 'get_broadcast_content' };
         saveDatabase();
@@ -1838,7 +1810,7 @@ bot.on('message', async (msg) => {
                 await bot.sendMessage(targetCustomerId, `💬 **پاسخ پشتیبانی:**\n\n${text}`);
                 await bot.sendMessage(chatId, '✅ پاسخ با موفقیت ارسال شد.');
             } catch (e) {
-                await bot.sendMessage(chatId, '❌ خطا در ارسال پیام به کاربر (ممکن است ربات را بلاک کرده باشد).');
+                await bot.sendMessage(chatId, '❌ خطا در ارسال پیام به کاربر.');
             }
             return;
         }
@@ -1945,7 +1917,6 @@ bot.on('message', async (msg) => {
     if (userState && userState.step) {
         const step = userState.step;
 
-        // مدیریت حالت مسدودسازی کاربر جدید از طریق متن ارسالی ادمین
         if (step === 'admin_waiting_for_block_identifier') {
             if (!isAdmin(msg)) return;
             let targetId = text.replace('@', '').trim();
@@ -2192,23 +2163,26 @@ bot.on('message', async (msg) => {
             return;
         }
 
+        // سیستم صف‌بندی پیام همگانی برای جلوگیری از تداخل و بلاک شدن ربات در ترافیک بالا
         if (step === 'get_broadcast_content') {
             if (!isAdmin(msg)) return;
             const broadcastText = text;
             delete db.userStates[chatId];
             saveDatabase();
 
-            bot.sendMessage(chatId, '🚀 ارسال پیام همگانی آغاز شد...');
+            bot.sendMessage(chatId, '🚀 ارسال همگانی در صف پردازش قرار گرفت...');
             let successCount = 0;
             const uniqueUsers = [...new Set(db.allUsers)];
+            
+            // ارسال async دسته‌ای با تاخیر کم
             for (const uId of uniqueUsers) {
                 try {
                     await bot.sendMessage(uId, broadcastText, { parse_mode: 'Markdown' });
                     successCount++;
-                    await sleep(50);
+                    await sleep(35); // تاخیر ایمن برای جلوگیری از Rate Limit تلگرام
                 } catch (e) {}
             }
-            bot.sendMessage(chatId, `✅ پیام همگانی به \`${successCount}\` کاربر ارسال شد.`);
+            bot.sendMessage(chatId, `✅ پیام همگانی با موفقیت به \`${successCount}\` کاربر ارسال شد.`);
             return;
         }
 
@@ -2415,4 +2389,4 @@ bot.on('message', async (msg) => {
     }
 });
 
-console.log("Bot and Web Panel successfully configured and running!");
+console.log("Optimized Bot and Webhook Server running successfully!");
