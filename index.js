@@ -461,10 +461,9 @@ async function fetchAndParseConfig(url) {
 }
 
 // ----------------------------------------------------
-// توابع مدیریت کیبوردها (حذف دکمه‌های تکراری از پنل شیشه‌ای)
+// توابع مدیریت کیبوردها
 // ----------------------------------------------------
 function getMainKeyboard() {
-    // پنل شیشه‌ای خالی شد چون تمامی دکمه‌ها به کیبورد ثابت پایین صفحه منتقل شدند
     return {
         reply_markup: {
             inline_keyboard: []
@@ -490,7 +489,8 @@ function getPersistentMenuKeyboard() {
     }
     
     keyboardRows.push([{ text: `🤝 ${names.agency_request}` }, { text: `📖 ${names.tutorial}` }]);
-    keyboardRows.push([{ text: '🔄 بازگشت به منوی اصلی' }]);
+    // اضافه شدن دکمه خروج و بستن کیبورد
+    keyboardRows.push([{ text: '❌ خروج از صفحه ربات' }, { text: '🔄 بازگشت به منوی اصلی' }]);
 
     return {
         reply_markup: {
@@ -503,7 +503,6 @@ function getPersistentMenuKeyboard() {
 }
 
 async function sendMainMenu(chatId) {
-    // ارسال پیام منو همراه با کیبورد ثابت پایین صفحه
     await bot.sendMessage(chatId, db.botTexts.start_message, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() });
 }
 
@@ -634,7 +633,6 @@ function sendAdminPanel(chatId) {
     });
 }
 
-// تابع کمکی برای نمایش لیست اشتراک‌ها با قابلیت صفحه‌بندی
 async function sendUserSubscriptionsPage(chatId, messageId, userId, page = 0, callbackQueryId = null) {
     const userSubs = db.userSubscriptions[userId] || [];
     
@@ -1974,6 +1972,15 @@ bot.on('message', async (msg) => {
         delete db.userStates[chatId];
         saveDatabase();
         sendMainMenu(chatId);
+        return;
+    } else if (text === '❌ خروج از صفحه ربات') {
+        delete db.userStates[chatId];
+        saveDatabase();
+        bot.sendMessage(chatId, '👋 کیبورد ربات بسته شد. برای بازگشت و استفاده مجدد، کافیست دستور /start را ارسال کنید.', {
+            reply_markup: {
+                remove_keyboard: true
+            }
+        });
         return;
     }
 
