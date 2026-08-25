@@ -496,7 +496,8 @@ function getPersistentMenuKeyboard() {
         reply_markup: {
             keyboard: keyboardRows,
             resize_keyboard: true,
-            is_persistent: true
+            is_persistent: true,
+            remove_keyboard: false
         }
     };
 }
@@ -520,7 +521,8 @@ async function handleForceJoin(msg) {
                 inline_keyboard: [
                     [{ text: '📢 عضویت در کانال ربات 🔔', url: `https://t.me/${db.CHANNEL_USERNAME.replace('@', '')}` }],
                     [{ text: '✅ عضو شدم، بررسی کن 🔍', callback_data: 'check_membership' }]
-                ]
+                ],
+                remove_keyboard: true
             }
         };
         bot.sendMessage(chatId, `⚠️ **توجه!**\nبرای استفاده از امکانات ربات، لطفا ابتدا در کانال ما عضو شوید:\n\n📢 ${db.CHANNEL_USERNAME}\n\nسپس روی دکمه‌ی بررسی کلیک کنید 👇`, { parse_mode: 'Markdown', ...joinKeyboard });
@@ -557,7 +559,8 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
             reply_markup: {
                 keyboard: [[{ text: '💻 پنل مدیریت' }], ...getPersistentMenuKeyboard().reply_markup.keyboard],
                 resize_keyboard: true,
-                is_persistent: true
+                is_persistent: true,
+                remove_keyboard: false
             }
         };
         bot.sendMessage(chatId, '👑 **مدیر گرامی، دسترسی‌های پیشرفته پنل برای شما فعال شد.** 🛡', adminReplyKeyboard);
