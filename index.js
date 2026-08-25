@@ -622,14 +622,16 @@ function sendAdminPanel(chatId) {
 }
 
 // تابع کمکی برای نمایش لیست اشتراک‌ها با قابلیت صفحه‌بندی
-async function sendUserSubscriptionsPage(chatId, messageId, userId, page = 0) {
+async function sendUserSubscriptionsPage(chatId, messageId, userId, page = 0, callbackQueryId = null) {
     const userSubs = db.userSubscriptions[userId] || [];
     
     if (userSubs.length === 0) {
-        await bot.answerCallbackQuery(callbackQuery.id, {
-            text: '❌ شما در حال حاضر هیچ اشتراک فعالی ندارید.',
-            show_alert: true
-        });
+        if (callbackQueryId) {
+            await bot.answerCallbackQuery(callbackQueryId, {
+                text: '❌ شما در حال حاضر هیچ اشتراک فعالی ندارید.',
+                show_alert: true
+            }).catch(() => {});
+        }
         return;
     }
 
@@ -735,15 +737,13 @@ bot.on('callback_query', async (callbackQuery) => {
     } catch (e) {}
 
     if (data === 'my_subscriptions') {
-        await sendUserSubscriptionsPage(chatId, msg.message_id, userId, 0);
-        await bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
+        await sendUserSubscriptionsPage(chatId, msg.message_id, userId, 0, callbackQuery.id);
         return;
     }
 
     if (data.startsWith('sub_page_')) {
         const targetPage = parseInt(data.replace('sub_page_', ''), 10);
-        await sendUserSubscriptionsPage(chatId, msg.message_id, userId, targetPage);
-        await bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
+        await sendUserSubscriptionsPage(chatId, msg.message_id, userId, targetPage, callbackQuery.id);
         return;
     }
 
