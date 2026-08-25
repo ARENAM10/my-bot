@@ -17,7 +17,7 @@ const ADMIN_WEB_PASSWORD = 'admin_secure_password';
 const CHANNEL_LOG_ID = '-1004488082323';
 
 const userCooldowns = new Map();
-const COOLDOWN_TIME = 2000; // افزایش زمان کولد داون برای جلوگیری از کلیک‌های پشت سر هم و سریع
+const COOLDOWN_TIME = 2000; 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -76,16 +76,16 @@ const defaultDatabaseStructure = {
         support: '📞 پشتیبانی آنلاین'
     },
     botTexts: {
-        start_message: '🌟 **به سامانه هوشمند و پرسرعت کانفیگ آرنا خوش آمدید!** 🚀\n\n⚡️ بالاترین سرعت و پایداری را با ما تجربه کنید.\n💎 از منوی زیر برای شروع پرواز در اینترنت آزاد استفاده کنید 👇\n\n🛡 **CONFIG ARENA | امن، پایدار، بدون محدودیت** ✨',
-        tutorial_message: '📖 **راهنمای سریع اتصال به سرورها:** 💡\n\n1️⃣ اپلیکیشن V2Ray (مثل v2rayNG در اندروید یا FoXray در آیفون) را نصب کنید.\n2️⃣ لینک اشتراک اختصاصی خود را از بخش «اشتراک‌های من» کپی کنید.\n3️⃣ برنامه را باز کرده، روی علامت + بزنید و لینک را اضافه کنید.\n4️⃣ روی دکمه اتصال ضربه بزنید و از اینترنت پرسرعت لذت ببرید! 🚀',
-        support_prompt: '📞 سوال یا مشکلی دارید؟ پیام خود را ارسال کنید تا کارشناسان ما در سریع‌ترین زمان پاسخ دهند: 👇',
-        support_success: '🎯 **پیام شما با موفقیت ثبت شد.** تیم پشتیبانی به‌زودی آن را بررسی خواهد کرد. 🙏✨',
-        store_title: '🛒 **فروشگاه اشتراک‌های پرسرعت و اختصاصی** 🚀\n\nلطفاً پلن مورد نظر خود را انتخاب کنید: 👇',
+        start_message: '✨🎛 **به سامانه هوشمند و فوق‌العاده آرنا خوش آمدید!** 🚀\n\n🌐 بالاترین سرعت، کمترین پینگ و پایداری ۱۰۰٪ را با سرورهای قدرتمند ما تجربه کنید.\n💎 از کلیدهای شیک زیر برای شروع پرواز در اینترنت آزاد استفاده کنید 👇\n\n🔥 **ARENA VIP | امن، پایدار، بدون محدودیت** 🛡',
+        tutorial_message: '📖 **راهنمای سریع و آسان اتصال به سرورها:** 💡\n\n1️⃣ اپلیکیشن اختصاصی V2Ray (مثل `v2rayNG` در اندروید یا `FoXray` در آیفون) را نصب کنید.\n2️⃣ لینک اشتراک اختصاصی خود را از بخش «اشتراک‌های من» کپی کنید.\n3️⃣ برنامه را باز کرده، روی علامت `+` بزنید و گزینه ورود از کلیپ‌بورد را انتخاب کنید.\n4️⃣ روی دکمه اتصال ⚡️ ضربه بزنید و از اینترنت پرسرعت لذت ببرید! 🚀',
+        support_prompt: '📞 سوال، پیشنهاد یا مشکلی دارید؟ پیام خود را ارسال کنید تا کارشناسان ما در سریع‌ترین زمان ممکن پاسخگوی شما باشند: 👇',
+        support_success: '🎯 **پیام شما با موفقیت به واحد پشتیبانی ارسال شد.** تیم ما به‌زودی آن را بررسی و پاسخ خواهد داد. 🙏✨',
+        store_title: '🛒 **فروشگاه اشتراک‌های پرسرعت و اختصاصی آرنا** 🚀\n\nلطفاً پلن فوق‌العاده مورد نظر خود را انتخاب کنید: 👇',
         no_plans: '🛒 در حال حاضر پلنی در این بخش موجود نمی‌باشد. لطفاً بعداً سر بزنید. 😎',
-        wallet_title: '💳 **کیف پول حساب کاربری**\n\nموجودی فعلی: `{balance} تومان`\n\n🆔 شناسه کاربری: `{userId}`',
-        invite_title: '👥 **سیستم دعوت از دوستان و کسب درآمد** 🎁\n\nلینک اختصاصی زیر را برای دوستان خود بفرستید:\n`{inviteLink}`\n\n✨ تعداد کاربرانی که دعوت کرده‌اید: **{count} نفر**',
-        empty_subs: '📱 شما هنوز هیچ اشتراک فعالی ندارید! از طریق فروشگاه اقدام به تهیه سرویس کنید. 🛒🔥',
-        agency_prompt: '🤝 **درخواست اخذ نمایندگی رسمی VIP**\n\nرزومه یا درخواست خود را ارسال کنید تا پس از بررسی با شما تماس بگیریم:',
+        wallet_title: '💳 **مدیریت کیف پول حساب کاربری**\n\n💰 موجودی فعلی: `✨ {balance} تومان`\n\n🆔 شناسه کاربری شما: `{userId}`',
+        invite_title: '👥 **سیستم دعوت از دوستان و کسب درآمد** 🎁\n\nلینک اختصاصی زیر را برای دوستان خود بفرستید و به ازای هر دعوت پاداش بگیرید:\n`{inviteLink}`\n\n✨ تعداد کاربرانی که تا کنون دعوت کرده‌اید: **{count} نفر**',
+        empty_subs: '📱 شما هنوز هیچ اشتراک فعالی ندارید! از طریق فروشگاه جذاب ما اقدام به تهیه سرویس کنید. 🛒🔥',
+        agency_prompt: '🤝 **درخواست اخذ نمایندگی رسمی VIP آرنا**\n\nرزومه، کانال یا درخواست خود را ارسال کنید تا پس از بررسی توسط مدیریت با شما تماس بگیریم:',
         agency_success: '✅ درخواست نمایندگی شما با موفقیت ثبت شد. به‌زودی با شما ارتباط برقرار خواهیم کرد! 👑'
     },
     userWallets: {},
@@ -611,7 +611,7 @@ async function sendUserSubscriptionsPage(chatId, messageId, userId, page = 0, ca
     const endIndex = startIndex + ITEMS_PER_PAGE;
     const currentItems = userSubs.slice(startIndex, endIndex);
 
-    let responseText = `🛒 **اشتراک‌های خریداری شده شما** ⚡️\n\n` +
+    let responseText = `📱 **اشتراک‌های خریداری شده شما** ⚡️\n\n` +
                        `⚠️ برای مشاهده جزئیات و کانفیگ‌ها، روی سرویس مورد نظر کلیک کنید:\n\n` +
                        `📄 صفحه ${validPage + 1} از ${totalPages} | 📊 مجموع: ${userSubs.length} سرویس`;
 
@@ -661,7 +661,6 @@ bot.on('callback_query', async (callbackQuery) => {
     const userId = callbackQuery.from.id.toString();
     const currentTime = Date.now();
 
-    // مدیریت دقیق‌تر کلیک‌های پشت سر هم (جلوگیری از اسپم دکمه‌ها)
     if (userCooldowns.has(userId)) {
         const lastClickTime = userCooldowns.get(userId);
         if (currentTime - lastClickTime < COOLDOWN_TIME) {
@@ -2249,7 +2248,7 @@ bot.on('message', async (msg) => {
         }
         const freeLink = db.freeSubConfig;
         const parsedData = await fetchAndParseConfig(freeLink);
-        let freeMsg = `🎁 **اشتراک هدیه شما:**\n\n🔗 لینک:\n\`${freeLink}\``;
+        let freeMsg = `🎁 **اشتراک هدیه ویژه شما:**\n\n🔗 لینک:\n\`${freeLink}\``;
         if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
             freeMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
         }
@@ -2262,7 +2261,7 @@ bot.on('message', async (msg) => {
         }
         const testLink = db.testServerConfig;
         const parsedData = await fetchAndParseConfig(testLink);
-        let testMsg = `🧪 **سرور تست پرسرعت:**\n\n🔗 لینک:\n\`${testLink}\``;
+        let testMsg = `🧪 **سرور تست پرسرعت آرنا:**\n\n🔗 لینک:\n\`${testLink}\``;
         if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
             testMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
         }
