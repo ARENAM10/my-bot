@@ -450,7 +450,7 @@ function getMainKeyboard() {
                     ...(db.isInviteSystemEnabled ? [{ text: names.invite, callback_data: 'invite' }] : [])
                 ],
                 [
-                    { text: names.my_subs, callback_data: 'my_subs' },
+                    { text: names.my_subs, callback_data: 'my_subscriptions' },
                     { text: names.agency_request, callback_data: 'agency_request' }
                 ],
                 [
@@ -599,7 +599,7 @@ bot.on('callback_query', async (callbackQuery) => {
     const msg = callbackQuery.message;
     const data = callbackQuery.data;
     const chatId = msg.chat.id;
-    const userId = callbackQuery.from.id;
+    const userId = callbackQuery.from.id.toString();
     const currentTime = Date.now();
 
     if (userCooldowns.has(userId)) {
@@ -634,6 +634,54 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // هندلر دکمه "اشتراک‌های من"
+    if (data === 'my_subscriptions') {
+        if (!db.userSubscriptions || !db.userSubscriptions[userId] || db.userSubscriptions[userId].length === 0) {
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: '❌ شما در حال حاضر هیچ اشتراک فعالی ندارید.',
+                show_alert: true
+            });
+            return;
+        }
+
+        const userSubs = db.userSubscriptions[userId];
+        let responseText = "📋 **اشتراک‌های فعال شما:**\n\n";
+
+        userSubs.forEach((sub, index) => {
+            responseText += `🔹 **اشتراک شماره ${index + 1}**\n`;
+            responseText += `📦 پلن: ${sub.planName || 'نامشخص'}\n`;
+            responseText += `⏳ تاریخ انقضا: ${sub.expiryDate || 'نامشخص'}\n`;
+            responseText += `🔗 **لینک اتصال (کانفیگ):**\n\`${sub.configLink}\`\n\n`;
+            responseText += `----------------------------------------\n`;
+        });
+
+        try {
+            await bot.editMessageText(responseText, {
+                chat_id: chatId,
+                message_id: msg.message_id,
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🔄 به‌روزرسانی لیست', callback_data: 'my_subscriptions' }],
+                        [{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]
+                    ]
+                }
+            });
+        } catch (error) {
+            await bot.sendMessage(chatId, responseText, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]
+                    ]
+                }
+            });
+        }
+
+        await bot.answerCallbackQuery(callbackQuery.id);
+        return;
+    }
 
     if (data === 'adm_add_sub_by_identifier') {
         if (!isAdmin(callbackQuery)) return;
@@ -1637,26 +1685,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data === 'my_subs') {
-        const subs = db.userSubscriptions[userId];
-        if (subs && Array.isArray(subs) && subs.length > 0) {
-            let inlineBtns = [];
-            subs.forEach((sub, idx) => {
-                let shortTitle = sub.planName || `اشتراک شماره ${idx + 1}`;
-                inlineBtns.push([{ text: `💎 ${shortTitle} (انقضا: ${sub.expiryDate})`, callback_data: `view_sub_${idx}` }]);
-            });
-            inlineBtns.push([{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]);
-
-            bot.sendMessage(chatId, `💎 **لیست اشتراک های فعال شما:**`, {
-                parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: inlineBtns }
-            });
-        } else {
-            bot.sendMessage(chatId, db.botTexts.empty_subs);
-        }
-        return;
-    }
-
     if (data.startsWith('view_sub_')) {
         const subIndex = parseInt(data.replace('view_sub_', ''), 10);
         const subs = db.userSubscriptions[userId];
@@ -1675,7 +1703,7 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, subDetailMsg, {
                 parse_mode: 'Markdown',
                 reply_markup: {
-                    inline_keyboard: [[{ text: '🔙 بازگشت به لیست اشتراک‌ها', callback_data: 'my_subs' }]]
+                    inline_keyboard: [[{ text: '🔙 بازگشت به لیست اشتراک‌ها', callback_data: 'my_subscriptions' }]]
                 }
             });
         } else {
