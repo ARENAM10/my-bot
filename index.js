@@ -176,7 +176,6 @@ function loadDatabase() {
     }
 }
 
-// قفل برای جلوگیری از تداخل در نوشتن روی دیتابیس هنگام درخواست‌های همزمان زیاد
 let isSaving = false;
 function saveDatabase() {
     if (isSaving) return;
@@ -577,6 +576,10 @@ function sendAdminPanel(chatId) {
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
+                // 👇 اضافه شدن دکمه پنل ادمین (وب) در بالای منو
+                [
+                    { text: '🌐 ورود به پنل ادمین (وب)', url: `http://localhost:${PORT}/admin` }
+                ],
                 [
                     { text: '⚙️ مدیریت پلن‌ها', callback_data: 'admin_manage_plans' },
                     { text: '✏️ تغییر نام دکمه‌ها', callback_data: 'admin_edit_names_menu' }
