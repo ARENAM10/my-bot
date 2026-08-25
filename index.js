@@ -460,6 +460,9 @@ async function fetchAndParseConfig(url) {
     return resultInfo;
 }
 
+// ----------------------------------------------------
+// توابع مدیریت کیبوردها (شیشه‌ای و ثابت پایین صفحه)
+// ----------------------------------------------------
 function getMainKeyboard() {
     const names = db.menuNames;
     return {
@@ -492,7 +495,24 @@ function getMainKeyboard() {
     };
 }
 
+function getPersistentMenuKeyboard() {
+    const names = db.menuNames;
+    return {
+        reply_markup: {
+            keyboard: [
+                [{ text: `🛒 ${names.buy_sub}` }, { text: `💰 ${names.wallet}` }],
+                [{ text: `📱 ${names.my_subs}` }, { text: `📞 ${names.support}` }],
+                [{ text: `🎁 ${names.free_sub}` }, { text: `🧪 ${names.test_server}` }]
+            ],
+            resize_keyboard: true,
+            is_persistent: true
+        }
+    };
+}
+
 async function sendMainMenu(chatId) {
+    // ارسال پیام منو همراه با کیبورد شیشه‌ای و فعال‌سازی کیبورد ثابت پایین صفحه
+    await bot.sendMessage(chatId, '🏠 منوی اصلی ربات:', getPersistentMenuKeyboard());
     bot.sendMessage(chatId, db.botTexts.start_message, { parse_mode: 'Markdown', ...getMainKeyboard() });
 }
 
@@ -545,7 +565,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     if (isAdmin(msg)) {
         const adminReplyKeyboard = {
             reply_markup: {
-                keyboard: [[{ text: '💻 پنل مدیریت' }]],
+                keyboard: [[{ text: '💻 پنل مدیریت' }], ...getPersistentMenuKeyboard().reply_markup.keyboard],
                 resize_keyboard: true,
                 is_persistent: true
             }
@@ -1856,6 +1876,82 @@ bot.on('message', async (msg) => {
     if (!text) return; 
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
+
+    // ----------------------------------------------------
+    // هندل کردن کلیک روی دکمه‌های ثابت پایین صفحه (Reply Keyboard)
+    // ----------------------------------------------------
+    const names = db.menuNames;
+    if (text === names.buy_sub || text.includes('خرید اشتراک')) {
+        const availablePlans = db.customPlans.filter(p => p.links && p.links.length > 0);
+        if (availablePlans.length === 0) {
+            bot.sendMessage(chatId, db.botTexts.no_plans);
+            return;
+        }
+
+        let planText = db.botTexts.store_title;
+        const planButtons = availablePlans.map(p => [
+            { text: `🌐 ${p.name} - ${p.volume} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
+        ]);
+        planButtons.push([{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]);
+
+        bot.sendMessage(chatId, planText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: planButtons } });
+        return;
+    } else if (text === names.wallet || text.includes('کیف پول')) {
+        const balance = db.userWallets[userId] || 0;
+        const walletKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '➕ شارژ کیف پول 💳', callback_data: 'wallet_deposit' }],
+                    [{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]
+                ]
+            }
+        };
+        const customWalletText = (db.botTexts.wallet_title || '')
+            .replace('{balance}', balance.toLocaleString())
+            .replace('{userId}', userId);
+
+        bot.sendMessage(chatId, customWalletText, { parse_mode: 'Markdown', ...walletKeyboard });
+        return;
+    } else if (text === names.my_subs || text.includes('اشتراک‌های من')) {
+        await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
+        return;
+    } else if (text === names.support || text.includes('پشتیبانی')) {
+        db.userStates[chatId] = { awaiting_support_message: true };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.support_prompt);
+        return;
+    } else if (text === names.free_sub || text.includes('اشتراک رایگان')) {
+        if (!db.isFreeSubEnabled) {
+            bot.sendMessage(chatId, '❌ بخش اشتراک رایگان غیرفعال است.');
+            return;
+        }
+        const parsedFree = await fetchAndParseConfig(db.freeSubConfig);
+        let freeMsg = `🎁 **هدیه اشتراک رایگان شما:** 🌟\n\n` +
+                      `🌐 حجم کل: \`${parsedFree.total}\`\n` +
+                      `⏳ انقضا: \`${parsedFree.expireDate}\`\n\n` +
+                      `🔗 **لینک اتصال:**\n\`${db.freeSubConfig}\``;
+                      
+        if (parsedFree.extractedConfigs && parsedFree.extractedConfigs.length > 0) {
+            freeMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${parsedFree.extractedConfigs.join('\n\n')}\n\`\`\``;
+        }
+        bot.sendMessage(chatId, freeMsg, { parse_mode: 'Markdown' });
+        return;
+    } else if (text === names.test_server || text.includes('سرور تست')) {
+        if (!db.isTestServerEnabled) {
+            bot.sendMessage(chatId, '❌ سرور تست غیرفعال است.');
+            return;
+        }
+        const parsedTest = await fetchAndParseConfig(db.testServerConfig);
+        let testMsg = `🧪 **سرور تست پرسرعت** ⚡️\n\n` +
+                      `🌐 حجم: \`${parsedTest.total}\` | ⏳ انقضا: \`${parsedTest.expireDate}\`\n\n` +
+                      `🔗 **لینک اتصال:**\n\`${db.testServerConfig}\``;
+        
+        if (parsedTest.extractedConfigs && parsedTest.extractedConfigs.length > 0) {
+            testMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${parsedTest.extractedConfigs.join('\n\n')}\n\`\`\``;
+        }
+        bot.sendMessage(chatId, testMsg, { parse_mode: 'Markdown' });
+        return;
+    }
 
     if (db.userStates[chatId] && db.userStates[chatId].step === 'get_wallet_deposit_receipt') {
         await bot.sendMessage(chatId, '⚠️ لطفاً **عکس رسید** واریز را ارسال کنید (متن پذیرفته نمی‌شود).\nاگر از پرداخت منصرف شده‌اید، دکمه‌ی بازگشت را بزنید.');
