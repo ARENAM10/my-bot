@@ -36,7 +36,6 @@ async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, 
     }
 }
 
-// مدیریت پایداری مسیر دیتابیس روی انواع هاست‌ها
 const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) {
     try {
@@ -124,7 +123,7 @@ function loadDatabase() {
                 ...parsed,
                 menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
                 botTexts: { ...defaultDatabaseStructure.botTexts, ...(parsed.botTexts || {}) },
-                userStates: {},
+                userStates: parsed.userStates || {},
                 userWallets: parsed.userWallets || {},
                 pending_deposits: parsed.pending_deposits || {},
                 pending_card_purchases: parsed.pending_card_purchases || {},
@@ -614,7 +613,7 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // ایجاد فاکتور و انتظار عکس رسید برای شارژ کیف پول (اصلاح‌شده و پایدار)
+    // ایجاد فاکتور و انتظار عکس رسید برای شارژ کیف پول
     if (data.startsWith('user_dep_')) {
         const amount = parseInt(data.replace('user_dep_', ''), 10);
         
@@ -1593,6 +1592,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
+// هندلر پیام‌های متنی (نسخه اصلاح‌شده برای جلوگیری از پاک شدن استیتِ انتظار رسید)
 bot.on('message', async (msg) => {
     loadDatabase();
     trackUserAndNotifyAdmin(msg);
@@ -1600,7 +1600,21 @@ bot.on('message', async (msg) => {
     const userId = msg.from.id.toString();
     const text = msg.text;
 
+    if (!text) return; // اگر پیام عکس یا غیرمتنی بود، این بخش رد می‌شود
+
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
+
+    // بررسی اینکه آیا کاربر در انتظار ارسال رسید شارژ کیف پول است و متن فرستاده
+    if (db.userStates[chatId] && db.userStates[chatId].step === 'get_wallet_deposit_receipt') {
+        await bot.sendMessage(chatId, '⚠️ لطفاً **عکس رسید** واریز را ارسال کنید (متن پذیرفته نمی‌شود).\nاگر از پرداخت منصرف شده‌اید، دکمه‌ی بازگشت را بزنید.');
+        return;
+    }
+
+    // بررسی اینکه آیا کاربر در انتظار ارسال رسید کارت به کارت است و متن فرستاده
+    if (db.userStates[chatId] && db.userStates[chatId].step === 'get_card_purchase_receipt') {
+        await bot.sendMessage(chatId, '⚠️ لطفاً **عکس رسید** پرداخت کارت به کارت را ارسال نمایید.');
+        return;
+    }
 
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'get_new_discount_code') {
         const codeInput = text.trim();
