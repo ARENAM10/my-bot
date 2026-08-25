@@ -246,7 +246,6 @@ const REWARD_AMOUNT = 5000;
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// وب‌سرور ساده فقط برای زنده نگه داشتن پورت روی هاست (مثل Render یا Replit)
 app.get('/', (req, res) => {
     res.send('Bot is running successfully!');
 });
@@ -483,16 +482,21 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
         }
     }
 
+    // اختصاص پنل کاملا انحصاری برای ادمین بدون دکمه‌های مشتریان
     if (isAdmin(msg)) {
         const adminReplyKeyboard = {
             reply_markup: {
-                keyboard: [[{ text: '💻 پنل مدیریت' }], ...getPersistentMenuKeyboard().reply_markup.keyboard],
+                keyboard: [
+                    [{ text: '💻 پنل مدیریت' }],
+                    [{ text: '🚪 بستن کیبورد ربات' }]
+                ],
                 resize_keyboard: true,
                 is_persistent: true,
                 remove_keyboard: false
             }
         };
-        bot.sendMessage(chatId, '👑 **دسترسی‌های پنل مدیریت برای شما فعال شد.** 🛡', adminReplyKeyboard).catch(() => {});
+        bot.sendMessage(chatId, '👑 **دسترسی‌های پنل مدیریت برای شما فعال شد.**\nبرای دسترسی به پنل از دکمه زیر یا دستور `/panel` استفاده کنید. 🛡', adminReplyKeyboard).catch(() => {});
+        return;
     }
 
     sendMainMenu(chatId);
@@ -681,7 +685,6 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // ── بخش مدیریت مسدودسازی کاربران ──
     if (data === 'admin_block_menu') {
         if (!isAdmin(callbackQuery)) return;
         const blockKeyboard = {
@@ -1235,7 +1238,17 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'restart_bot') {
         delete db.userStates[chatId];
         saveDatabase();
-        sendMainMenu(chatId);
+        if (isAdmin(callbackQuery)) {
+            bot.sendMessage(chatId, '👑 پنل مدیریت ربات:', {
+                reply_markup: {
+                    keyboard: [[{ text: '💻 پنل مدیریت' }], [{ text: '🚪 بستن کیبورد ربات' }]],
+                    resize_keyboard: true,
+                    is_persistent: true
+                }
+            });
+        } else {
+            sendMainMenu(chatId);
+        }
         return;
     }
 
@@ -2168,7 +2181,7 @@ bot.on('message', async (msg) => {
                 try {
                     await bot.sendMessage(uId, broadcastText, { parse_mode: 'Markdown' });
                     successCount++;
-                    await sleep(35); // تأخیر اندک بین پیام‌ها برای جلوگیری از فلود (Flood Wait) تلگرام
+                    await sleep(35);
                 } catch (e) {}
             }
             bot.sendMessage(chatId, `✅ پیام همگانی به \`${successCount}\` کاربر ارسال شد.`).catch(() => {});
@@ -2282,6 +2295,11 @@ bot.on('message', async (msg) => {
             bot.sendMessage(ADMIN_CHAT_ID, `🤝 **درخواست نمایندگی VIP جدید:**\n\n👤 کاربر: ${msg.from.first_name} (\`${userId}\`)\n\n💬 **متن درخواست:**\n${text}`, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
+    }
+
+    // اگر ادمین پیام متنی بفرستد و قصد استفاده از منوی مشتریان را داشته باشد، مسدود می‌شود یا نادیده گرفته می‌شود
+    if (isAdmin(msg)) {
+        return; 
     }
 
     if (text.includes(names.buy_sub)) {
