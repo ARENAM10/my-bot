@@ -36,6 +36,22 @@ async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, 
     }
 }
 
+// تابع جدید برای ارسال رسید شارژ کیف پول به کانال
+async function sendDepositReceiptToChannel(userId, amount, receiptPhotoPath, channelId) {
+    try {
+        let caption = `💳 **افزایش موجودی کیف پول!**\n\n` +
+                      `👤 شناسه کاربر: ${userId}\n` +
+                      `💵 مبلغ واریزی: \`${amount.toLocaleString()} تومان\``;
+
+        await bot.sendPhoto(channelId, receiptPhotoPath, {
+            caption: caption,
+            parse_mode: 'Markdown'
+        });
+    } catch (error) {
+        console.log("خطا در ارسال رسید شارژ کیف پول به کانال:", error);
+    }
+}
+
 const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) {
     try {
@@ -1965,6 +1981,9 @@ bot.on('photo', async (msg) => {
         saveDatabase();
 
         bot.sendMessage(chatId, '✅ رسید شارژ کیف پول دریافت شد. پس از تایید مدیریت، موجودی شما شارژ خواهد شد. ⏳');
+
+        // ارسال عکس رسید شارژ کیف پول به کانال لاگ
+        await sendDepositReceiptToChannel(userId, amount, photoId, CHANNEL_LOG_ID);
 
         const adminDepositKeyboard = {
             reply_markup: {
