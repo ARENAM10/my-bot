@@ -614,7 +614,7 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // ایجاد فاکتور و انتظار عکس رسید برای شارژ کیف پول
+    // ایجاد فاکتور و انتظار عکس رسید برای شارژ کیف پول (اصلاح‌شده و پایدار)
     if (data.startsWith('user_dep_')) {
         const amount = parseInt(data.replace('user_dep_', ''), 10);
         
@@ -628,20 +628,17 @@ bot.on('callback_query', async (callbackQuery) => {
                            `💵 مبلغ انتخابی: \`${amount.toLocaleString()} تومان\`\n\n` +
                            `به شماره کارت زیر واریز کرده و **عکس رسید** را همینجا بفرستید: 👇\n\`${db.paymentCardNumber}\``;
         
-        await bot.editMessageText(depositMsg, {
-            chat_id: chatId,
-            message_id: msg.message_id,
+        await bot.sendMessage(chatId, depositMsg, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '🔙 بازگشت', callback_data: 'wallet_deposit' }]
+                    [{ text: '🔙 بازگشت به کیف پول', callback_data: 'wallet' }]
                 ]
             }
         });
         return;
     }
 
-    // 🎟 بخش مدیریت کدهای تخفیف در ادمین
     if (data === 'admin_discount_menu') {
         if (!isAdmin(callbackQuery)) return;
         const codesList = Object.keys(db.discountCodes);
@@ -695,7 +692,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // بستن تیکت پشتیبانی توسط ادمین
     if (data.startsWith('close_ticket_')) {
         if (!isAdmin(callbackQuery)) return;
         const targetUser = data.replace('close_ticket_', '');
@@ -1320,9 +1316,7 @@ bot.on('callback_query', async (callbackQuery) => {
         delete db.userStates[chatId];
         saveDatabase();
         
-        await bot.editMessageText('💳 **افزایش موجودی کیف پول**\n\nلطفاً یکی از مبالغ زیر را برای شارژ حساب انتخاب کنید: 👇', {
-            chat_id: chatId,
-            message_id: msg.message_id,
+        bot.sendMessage(chatId, '💳 **افزایش موجودی کیف پول**\n\nلطفاً یکی از مبالغ زیر را برای شارژ حساب انتخاب کنید: 👇', {
             parse_mode: 'Markdown',
             reply_markup: depositAmountsKeyboard.reply_markup
         });
