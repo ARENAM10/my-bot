@@ -36,7 +36,16 @@ async function sendSubscriptionAndReceiptToChannel(userId, subscriptionDetails, 
     }
 }
 
-const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : __dirname;
+// مدیریت پایداری مسیر دیتابیس روی انواع هاست‌ها
+const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) {
+    try {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+    } catch (e) {
+        console.log('خطا در ایجاد پوشه داده‌ها:', e);
+    }
+}
+
 const DB_FILE = path.join(DATA_DIR, 'database.json');
 const PURCHASES_LOG_FILE = path.join(DATA_DIR, 'purchases_log.txt');
 
@@ -97,8 +106,8 @@ const defaultDatabaseStructure = {
             links: ['https://example.com/sub/2-1'] 
         }
     ],
-    discountCodes: {}, // ساختار ذخیره کدهای تخفیف { codeName: { percent: 20, maxDiscount: 50000 } }
-    appliedDiscounts: {}, // نگهداری تخفیف‌های موقت فعال برای کاربران هنگام خرید
+    discountCodes: {}, 
+    appliedDiscounts: {}, 
     paymentCardNumber: '6037-9971-xxxx-xxxx',
     messagesMap: {}
 };
@@ -122,7 +131,7 @@ function loadDatabase() {
                 allUsers: parsed.allUsers || [],
                 usersDetailMap: parsed.usersDetailMap || {},
                 receiptsHistory: parsed.receiptsHistory || [],
-                referals: parsed.referals || [],
+                referals: parsed.referals || {},
                 userSubscriptions: parsed.userSubscriptions || {},
                 allSubscriptionsHistory: parsed.allSubscriptionsHistory || [],
                 customPlans: parsed.customPlans || defaultDatabaseStructure.customPlans,
@@ -370,7 +379,7 @@ async function fetchAndParseConfig(url) {
                         const numVal = parseInt(val, 10);
                         const formatBytes = (bytes) => {
                             if (isNaN(bytes)) return val;
-                            if (bytes === 0) return '0 باایت';
+                            if (bytes === 0) return '0 بایت';
                             const k = 1024, dm = 2;
                             const sizes = ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت', 'ترابایت'];
                             const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -604,6 +613,33 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // ایجاد فاکتور و انتظار عکس رسید برای شارژ کیف پول
+    if (data.startsWith('user_dep_')) {
+        const amount = parseInt(data.replace('user_dep_', ''), 10);
+        
+        db.userStates[chatId] = { 
+            step: 'get_wallet_deposit_receipt', 
+            depositAmount: amount 
+        };
+        saveDatabase();
+
+        const depositMsg = `💳 **فاکتور شارژ کیف پول**\n\n` +
+                           `💵 مبلغ انتخابی: \`${amount.toLocaleString()} تومان\`\n\n` +
+                           `به شماره کارت زیر واریز کرده و **عکس رسید** را همینجا بفرستید: 👇\n\`${db.paymentCardNumber}\``;
+        
+        await bot.editMessageText(depositMsg, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🔙 بازگشت', callback_data: 'wallet_deposit' }]
+                ]
+            }
+        });
+        return;
+    }
 
     // 🎟 بخش مدیریت کدهای تخفیف در ادمین
     if (data === 'admin_discount_menu') {
@@ -1293,28 +1329,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data.startsWith('user_dep_')) {
-        const amount = parseInt(data.replace('user_dep_', ''), 10);
-        db.userStates[chatId] = { step: 'get_wallet_deposit_receipt', depositAmount: amount };
-        saveDatabase();
-
-        const depositMsg = `💳 **فاکتور شارژ کیف پول**\n\n` +
-                           `💵 مبلغ انتخابی: \`${amount.toLocaleString()} تومان\`\n\n` +
-                           `به شماره کارت زیر واریز کرده و **عکس رسید** را همینجا بفرستید: 👇\n\`${db.paymentCardNumber}\``;
-        
-        await bot.editMessageText(depositMsg, {
-            chat_id: chatId,
-            message_id: msg.message_id,
-            parse_mode: 'Markdown',
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '🔙 بازگشت', callback_data: 'wallet_deposit' }]
-                ]
-            }
-        });
-        return;
-    }
-
     if (data === 'buy_sub') {
         const availablePlans = db.customPlans.filter(p => p.links && p.links.length > 0);
         if (availablePlans.length === 0) {
@@ -1343,7 +1357,6 @@ bot.on('callback_query', async (callbackQuery) => {
 
         let priceNumber = parsePrice(selectedPlan.price);
         
-        // اعمال تخفیف در صورت وجود کد تخفیف فعال برای کاربر
         let discountInfoText = '';
         if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
             const disc = db.appliedDiscounts[userId];
@@ -1595,7 +1608,6 @@ bot.on('message', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
 
-    // دریافت کد تخفیف جدید از ادمین
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'get_new_discount_code') {
         const codeInput = text.trim();
         db.userStates[chatId] = { step: 'get_new_discount_percent', codeInput };
@@ -1618,7 +1630,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // بررسی کد تخفیف توسط کاربر در خرید
     if (db.userStates[chatId] && db.userStates[chatId].step === 'get_user_discount_input') {
         const planId = db.userStates[chatId].planId;
         const enteredCode = text.trim();
@@ -1630,12 +1641,6 @@ bot.on('message', async (msg) => {
             db.appliedDiscounts[userId] = db.discountCodes[enteredCode];
             saveDatabase();
             bot.sendMessage(chatId, `✅ کد تخفیف با موفقیت اعمال شد! 🎉\nاکنون برای خرید مجدد روی پلن مورد نظر بزنید.`);
-            const plan = db.customPlans.find(p => p.id === planId);
-            if (plan) {
-                // بازگشت به فاکتور خرید با اعمال تخفیف
-                const fakeCallback = { message: { chat: { id: chatId }, message_id: msg.message_id }, data: `buy_custom_${planId}`, from: msg.from };
-                // شبیه‌سازی نمایش فاکتور جدید
-            }
         } else {
             bot.sendMessage(chatId, '❌ کد تخفیف وارد شده نامعتبر یا منقضی شده است.');
         }
@@ -1914,6 +1919,7 @@ bot.on('message', async (msg) => {
     }
 });
 
+// مدیریت متمرکز ارسال عکس‌های رسید تراکنش‌ها
 bot.on('photo', async (msg) => {
     loadDatabase();
     trackUserAndNotifyAdmin(msg);
@@ -1926,13 +1932,20 @@ bot.on('photo', async (msg) => {
     const currentState = db.userStates[chatId] || {};
 
     if (currentState.step === 'get_wallet_deposit_receipt') {
-        const amount = currentState.depositAmount;
+        const amount = currentState.depositAmount || 0;
+        
+        if (!amount) {
+            bot.sendMessage(chatId, '⚠️ مبلغ شارژ مشخص نیست. لطفاً مجدداً از منوی کیف پول مبلغ را انتخاب کنید.');
+            delete db.userStates[chatId];
+            saveDatabase();
+            return;
+        }
+
         delete db.userStates[chatId];
         saveDatabase();
 
         db.pending_deposits[`deposit_${userId}`] = { amount };
-        bot.sendMessage(chatId, '✅ رسید شارژ کیف پول دریافت شد. پس از تایید مدیریت، موجودی شما شارژ خواهد شد. ⏳');
-
+        
         db.receiptsHistory.push({
             type: 'شارژ کیف پول',
             userId: userId,
@@ -1942,6 +1955,8 @@ bot.on('photo', async (msg) => {
             date: currentDateStr
         });
         saveDatabase();
+
+        bot.sendMessage(chatId, '✅ رسید شارژ کیف پول دریافت شد. پس از تایید مدیریت، موجودی شما شارژ خواهد شد. ⏳');
 
         const adminDepositKeyboard = {
             reply_markup: {
