@@ -66,8 +66,8 @@ const defaultDatabaseStructure = {
         support_success: '✅ پیام شما با موفقیت به پشتیبانی ارسال شد. به زودی پاسخ می‌دهیم! 🙏',
         store_title: '🛒 **فروشگاه اشتراک‌های پرسرعت و اختصاصی** 🚀\n\nلطفاً پلن مورد نظر خود را انتخاب کنید: 👇',
         no_plans: '🛒 در حال حاضر هیچ پلن فعالی موجود نیست. به زودی برمی‌گردیم! 🙏',
-        wallet_title: '💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: \`{balance} تومان\`\n\n🆔 شناسه کاربری شما: \`{userId}\`',
-        invite_title: '👥 **سیستم دعوت از دوستان** 🎁\n\nبا ارسال لینک زیر به دوستانتان پاداش بگیرید:\n\`{inviteLink}\`\n\n✨ تعداد زیرمجموعه‌های شما: **{count} نفر**',
+        wallet_title: '💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: `{balance} تومان`\n\n🆔 شناسه کاربری شما: `{userId}`',
+        invite_title: '👥 **سیستم دعوت از دوستان** 🎁\n\nبا ارسال لینک زیر به دوستانتان پاداش بگیرید:\n`{inviteLink}`\n\n✨ تعداد زیرمجموعه‌های شما: **{count} نفر**',
         empty_subs: '📱 شما هنوز اشتراک فعالی ندارید. از فروشگاه تهیه کنید! 🛒'
     },
     userWallets: {},
@@ -1778,13 +1778,14 @@ bot.on('photo', async (msg) => {
 
     const currentState = db.userStates[chatId] || {};
 
+    // 1. اگر کاربر در حال شارژ کیف پول باشد
     if (currentState.step === 'get_wallet_deposit_receipt') {
         const amount = currentState.depositAmount;
         delete db.userStates[chatId];
         saveDatabase();
 
         db.pending_deposits[`deposit_${userId}`] = { amount };
-        bot.sendMessage(chatId, '✅ رسید دریافت شد. پس از تایید مدیریت، موجودی شما شارژ خواهد شد. ⏳');
+        bot.sendMessage(chatId, '✅ رسید شارژ کیف پول دریافت شد. پس از تایید مدیریت، موجودی شما شارژ خواهد شد. ⏳');
 
         db.receiptsHistory.push({
             type: 'شارژ کیف پول',
@@ -1815,15 +1816,23 @@ bot.on('photo', async (msg) => {
         return;
     }
 
-    const planId = currentState.planId || currentState.targetPlanId || (db.customPlans.length > 0 ? db.customPlans[0].id : null);
-    const plan = db.customPlans.find(p => p.id === planId) || db.customPlans[0];
+    // 2. اگر کاربر در حال خرید مستقیم پلن به صورت کارت به کارت باشد
+    if (currentState.step === 'get_card_purchase_receipt') {
+        const planId = currentState.planId;
+        const plan = db.customPlans.find(p => p.id === planId);
 
-    if (plan && (currentState.step === 'get_card_purchase_receipt' || planId)) {
+        if (!plan) {
+            bot.sendMessage(chatId, '❌ پلن مورد نظر یافت نشد. لطفاً دوباره تلاش کنید.');
+            delete db.userStates[chatId];
+            saveDatabase();
+            return;
+        }
+
         delete db.userStates[chatId];
         db.pending_card_purchases[`card_pur_${userId}`] = { planId: plan.id };
         saveDatabase();
         
-        bot.sendMessage(chatId, '✅ رسید خرید دریافت شد. پس از بررسی ادمین، لینک اشتراک ارسال می‌شود. ⏳');
+        bot.sendMessage(chatId, '✅ رسید خرید اشتراک دریافت شد. پس از بررسی ادمین، لینک اشتراک ارسال می‌شود. ⏳');
 
         db.receiptsHistory.push({
             type: 'خرید کارت به کارت',
@@ -1858,6 +1867,8 @@ bot.on('photo', async (msg) => {
 
     if (chatId === ADMIN_CHAT_ID) {
         bot.sendMessage(chatId, 'ℹ️ این عکس به عنوان رسید شناخته نشد.');
+    } else {
+        bot.sendMessage(chatId, '⚠️ شما در حال انجام تراکنش فعالی نیستید. ابتدا از منو گزینه موردنظر (شارژ کیف پول یا خرید اشتراک) را انتخاب کنید.');
     }
 });
 
