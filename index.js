@@ -3,6 +3,52 @@ const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
+
+// --- 🛡️ راه‌اندازی و اتصال پایگاه داده SQLite برای بخش نمایندگان ---
+const DB_PATH = path.join(__dirname, 'bot_database.db');
+const dbSqlite = new sqlite3.Database(DB_PATH, (err) => {
+    if (err) {
+        console.error('❌ خطا در اتصال به دیتابیس SQLite:', err.message);
+    } else {
+        console.log('✅ پایگاه داده SQLite با موفقیت متصل شد.');
+    }
+});
+
+// ایجاد جدول کاربران با ستون‌های نمایندگی و درصد تخفیف
+dbSqlite.run(`
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        balance INTEGER DEFAULT 0,
+        is_agent INTEGER DEFAULT 0,
+        discount_percent INTEGER DEFAULT 0
+    )
+`);
+
+// تابع کمکی برای ثبت نام یا به‌روزرسانی کاربر در دیتابیس SQLite
+function upsertSqliteUser(userId, username) {
+    dbSqlite.run(
+        `INSERT INTO users (user_id, username) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET username = ?`,
+        [userId, username, username]
+    );
+}
+
+// تابع محاسبه قیمت برای کاربر (با احتساب تخفیف نمایندگی)
+function calculatePriceForUser(userId, basePrice) {
+    return new Promise((resolve) => {
+        dbSqlite.get("SELECT is_agent, discount_percent FROM users WHERE user_id = ?", [userId], (err, row) => {
+            if (err || !row) {
+                return resolve(basePrice);
+            }
+            if (row.is_agent === 1) {
+                const discountedPrice = basePrice - (basePrice * row.discount_percent / 100);
+                return resolve(Math.round(discountedPrice));
+            }
+            return resolve(basePrice);
+        });
+    });
+}
 
 // --- 🛡️ مدیریت خطاهای گلوبال برای جلوگیری از کرش کردن ربات در ترافیک بالا ---
 process.on('uncaughtException', (err) => {
@@ -17,7 +63,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
-// استفاده از polling با تنظیمات بهینه برای جلوگیری از تداخل درخواست‌ها
 const bot = new TelegramBot(TOKEN, { 
     polling: {
         interval: 300,
@@ -30,11 +75,10 @@ const bot = new TelegramBot(TOKEN, {
 
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
-
 const CHANNEL_LOG_ID = '-1004488082323';
 
 const userCooldowns = new Map();
-const COOLDOWN_TIME = 1500; // کاهش کمی زمان کول‌دان برای سرعت بیشتر در عین پایداری
+const COOLDOWN_TIME = 1500;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -276,6 +320,9 @@ function trackUserAndNotifyAdmin(msg) {
         const chatId = msg.chat ? msg.chat.id : userId;
         const currentPersianTime = getPersianDateTime();
 
+        // ثبت کاربر در دیتابیس SQLite جهت مدیریت نمایندگان
+        upsertSqliteUser(userId, user.username || '');
+
         let isBrandNew = false;
         if (!db.allUsers.includes(userId)) {
             db.allUsers.push(userId);
@@ -482,7 +529,6 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
         }
     }
 
-    // اختصاص پنل کاملا انحصاری برای ادمین بدون دکمه‌های مشتریان
     if (isAdmin(msg)) {
         const adminReplyKeyboard = {
             reply_markup: {
@@ -528,7 +574,7 @@ function sendAdminPanel(chatId) {
                 ],
                 [
                     { text: '⚙️ مدیریت پلن‌ها', callback_data: 'admin_manage_plans' },
-                    { text: '✏️ تغییر نام دکمه‌ها', callback_data: 'admin_edit_names_menu' }
+                    { text: '🤝 لیست نمایندگان', callback_data: 'admin_list_agents' }
                 ],
                 [
                     { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' },
@@ -666,6 +712,8 @@ bot.on('callback_query', async (callbackQuery) => {
         const username = userObj.username ? `@${userObj.username}` : 'ندارد';
         const currentPersianTime = getPersianDateTime();
         
+        upsertSqliteUser(userId, userObj.username || '');
+
         if (!db.usersDetailMap[userId]) {
             db.usersDetailMap[userId] = { name, username, joinedAt: currentPersianTime };
         } else {
@@ -684,6 +732,52 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // --- مدیریت درخواست‌ها و پنل نمایندگی ---
+    if (data === 'admin_list_agents') {
+        if (!isAdmin(callbackQuery)) return;
+        dbSqlite.all("SELECT user_id, username, discount_percent FROM users WHERE is_agent = 1", [], async (err, rows) => {
+            if (err || !rows || rows.length === 0) {
+                return bot.editMessageText("📂 در حال حاضر هیچ نماینده فعالی در ربات وجود ندارد.", { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 بازگشت', callback_data: 'admin_back_to_panel' }]] } }).catch(() => {});
+            }
+            let text = "📋 **لیست نمایندگان فعال ربات:**\n\n";
+            rows.forEach((agent, index) => {
+                const usernameStr = agent.username ? `@${agent.username}` : "بدون یوزرنیم";
+                text += `${index + 1}. ${usernameStr} (\`${agent.user_id}\`) ⟵ **${agent.discount_percent}% تخفیف**\n`;
+            });
+            await bot.editMessageText(text, {
+                chat_id: chatId,
+                message_id: msg.message_id,
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: [[{ text: '🔙 بازگشت', callback_data: 'admin_back_to_panel' }]] }
+            }).catch(() => {});
+        });
+        return;
+    }
+
+    if (data.startsWith("accept_agent_") || data.startsWith("reject_agent_")) {
+        if (!isAdmin(callbackQuery)) {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: "شما دسترسی ندارید!", show_alert: true });
+        }
+        const parts = data.split("_");
+        const targetUserId = parseInt(parts[2]);
+
+        if (data.startsWith("accept_agent_")) {
+            const discount = int(parts[3]);
+            dbSqlite.run("UPDATE users SET is_agent = 1, discount_percent = ? WHERE user_id = ?", [discount, targetUserId], async () => {
+                await bot.editMessageText(`✅ درخواست کاربر \`${targetUserId}\` با موفقیت با **${discount}% تخفیف** تایید شد.`, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(() => {});
+                try {
+                    await bot.sendMessage(targetUserId, `🎉 تبریک! درخواست نمایندگی شما تایید شد.\nاز این پس خرید شما با **${discount}% تخفیف** محاسبه می‌شود.`);
+                } catch (e) {}
+            });
+        } else if (data.startsWith("reject_agent_")) {
+            await bot.editMessageText(`❌ درخواست نمایندگی کاربر \`${targetUserId}\` رد شد.`, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(() => {});
+            try {
+                await bot.sendMessage(targetUserId, "❌ متأسفانه درخواست نمایندگی شما توسط مدیریت رد شد.");
+            } catch (e) {}
+        }
+        return;
+    }
 
     if (data === 'admin_block_menu') {
         if (!isAdmin(callbackQuery)) return;
@@ -1235,23 +1329,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data === 'restart_bot') {
-        delete db.userStates[chatId];
-        saveDatabase();
-        if (isAdmin(callbackQuery)) {
-            bot.sendMessage(chatId, '👑 پنل مدیریت ربات:', {
-                reply_markup: {
-                    keyboard: [[{ text: '💻 پنل مدیریت' }], [{ text: '🚪 بستن کیبورد ربات' }]],
-                    resize_keyboard: true,
-                    is_persistent: true
-                }
-            });
-        } else {
-            sendMainMenu(chatId);
-        }
-        return;
-    }
-
     if (data === 'admin_edit_names_menu') {
         if (!isAdmin(callbackQuery)) return;
         const names = db.menuNames;
@@ -1617,14 +1694,20 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        let priceNumber = parsePrice(selectedPlan.price);
+        let basePriceNumber = parsePrice(selectedPlan.price);
+        // محاسبه قیمت با احتساب تخفیف نمایندگی از دیتابیس SQLite
+        let priceNumber = await calculatePriceForUser(userId, basePriceNumber);
         
         let discountInfoText = '';
+        if (basePriceNumber !== priceNumber) {
+            discountInfoText = `🤝 تخفیف نمایندگی اعمال شد! (-${(basePriceNumber - priceNumber).toLocaleString()} تومان)\n`;
+        }
+
         if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
             const disc = db.appliedDiscounts[userId];
             const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
             priceNumber -= discountAmount;
-            discountInfoText = `🎟 تخفیف اعمال شده: **${disc.percent}%** (-${discountAmount.toLocaleString()} تومان)\n`;
+            discountInfoText += `🎟 تخفیف کد معرف: **${disc.percent}%** (-${discountAmount.toLocaleString()} تومان)\n`;
         }
 
         const userBalance = db.userWallets[userId] || 0;
@@ -1661,7 +1744,9 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        let priceNumber = parsePrice(plan.price);
+        let basePriceNumber = parsePrice(plan.price);
+        let priceNumber = await calculatePriceForUser(userId, basePriceNumber);
+
         if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
             const disc = db.appliedDiscounts[userId];
             const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
@@ -1755,7 +1840,9 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        let priceNumber = parsePrice(plan.price);
+        let basePriceNumber = parsePrice(plan.price);
+        let priceNumber = await calculatePriceForUser(userId, basePriceNumber);
+
         if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
             const disc = db.appliedDiscounts[userId];
             const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
@@ -1780,6 +1867,43 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
+// --- دستورات متنی و دستورات مدیریتی مربوط به نمایندگی ---
+bot.onText(/\/setagent(?: (.+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    if (!isAdmin(msg)) {
+        return bot.sendMessage(chatId, "شما دسترسی به این دستور ندارید.");
+    }
+
+    const args = match[1] ? match[1].split(' ') : [];
+    if (args.length < 2) {
+        return bot.sendMessage(chatId, 
+            "فرمت اشتباه است!\n" +
+            "استفاده صحیح:\n" +
+            "`/setagent [User_ID] [درصد_تخفیف]`\n" +
+            "مثال: `/setagent 987654321 20`\n\n" +
+            "برای لغو نمایندگی درصد را 0 بگذارید.",
+            { parse_mode: "Markdown" }
+        );
+    }
+
+    const targetUserId = parseInt(args[0], 10);
+    const discount = parseInt(args[1], 10);
+    const isAgent = discount > 0 ? 1 : 0;
+
+    dbSqlite.get("SELECT user_id FROM users WHERE user_id = ?", [targetUserId], (err, user) => {
+        if (err || !user) {
+            return bot.sendMessage(chatId, "این کاربر در دیتابیس ربات ثبت‌نام نکرده است.");
+        }
+
+        dbSqlite.run("UPDATE users SET is_agent = ?, discount_percent = ? WHERE user_id = ?", [isAgent, discount, targetUserId], () => {
+            const statusText = isAgent 
+                ? `✅ کاربر \`${targetUserId}\` با موفقیت به عنوان **نماینده** با ${discount}% تخفیف تنظیم شد.` 
+                : `❌ نمایندگی کاربر \`${targetUserId}\` لغو شد.`;
+            bot.sendMessage(chatId, statusText, { parse_mode: "Markdown" });
+        });
+    });
+});
+
 bot.on('message', async (msg) => {
     loadDatabase();
     const chatId = msg.chat.id;
@@ -1798,10 +1922,39 @@ bot.on('message', async (msg) => {
         delete db.userStates[chatId];
         saveDatabase();
         await bot.sendMessage(chatId, '👋 کیبورد ربات بسته شد. برای بازگشت مجدد دستور /start را ارسال کنید.', {
-            reply_markup: {
-                remove_keyboard: true
-            }
+            reply_markup: { remove_keyboard: true }
         }).catch(() => {});
+        return;
+    }
+
+    // بررسی دکمه درخواست نمایندگی از منو
+    const names = db.menuNames;
+    if (text.includes(names.agency_request)) {
+        const user = msg.from;
+        const keyboard = [
+            [
+                { text: "✅ تایید (۱۰٪)", callback_data: `accept_agent_${user.id}_10` },
+                { text: "✅ تایید (۲۰٪)", callback_data: `accept_agent_${user.id}_20` },
+            ],
+            [
+                { text: "❌ رد درخواست", callback_data: `reject_agent_${user.id}` }
+            ]
+        ];
+        const reply_markup = { inline_keyboard: keyboard };
+
+        const adminMessage = (
+            `📩 **درخواست نمایندگی جدید!**\n\n` +
+            `👤 نام: ${user.first_name || ''} ${user.last_name || ''}\n` +
+            `🔗 یوزرنیم: @${user.username ? user.username : 'ندارد'}\n` +
+            `🆔 آیدی: \`${user.id}\``
+        );
+
+        try {
+            await bot.sendMessage(ADMIN_CHAT_ID, adminMessage, { reply_markup: reply_markup, parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, "✅ درخواست نمایندگی شما با موفقیت برای مدیریت ارسال شد. به زودی بررسی خواهد شد.");
+        } catch (Exception) {
+            await bot.sendMessage(chatId, "❌ خطا در ارسال درخواست به مدیریت. لطفاً بعداً تلاش کنید.");
+        }
         return;
     }
 
@@ -1821,7 +1974,6 @@ bot.on('message', async (msg) => {
         }
     }
 
-    const names = db.menuNames;
     const userState = db.userStates[chatId];
 
     if (msg.photo && userState && userState.step) {
@@ -2286,18 +2438,8 @@ bot.on('message', async (msg) => {
             await bot.sendMessage(chatId, db.botTexts.support_success || '🎯 پیام شما با موفقیت به پشتیبانی ارسال شد!', { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
             return;
         }
-
-        if (step === 'agency_waiting_message') {
-            delete db.userStates[chatId];
-            saveDatabase();
-
-            bot.sendMessage(chatId, db.botTexts.agency_success).catch(() => {});
-            bot.sendMessage(ADMIN_CHAT_ID, `🤝 **درخواست نمایندگی VIP جدید:**\n\n👤 کاربر: ${msg.from.first_name} (\`${userId}\`)\n\n💬 **متن درخواست:**\n${text}`, { parse_mode: 'Markdown' }).catch(() => {});
-            return;
-        }
     }
 
-    // اگر ادمین پیام متنی بفرستد و قصد استفاده از منوی مشتریان را داشته باشد، مسدود می‌شود یا نادیده گرفته می‌شود
     if (isAdmin(msg)) {
         return; 
     }
@@ -2338,6 +2480,11 @@ bot.on('message', async (msg) => {
         return;
     }
 
+    if (text.includes(names.tutorial)) {
+        bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+        return;
+    }
+
     if (text.includes(names.support)) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
         saveDatabase();
@@ -2345,53 +2492,25 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (text.includes(names.free_sub)) {
-        if (!db.isFreeSubEnabled) {
-            return bot.sendMessage(chatId, '❌ بخش اشتراک هدیه غیرفعال است.').catch(() => {});
-        }
-        const freeLink = db.freeSubConfig;
-        const parsedData = await fetchAndParseConfig(freeLink);
-        let freeMsg = `🎁 **اشتراک هدیه ویژه شما:**\n\n🔗 لینک:\n\`${freeLink}\``;
-        if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
-            freeMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
-        }
-        return bot.sendMessage(chatId, freeMsg, { parse_mode: 'Markdown' }).catch(() => {});
+    if (db.isFreeSubEnabled && text.includes(names.free_sub)) {
+        bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+        return;
     }
 
-    if (text.includes(names.test_server)) {
-        if (!db.isTestServerEnabled) {
-            return bot.sendMessage(chatId, '❌ سرور تست غیرفعال است.').catch(() => {});
-        }
-        const testLink = db.testServerConfig;
-        const parsedData = await fetchAndParseConfig(testLink);
-        let testMsg = `🧪 **سرور تست رایگان:**\n\n🔗 لینک:\n\`${testLink}\``;
-        if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
-            testMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
-        }
-        return bot.sendMessage(chatId, testMsg, { parse_mode: 'Markdown' }).catch(() => {});
+    if (db.isTestServerEnabled && text.includes(names.test_server)) {
+        bot.sendMessage(chatId, `🧪 **سرور تست رایگان:**\n\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+        return;
     }
 
-    if (text.includes(names.invite)) {
-        if (!db.isInviteSystemEnabled) {
-            return bot.sendMessage(chatId, '❌ سیستم زیرمجموعه‌گیری غیرفعال است.').catch(() => {});
-        }
+    if (db.isInviteSystemEnabled && text.includes(names.invite)) {
         const botInfo = await bot.getMe();
         const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
         const refCount = db.referals[userId] || 0;
-        const customInviteText = (db.botTexts.invite_title || '')
+        const inviteText = (db.botTexts.invite_title || '')
             .replace('{inviteLink}', inviteLink)
             .replace('{count}', refCount);
 
-        return bot.sendMessage(chatId, customInviteText, { parse_mode: 'Markdown' }).catch(() => {});
-    }
-
-    if (text.includes(names.tutorial)) {
-        return bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
-    }
-
-    if (text.includes(names.agency_request)) {
-        db.userStates[chatId] = { step: 'agency_waiting_message' };
-        saveDatabase();
-        return bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+        return;
     }
 });
