@@ -465,25 +465,27 @@ function getMainKeyboard() {
     return {
         reply_markup: {
             inline_keyboard: [
-                [{ text: names.buy_sub, callback_data: 'buy_sub' }],
                 [
-                    ...(db.isFreeSubEnabled ? [{ text: names.free_sub, callback_data: 'free_sub' }] : []),
-                    ...(db.isTestServerEnabled ? [{ text: names.test_server, callback_data: 'test_server' }] : [])
+                    { text: `🛒 ${names.buy_sub}`, callback_data: 'buy_sub' }
                 ],
                 [
-                    { text: names.wallet, callback_data: 'wallet' },
-                    ...(db.isInviteSystemEnabled ? [{ text: names.invite, callback_data: 'invite' }] : [])
+                    ...(db.isFreeSubEnabled ? [{ text: `🎁 ${names.free_sub}`, callback_data: 'free_sub' }] : []),
+                    ...(db.isTestServerEnabled ? [{ text: `🧪 ${names.test_server}`, callback_data: 'test_server' }] : [])
                 ],
                 [
-                    { text: names.my_subs, callback_data: 'my_subscriptions' },
-                    { text: names.agency_request, callback_data: 'agency_request' }
+                    { text: `💰 ${names.wallet}`, callback_data: 'wallet' },
+                    ...(db.isInviteSystemEnabled ? [{ text: `👥 ${names.invite}`, callback_data: 'invite' }] : [])
                 ],
                 [
-                    { text: names.tutorial, callback_data: 'tutorial' },
-                    { text: names.support, callback_data: 'support' }
+                    { text: `📱 ${names.my_subs}`, callback_data: 'my_subscriptions' },
+                    { text: `🤝 ${names.agency_request}`, callback_data: 'agency_request' }
                 ],
                 [
-                    { text: '🔄 منوی اصلی', callback_data: 'restart_bot' }
+                    { text: `📖 ${names.tutorial}`, callback_data: 'tutorial' },
+                    { text: `📞 ${names.support}`, callback_data: 'support' }
+                ],
+                [
+                    { text: '🔄 بازگشت به منوی اصلی ✨', callback_data: 'restart_bot' }
                 ]
             ]
         }
@@ -732,7 +734,6 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // مدیریت کلیک روی دکمه «اشتراک‌های من» و صفحه‌بندی‌ها در callback_query:
     if (data === 'my_subscriptions') {
         await sendUserSubscriptionsPage(chatId, msg.message_id, userId, 0);
         await bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
