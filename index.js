@@ -92,6 +92,7 @@ const defaultDatabaseStructure = {
     pending_deposits: {},
     pending_card_purchases: {},
     allUsers: [],
+    blockedUsers: [],
     usersDetailMap: {},
     receiptsHistory: [],
     referals: {},
@@ -138,6 +139,7 @@ function loadDatabase() {
                 pending_deposits: parsed.pending_deposits || {},
                 pending_card_purchases: parsed.pending_card_purchases || {},
                 allUsers: parsed.allUsers || [],
+                blockedUsers: parsed.blockedUsers || [],
                 usersDetailMap: parsed.usersDetailMap || {},
                 receiptsHistory: parsed.receiptsHistory || [],
                 referals: parsed.referals || {},
@@ -259,7 +261,8 @@ app.post('/admin/login', (req, res) => {
 app.get('/admin/dashboard', (req, res) => {
     loadDatabase();
     let usersListHtml = '';
-    db.allUsers.forEach(uId => {
+    const uniqueUsers = [...new Set(db.allUsers)];
+    uniqueUsers.forEach(uId => {
         const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: getPersianDateTime() };
         const wallet = db.userWallets[uId] || 0;
         usersListHtml += `<tr><td>${uId}</td><td>${info.name}</td><td>${info.username}</td><td>${wallet.toLocaleString()} تومان</td><td>${info.joinedAt || getPersianDateTime()}</td></tr>`;
@@ -271,7 +274,7 @@ app.get('/admin/dashboard', (req, res) => {
         </head><body>
             <div class="container">
                 <h2>🚀 داشبورد مدیریت وب ربات</h2>
-                <p><b>تعداد کل کاربران:</b> ${db.allUsers.length} نفر</p>
+                <p><b>تعداد کل کاربران:</b> ${uniqueUsers.length} نفر</p>
                 <p><b>تعداد کل اشتراک‌های صادر شده:</b> ${db.allSubscriptionsHistory.length} عدد</p>
                 <h3>👥 لیست کاربران ربات</h3>
                 <table>
@@ -490,6 +493,12 @@ async function handleForceJoin(msg) {
 bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     loadDatabase(); 
     const chatId = msg.chat.id;
+    const userId = msg.from.id.toString();
+
+    if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
+        return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.');
+    }
+
     delete db.userStates[chatId];
     saveDatabase();
 
@@ -561,7 +570,7 @@ function sendAdminPanel(chatId) {
                     { text: '📱 مدیریت اشتراک کاربران', callback_data: 'manage_user_subs' }
                 ],
                 [
-                    { text: '📊 آمار کلی ربات', callback_data: 'admin_stats' },
+                    { text: '🚫 مسدودسازی کاربران', callback_data: 'admin_block_menu' },
                     { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' }
                 ],
                 [
@@ -661,6 +670,10 @@ bot.on('callback_query', async (callbackQuery) => {
     const userId = callbackQuery.from.id.toString();
     const currentTime = Date.now();
 
+    if (!isAdmin(callbackQuery) && db.blockedUsers && db.blockedUsers.includes(userId)) {
+        return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ شما مسدود شده‌اید.', show_alert: true }).catch(() => {});
+    }
+
     if (userCooldowns.has(userId)) {
         const lastClickTime = userCooldowns.get(userId);
         if (currentTime - lastClickTime < COOLDOWN_TIME) {
@@ -698,6 +711,70 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // ── بخش مدیریت مسدودسازی کاربران ──
+    if (data === 'admin_block_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        const blockKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🚫 مسدود کردن کاربر جدید', callback_data: 'adm_block_user_prompt' }],
+                    [{ text: '🟢 رفع مسدودیت کاربر', callback_data: 'adm_unblock_user_list' }],
+                    [{ text: '🔙 بازگشت به پنل مدیریت', callback_data: 'admin_back_to_panel' }]
+                ]
+            }
+        };
+        await bot.editMessageText(`🚫 **مدیریت مسدودسازی کاربران**\n\nتعداد کاربران مسدود شده: \`${(db.blockedUsers || []).length}\` نفر`, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: blockKeyboard.reply_markup
+        });
+        return;
+    }
+
+    if (data === 'adm_block_user_prompt') {
+        if (!isAdmin(callbackQuery)) return;
+        db.userStates[chatId] = { step: 'admin_waiting_for_block_identifier' };
+        saveDatabase();
+        bot.sendMessage(chatId, `🚫 **مسدود کردن کاربر**\n\nلطفاً **آیدی عددی** یا **یوزرنیم** کاربر مورد نظر را ارسال کنید:`, { parse_mode: 'Markdown' });
+        return;
+    }
+
+    if (data === 'adm_unblock_user_list') {
+        if (!isAdmin(callbackQuery)) return;
+        const blockedList = db.blockedUsers || [];
+        if (blockedList.length === 0) {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ هیچ کاربری در لیست مسدودیت نیست.', show_alert: true });
+        }
+
+        let unblockBtns = blockedList.map(uId => {
+            let info = db.usersDetailMap[uId] || { name: 'بدون نام', username: 'ندارد' };
+            return [{ text: `🟢 رفع مسدودیت: ${info.name} (${uId})`, callback_data: `adm_unblock_${uId}` }];
+        });
+        unblockBtns.push([{ text: '🔙 بازگشت', callback_data: 'admin_block_menu' }]);
+
+        await bot.editMessageText(`🟢 **لیست کاربران مسدود شده:**\nبرای رفع مسدودیت روی کاربر مورد نظر کلیک کنید:`, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: unblockBtns }
+        });
+        return;
+    }
+
+    if (data.startsWith('adm_unblock_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const targetUserId = data.replace('adm_unblock_', '');
+        db.blockedUsers = (db.blockedUsers || []).filter(id => id.toString() !== targetUserId.toString());
+        saveDatabase();
+        bot.answerCallbackQuery(callbackQuery.id, { text: '✅ کاربر از لیست مسدودیت خارج شد.', show_alert: true });
+        try {
+            bot.sendMessage(targetUserId, '🟢 **حساب شما توسط مدیریت از حالت مسدود خارج شد.** 🎉');
+        } catch (e) {}
+        sendAdminPanel(chatId);
+        return;
+    }
 
     if (data === 'my_subscriptions') {
         await sendUserSubscriptionsPage(chatId, msg.message_id, userId, 0, callbackQuery.id);
@@ -919,7 +996,8 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'manage_wallets') {
         if (!isAdmin(callbackQuery)) return;
         try {
-            const userIds = [...db.allUsers];
+            // استفاده از Set برای جلوگیری از تکرار آیدی کاربران در بخش کیف پول
+            const userIds = [...new Set(db.allUsers)];
             if (!userIds || userIds.length === 0) {
                 return bot.answerCallbackQuery(callbackQuery.id, { text: "❌ هیچ کاربری در ربات وجود ندارد.", show_alert: true });
             }
@@ -1462,14 +1540,16 @@ bot.on('callback_query', async (callbackQuery) => {
 
     if (data === 'admin_stats') {
         if (!isAdmin(callbackQuery)) return;
+        const uniqueUsersCount = [...new Set(db.allUsers)].length;
         
         let statsReport = `📊 **آمار کلی ربات:**\n\n` +
-                          `👥 کل کاربران: \`${db.allUsers.length}\`\n` +
+                          `👥 کل کاربران: \`${uniqueUsersCount}\`\n` +
                           `📦 کل اشتراک‌ها: \`${db.allSubscriptionsHistory.length}\`\n` +
                           `📋 کل رسیدها: \`${db.receiptsHistory.length}\`\n\n` +
                           `👤 **لیست کاربران:**\n`;
 
-        db.allUsers.forEach((uId, idx) => {
+        const uniqueUsers = [...new Set(db.allUsers)];
+        uniqueUsers.forEach((uId, idx) => {
             const uInfo = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: getPersianDateTime() };
             statsReport += `${idx + 1}. نام: **${uInfo.name}**\n` +
                            `   🆔 شناسه: \`${uId}\`\n` +
@@ -1478,7 +1558,7 @@ bot.on('callback_query', async (callbackQuery) => {
         });
 
         if (statsReport.length > 4000) {
-            bot.sendMessage(chatId, `📊 **آمار کلی ربات:**\n\n👥 کل کاربران: \`${db.allUsers.length}\`\n📦 کل اشتراک‌ها: \`${db.allSubscriptionsHistory.length}\``, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `📊 **آمار کلی ربات:**\n\n👥 کل کاربران: \`${uniqueUsersCount}\`\n📦 کل اشتراک‌ها: \`${db.allSubscriptionsHistory.length}\``, { parse_mode: 'Markdown' });
         } else {
             bot.sendMessage(chatId, statsReport, { parse_mode: 'Markdown' });
         }
@@ -1729,6 +1809,10 @@ bot.on('message', async (msg) => {
     const userId = msg.from.id.toString();
     const text = msg.text ? msg.text.trim() : '';
 
+    if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
+        return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.');
+    }
+
     trackUserAndNotifyAdmin(msg);
     const canProceed = await handleForceJoin(msg);
     if (!canProceed) return;
@@ -1860,6 +1944,43 @@ bot.on('message', async (msg) => {
 
     if (userState && userState.step) {
         const step = userState.step;
+
+        // مدیریت حالت مسدودسازی کاربر جدید از طریق متن ارسالی ادمین
+        if (step === 'admin_waiting_for_block_identifier') {
+            if (!isAdmin(msg)) return;
+            let targetId = text.replace('@', '').trim();
+            let foundUserId = null;
+
+            if (/^\d+$/.test(targetId)) {
+                foundUserId = targetId;
+            } else {
+                for (const uId of db.allUsers) {
+                    const info = db.usersDetailMap[uId];
+                    if (info && info.username && info.username.replace('@', '').toLowerCase() === targetId.toLowerCase()) {
+                        foundUserId = uId;
+                        break;
+                    }
+                }
+            }
+
+            if (!foundUserId) {
+                return bot.sendMessage(chatId, '❌ کاربری با این مشخصات یافت نشد. لطفاً شناسه یا یوزرنیم معتبر وارد کنید:');
+            }
+
+            if (!db.blockedUsers) db.blockedUsers = [];
+            if (!db.blockedUsers.includes(foundUserId)) {
+                db.blockedUsers.push(foundUserId);
+            }
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            bot.sendMessage(chatId, `🚫 کاربر مورد نظر (\`${foundUserId}\`) با موفقیت مسدود شد.`);
+            try {
+                bot.sendMessage(foundUserId, '❌ **حساب شما توسط مدیریت مسدود گردید.**');
+            } catch (e) {}
+            sendAdminPanel(chatId);
+            return;
+        }
 
         if (step === 'admin_waiting_for_user_identifier') {
             if (!isAdmin(msg)) return;
@@ -2079,7 +2200,8 @@ bot.on('message', async (msg) => {
 
             bot.sendMessage(chatId, '🚀 ارسال پیام همگانی آغاز شد...');
             let successCount = 0;
-            for (const uId of db.allUsers) {
+            const uniqueUsers = [...new Set(db.allUsers)];
+            for (const uId of uniqueUsers) {
                 try {
                     await bot.sendMessage(uId, broadcastText, { parse_mode: 'Markdown' });
                     successCount++;
