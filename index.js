@@ -485,7 +485,7 @@ function getMainKeyboard() {
                     { text: `📞 ${names.support}`, callback_data: 'support' }
                 ],
                 [
-                    { text: '🔄 بازگشت به منوی اصلی ✨', callback_data: 'restart_bot' }
+                    { text: '🔄 بازگشت به منوی اصلی', callback_data: 'restart_bot' }
                 ]
             ]
         }
