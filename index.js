@@ -136,7 +136,6 @@ const defaultDatabaseStructure = {
     discountCodes: {}, 
     appliedDiscounts: {}, 
     agents: {}, // ذخیره نمایندگان: { userId: { discountPercent: 15 } }
-    userAgents: {}, // نگهداری نماینده‌ی معرف هر کاربر: { userId: agentId }
     paymentCardNumber: '6037-9971-xxxx-xxxx',
     messagesMap: {}
 };
@@ -168,7 +167,6 @@ function loadDatabase() {
                 discountCodes: parsed.discountCodes || {},
                 appliedDiscounts: parsed.appliedDiscounts || {},
                 agents: parsed.agents || {},
-                userAgents: parsed.userAgents || {},
                 messagesMap: parsed.messagesMap || {}
             };
         } else {
@@ -474,24 +472,16 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     if (!canProceed) return;
 
     const payload = match ? match[1] : null; 
-    if (payload) {
-        if (payload.startsWith('agent_')) {
-            const agentId = payload.replace('agent_', '');
-            if (db.agents && db.agents[agentId] && agentId !== userId) {
-                db.userAgents[userId] = agentId;
-                saveDatabase();
-            }
-        } else if (db.isInviteSystemEnabled && payload !== chatId.toString()) {
-            const refId = payload;
-            if (!db.userWallets[`referred_${chatId}`]) {
-                db.userWallets[`referred_${chatId}`] = true; 
-                db.userWallets[refId] = (db.userWallets[refId] || 0) + REWARD_AMOUNT;
-                db.referals[refId] = (db.referals[refId] || 0) + 1;
-                saveDatabase();
+    if (payload && db.isInviteSystemEnabled && payload !== chatId.toString()) {
+        const refId = payload;
+        if (!db.userWallets[`referred_${chatId}`]) {
+            db.userWallets[`referred_${chatId}`] = true; 
+            db.userWallets[refId] = (db.userWallets[refId] || 0) + REWARD_AMOUNT;
+            db.referals[refId] = (db.referals[refId] || 0) + 1;
+            saveDatabase();
 
-                bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${REWARD_AMOUNT.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
-                    .catch(() => {});
-            }
+            bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${REWARD_AMOUNT.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
+                .catch(() => {});
         }
     }
 
@@ -1678,14 +1668,12 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         let priceNumber = parsePrice(selectedPlan.price);
-        
         let discountInfoText = '';
         
-        // بررسی تخفیف نماینده
-        const assignedAgentId = db.userAgents[userId];
+        // بررسی تخفیف خودِ کاربر نماینده (اگر خود کاربر نماینده باشد)
         let agentDiscountPercent = 0;
-        if (assignedAgentId && db.agents && db.agents[assignedAgentId]) {
-            agentDiscountPercent = db.agents[assignedAgentId].discountPercent || 0;
+        if (db.agents && db.agents[userId]) {
+            agentDiscountPercent = db.agents[userId].discountPercent || 0;
         }
 
         if (agentDiscountPercent > 0) {
@@ -1737,10 +1725,9 @@ bot.on('callback_query', async (callbackQuery) => {
 
         let priceNumber = parsePrice(plan.price);
         
-        const assignedAgentId = db.userAgents[userId];
         let agentDiscountPercent = 0;
-        if (assignedAgentId && db.agents && db.agents[assignedAgentId]) {
-            agentDiscountPercent = db.agents[assignedAgentId].discountPercent || 0;
+        if (db.agents && db.agents[userId]) {
+            agentDiscountPercent = db.agents[userId].discountPercent || 0;
         }
         if (agentDiscountPercent > 0) {
             const agentDiscountAmount = Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
@@ -1842,10 +1829,9 @@ bot.on('callback_query', async (callbackQuery) => {
 
         let priceNumber = parsePrice(plan.price);
         
-        const assignedAgentId = db.userAgents[userId];
         let agentDiscountPercent = 0;
-        if (assignedAgentId && db.agents && db.agents[assignedAgentId]) {
-            agentDiscountPercent = db.agents[assignedAgentId].discountPercent || 0;
+        if (db.agents && db.agents[userId]) {
+            agentDiscountPercent = db.agents[userId].discountPercent || 0;
         }
         if (agentDiscountPercent > 0) {
             const agentDiscountAmount = Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
@@ -2059,12 +2045,9 @@ bot.on('message', async (msg) => {
             delete db.userStates[chatId];
             saveDatabase();
 
-            const botInfo = await bot.getMe();
-            const agentLink = `https://t.me/${botInfo.username}?start=agent_${agentId}`;
-
-            bot.sendMessage(chatId, `✅ نماینده با موفقیت ثبت شد!\n\n🆔 شناسه کاربر: \`${agentId}\`\n🎁 درصد تخفیف: **${percent}%**\n\n🔗 لینک اختصاصی نماینده:\n\`${agentLink}\``, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `✅ نماینده با موفقیت ثبت شد!\n\n🆔 شناسه کاربر: \`${agentId}\`\n🎁 درصد تخفیف مستقیم: **${percent}%**`, { parse_mode: 'Markdown' }).catch(() => {});
             try {
-                bot.sendMessage(agentId, `🎉 **تبریک! شما به عنوان نماینده رسمی ما انتخاب شدید.**\n\n✨ کاربران شما با لینک اختصاصی زیر تخفیف **${percent}%** دریافت خواهند کرد:\n\`${agentLink}\``, { parse_mode: 'Markdown' });
+                bot.sendMessage(agentId, `🎉 **تبریک! شما به عنوان نماینده رسمی ما انتخاب شدید.**\n\n✨ از این پس هر زمان از ربات خرید کنید، تخفیف **${percent}%** به صورت خودکار روی فاکتور شما اعمال خواهد شد. 🚀`, { parse_mode: 'Markdown' });
             } catch (e) {}
             sendAdminPanel(chatId);
             return;
@@ -2480,8 +2463,46 @@ bot.on('message', async (msg) => {
         return;
     }
 
+    if (text.includes(names.free_sub)) {
+        if (!db.isFreeSubEnabled) return;
+        bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.test_server)) {
+        if (!db.isTestServerEnabled) return;
+        bot.sendMessage(chatId, `🧪 **سرور تست رایگان:**\n\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.invite)) {
+        if (!db.isInviteSystemEnabled) return;
+        const botInfo = await bot.getMe();
+        const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
+        const refCount = db.referals[userId] || 0;
+
+        const inviteMsg = (db.botTexts.invite_title || '')
+            .replace('{inviteLink}', inviteLink)
+            .replace('{count}', refCount);
+
+        bot.sendMessage(chatId, inviteMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
     if (text.includes(names.my_subs)) {
         await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
+        return;
+    }
+
+    if (text.includes(names.agency_request)) {
+        db.userStates[chatId] = { step: 'agency_waiting_message' };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.tutorial)) {
+        bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -2490,55 +2511,5 @@ bot.on('message', async (msg) => {
         saveDatabase();
         bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' }).catch(() => {});
         return;
-    }
-
-    if (text.includes(names.free_sub)) {
-        if (!db.isFreeSubEnabled) {
-            return bot.sendMessage(chatId, '❌ بخش اشتراک هدیه غیرفعال است.').catch(() => {});
-        }
-        const freeLink = db.freeSubConfig;
-        const parsedData = await fetchAndParseConfig(freeLink);
-        let freeMsg = `🎁 **اشتراک هدیه ویژه شما:**\n\n🔗 لینک:\n\`${freeLink}\``;
-        if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
-            freeMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
-        }
-        return bot.sendMessage(chatId, freeMsg, { parse_mode: 'Markdown' }).catch(() => {});
-    }
-
-    if (text.includes(names.test_server)) {
-        if (!db.isTestServerEnabled) {
-            return bot.sendMessage(chatId, '❌ سرور تست غیرفعال است.').catch(() => {});
-        }
-        const testLink = db.testServerConfig;
-        const parsedData = await fetchAndParseConfig(testLink);
-        let testMsg = `🧪 **سرور تست رایگان:**\n\n🔗 لینک:\n\`${testLink}\``;
-        if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
-            testMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
-        }
-        return bot.sendMessage(chatId, testMsg, { parse_mode: 'Markdown' }).catch(() => {});
-    }
-
-    if (text.includes(names.invite)) {
-        if (!db.isInviteSystemEnabled) {
-            return bot.sendMessage(chatId, '❌ سیستم زیرمجموعه‌گیری غیرفعال است.').catch(() => {});
-        }
-        const botInfo = await bot.getMe();
-        const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
-        const refCount = db.referals[userId] || 0;
-        const customInviteText = (db.botTexts.invite_title || '')
-            .replace('{inviteLink}', inviteLink)
-            .replace('{count}', refCount);
-
-        return bot.sendMessage(chatId, customInviteText, { parse_mode: 'Markdown' }).catch(() => {});
-    }
-
-    if (text.includes(names.tutorial)) {
-        return bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
-    }
-
-    if (text.includes(names.agency_request)) {
-        db.userStates[chatId] = { step: 'agency_waiting_message' };
-        saveDatabase();
-        return bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
     }
 });
