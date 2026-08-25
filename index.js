@@ -135,6 +135,8 @@ const defaultDatabaseStructure = {
     ],
     discountCodes: {}, 
     appliedDiscounts: {}, 
+    agents: {}, // ذخیره نمایندگان: { userId: { discountPercent: 15 } }
+    userAgents: {}, // نگهداری نماینده‌ی معرف هر کاربر: { userId: agentId }
     paymentCardNumber: '6037-9971-xxxx-xxxx',
     messagesMap: {}
 };
@@ -165,6 +167,8 @@ function loadDatabase() {
                 customPlans: parsed.customPlans || defaultDatabaseStructure.customPlans,
                 discountCodes: parsed.discountCodes || {},
                 appliedDiscounts: parsed.appliedDiscounts || {},
+                agents: parsed.agents || {},
+                userAgents: parsed.userAgents || {},
                 messagesMap: parsed.messagesMap || {}
             };
         } else {
@@ -469,16 +473,25 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     const canProceed = await handleForceJoin(msg);
     if (!canProceed) return;
 
-    const refId = match ? match[1] : null; 
-    if (db.isInviteSystemEnabled && refId && refId !== chatId.toString()) {
-        if (!db.userWallets[`referred_${chatId}`]) {
-            db.userWallets[`referred_${chatId}`] = true; 
-            db.userWallets[refId] = (db.userWallets[refId] || 0) + REWARD_AMOUNT;
-            db.referals[refId] = (db.referals[refId] || 0) + 1;
-            saveDatabase();
+    const payload = match ? match[1] : null; 
+    if (payload) {
+        if (payload.startsWith('agent_')) {
+            const agentId = payload.replace('agent_', '');
+            if (db.agents && db.agents[agentId] && agentId !== userId) {
+                db.userAgents[userId] = agentId;
+                saveDatabase();
+            }
+        } else if (db.isInviteSystemEnabled && payload !== chatId.toString()) {
+            const refId = payload;
+            if (!db.userWallets[`referred_${chatId}`]) {
+                db.userWallets[`referred_${chatId}`] = true; 
+                db.userWallets[refId] = (db.userWallets[refId] || 0) + REWARD_AMOUNT;
+                db.referals[refId] = (db.referals[refId] || 0) + 1;
+                saveDatabase();
 
-            bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${REWARD_AMOUNT.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
-                .catch(() => {});
+                bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${REWARD_AMOUNT.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
+                    .catch(() => {});
+            }
         }
     }
 
@@ -527,8 +540,8 @@ function sendAdminPanel(chatId) {
                     { text: `📊 آمار ربات (${uniqueUsersCount} کاربر)`, callback_data: 'admin_stats' }
                 ],
                 [
-                    { text: '⚙️ مدیریت پلن‌ها', callback_data: 'admin_manage_plans' },
-                    { text: '✏️ تغییر نام دکمه‌ها', callback_data: 'admin_edit_names_menu' }
+                    { text: '🤝 مدیریت نمایندگان', callback_data: 'admin_agents_menu' },
+                    { text: '⚙️ مدیریت پلن‌ها', callback_data: 'admin_manage_plans' }
                 ],
                 [
                     { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' },
@@ -684,6 +697,53 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // --- مدیریت نمایندگان ---
+    if (data === 'admin_agents_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        const agentsList = Object.keys(db.agents || {});
+        let textMsg = '🤝 **مدیریت نمایندگان و تخفیف‌ها**\n\n';
+        const inlineBtns = [[{ text: '➕ افزودن نماینده جدید', callback_data: 'admin_add_agent' }]];
+
+        if (agentsList.length > 0) {
+            textMsg += 'لیست نمایندگان فعال:\n';
+            agentsList.forEach(agId => {
+                const info = db.agents[agId];
+                const uInfo = db.usersDetailMap[agId] || { name: 'بدون نام', username: 'ندارد' };
+                textMsg += `👤 ${uInfo.name} (\`${agId}\`) -> **${info.discountPercent}%** تخفیف\n`;
+                inlineBtns.push([{ text: `🗑 حذف نماینده: ${uInfo.name}`, callback_data: `admin_del_agent_${agId}` }]);
+            });
+        } else {
+            textMsg += 'هیچ نماینده‌ای ثبت نشده است.';
+        }
+        inlineBtns.push([{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]);
+
+        await bot.editMessageText(textMsg, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: inlineBtns }
+        }).catch(() => {});
+        return;
+    }
+
+    if (data === 'admin_add_agent') {
+        if (!isAdmin(callbackQuery)) return;
+        db.userStates[chatId] = { step: 'admin_waiting_for_agent_identifier' };
+        saveDatabase();
+        bot.sendMessage(chatId, '🤝 **افزودن نماینده جدید**\n\nلطفاً **آیدی عددی** یا **یوزرنیم** کاربر مورد نظر را ارسال کنید:', { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (data.startsWith('admin_del_agent_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const agentIdToDel = data.replace('admin_del_agent_', '');
+        delete db.agents[agentIdToDel];
+        saveDatabase();
+        bot.sendMessage(chatId, `✅ نماینده با شناسه \`${agentIdToDel}\` حذف شد.`).catch(() => {});
+        sendAdminPanel(chatId);
+        return;
+    }
 
     if (data === 'admin_block_menu') {
         if (!isAdmin(callbackQuery)) return;
@@ -1620,11 +1680,25 @@ bot.on('callback_query', async (callbackQuery) => {
         let priceNumber = parsePrice(selectedPlan.price);
         
         let discountInfoText = '';
+        
+        // بررسی تخفیف نماینده
+        const assignedAgentId = db.userAgents[userId];
+        let agentDiscountPercent = 0;
+        if (assignedAgentId && db.agents && db.agents[assignedAgentId]) {
+            agentDiscountPercent = db.agents[assignedAgentId].discountPercent || 0;
+        }
+
+        if (agentDiscountPercent > 0) {
+            const agentDiscountAmount = Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
+            priceNumber -= agentDiscountAmount;
+            discountInfoText += `🤝 تخفیف نمایندگی (${agentDiscountPercent}%): -${agentDiscountAmount.toLocaleString()} تومان\n`;
+        }
+
         if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
             const disc = db.appliedDiscounts[userId];
             const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
             priceNumber -= discountAmount;
-            discountInfoText = `🎟 تخفیف اعمال شده: **${disc.percent}%** (-${discountAmount.toLocaleString()} تومان)\n`;
+            discountInfoText += `🎟 تخفیف کد (${disc.percent}%): -${discountAmount.toLocaleString()} تومان\n`;
         }
 
         const userBalance = db.userWallets[userId] || 0;
@@ -1662,6 +1736,17 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         let priceNumber = parsePrice(plan.price);
+        
+        const assignedAgentId = db.userAgents[userId];
+        let agentDiscountPercent = 0;
+        if (assignedAgentId && db.agents && db.agents[assignedAgentId]) {
+            agentDiscountPercent = db.agents[assignedAgentId].discountPercent || 0;
+        }
+        if (agentDiscountPercent > 0) {
+            const agentDiscountAmount = Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
+            priceNumber -= agentDiscountAmount;
+        }
+
         if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
             const disc = db.appliedDiscounts[userId];
             const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
@@ -1756,6 +1841,17 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         let priceNumber = parsePrice(plan.price);
+        
+        const assignedAgentId = db.userAgents[userId];
+        let agentDiscountPercent = 0;
+        if (assignedAgentId && db.agents && db.agents[assignedAgentId]) {
+            agentDiscountPercent = db.agents[assignedAgentId].discountPercent || 0;
+        }
+        if (agentDiscountPercent > 0) {
+            const agentDiscountAmount = Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
+            priceNumber -= agentDiscountAmount;
+        }
+
         if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
             const disc = db.appliedDiscounts[userId];
             const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
@@ -1921,6 +2017,58 @@ bot.on('message', async (msg) => {
 
     if (userState && userState.step) {
         const step = userState.step;
+
+        // --- مراحل ثبت نماینده جدید ---
+        if (step === 'admin_waiting_for_agent_identifier') {
+            if (!isAdmin(msg)) return;
+            let targetId = text.replace('@', '').trim();
+            let foundUserId = null;
+
+            if (/^\d+$/.test(targetId)) {
+                foundUserId = targetId;
+            } else {
+                for (const uId of db.allUsers) {
+                    const info = db.usersDetailMap[uId];
+                    if (info && info.username && info.username.replace('@', '').toLowerCase() === targetId.toLowerCase()) {
+                        foundUserId = uId;
+                        break;
+                    }
+                }
+            }
+
+            if (!foundUserId) {
+                return bot.sendMessage(chatId, '❌ کاربری با این مشخصات یافت نشد. لطفاً شناسه یا یوزرنیم معتبر وارد کنید:').catch(() => {});
+            }
+
+            db.userStates[chatId] = { step: 'admin_waiting_for_agent_percent', agentId: foundUserId };
+            saveDatabase();
+            bot.sendMessage(chatId, `🤝 کاربر انتخاب شد (\`${foundUserId}\`).\n\nحالا **درصد تخفیف** این نماینده را وارد کنید (فقط عدد، مثلاً 15):`, { parse_mode: 'Markdown' }).catch(() => {});
+            return;
+        }
+
+        if (step === 'admin_waiting_for_agent_percent') {
+            if (!isAdmin(msg)) return;
+            const percent = parseInt(text, 10);
+            if (isNaN(percent) || percent <= 0 || percent > 100) {
+                return bot.sendMessage(chatId, '❌ درصد نامعتبر است. عددی بین 1 تا 100 وارد کنید:').catch(() => {});
+            }
+
+            const agentId = userState.agentId;
+            if (!db.agents) db.agents = {};
+            db.agents[agentId] = { discountPercent: percent };
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            const botInfo = await bot.getMe();
+            const agentLink = `https://t.me/${botInfo.username}?start=agent_${agentId}`;
+
+            bot.sendMessage(chatId, `✅ نماینده با موفقیت ثبت شد!\n\n🆔 شناسه کاربر: \`${agentId}\`\n🎁 درصد تخفیف: **${percent}%**\n\n🔗 لینک اختصاصی نماینده:\n\`${agentLink}\``, { parse_mode: 'Markdown' }).catch(() => {});
+            try {
+                bot.sendMessage(agentId, `🎉 **تبریک! شما به عنوان نماینده رسمی ما انتخاب شدید.**\n\n✨ کاربران شما با لینک اختصاصی زیر تخفیف **${percent}%** دریافت خواهند کرد:\n\`${agentLink}\``, { parse_mode: 'Markdown' });
+            } catch (e) {}
+            sendAdminPanel(chatId);
+            return;
+        }
 
         if (step === 'admin_waiting_for_block_identifier') {
             if (!isAdmin(msg)) return;
@@ -2297,7 +2445,6 @@ bot.on('message', async (msg) => {
         }
     }
 
-    // اگر ادمین پیام متنی بفرستد و قصد استفاده از منوی مشتریان را داشته باشد، مسدود می‌شود یا نادیده گرفته می‌شود
     if (isAdmin(msg)) {
         return; 
     }
