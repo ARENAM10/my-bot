@@ -79,6 +79,7 @@ const defaultDatabaseStructure = {
         wallet: '💰 کیف پول من',
         invite: '👥 زیرمجموعه‌گیری',
         my_subs: '📱 اشتراک‌های من',
+        agency_request: '🤝 درخواست نمایندگی',
         tutorial: '📖 آموزش اتصال',
         support: '📞 پشتیبانی آنلاین'
     },
@@ -91,7 +92,9 @@ const defaultDatabaseStructure = {
         no_plans: '🛒 در حال حاضر هیچ پلن فعالی موجود نیست. به زودی برمی‌گردیم! 🙏',
         wallet_title: '💰 **کیف پول اختصاصی شما**\n\nموجودی فعلی: `{balance} تومان`\n\n🆔 شناسه کاربری شما: `{userId}`',
         invite_title: '👥 **سیستم دعوت از دوستان** 🎁\n\nبا ارسال لینک زیر به دوستانتان پاداش بگیرید:\n`{inviteLink}`\n\n✨ تعداد زیرمجموعه‌های شما: **{count} نفر**',
-        empty_subs: '📱 شما هنوز اشتراک فعالی ندارید. از فروشگاه تهیه کنید! 🛒'
+        empty_subs: '📱 شما هنوز اشتراک فعالی ندارید. از فروشگاه تهیه کنید! 🛒',
+        agency_prompt: '🤝 **درخواست نمایندگی**\n\nلطفاً اطلاعات، رزومه یا درخواست خود را برای اخذ نمایندگی ارسال کنید تا بررسی شود:',
+        agency_success: '✅ درخواست نمایندگی شما با موفقیت ثبت شد. به زودی با شما ارتباط خواهیم گرفت! 🙏'
     },
     userWallets: {},
     pending_deposits: {},
@@ -448,10 +451,13 @@ function getMainKeyboard() {
                 ],
                 [
                     { text: names.my_subs, callback_data: 'my_subs' },
-                    { text: names.tutorial, callback_data: 'tutorial' }
+                    { text: names.agency_request, callback_data: 'agency_request' }
                 ],
                 [
-                    { text: names.support, callback_data: 'support' },
+                    { text: names.tutorial, callback_data: 'tutorial' },
+                    { text: names.support, callback_data: 'support' }
+                ],
+                [
                     { text: '🔄 منوی اصلی', callback_data: 'restart_bot' }
                 ]
             ]
@@ -629,9 +635,6 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // ==========================================
-    // 📱 مدیریت اشتراک مشتریان در پنل ادمین
-    // ==========================================
     if (data === 'adm_add_sub_by_identifier') {
         if (!isAdmin(callbackQuery)) return;
         db.userStates[chatId] = { step: 'admin_waiting_for_user_identifier' };
@@ -1107,6 +1110,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     [{ text: `✏️ کیف پول: ${names.wallet}`, callback_data: 'set_name_wallet' }],
                     [{ text: `✏️ زیرمجموعه‌گیری: ${names.invite}`, callback_data: 'set_name_invite' }],
                     [{ text: `✏️ اشتراک‌های من: ${names.my_subs}`, callback_data: 'set_name_my_subs' }],
+                    [{ text: `✏️ درخواست نمایندگی: ${names.agency_request}`, callback_data: 'set_name_agency_request' }],
                     [{ text: `✏️ آموزش اتصال: ${names.tutorial}`, callback_data: 'set_name_tutorial' }],
                     [{ text: `✏️ پشتیبانی: ${names.support}`, callback_data: 'set_name_support' }],
                     [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
@@ -1140,6 +1144,8 @@ bot.on('callback_query', async (callbackQuery) => {
                     [{ text: '📝 متن منوی کیف پول', callback_data: 'set_text_wallet_title' }],
                     [{ text: '📝 متن منوی زیرمجموعه‌گیری', callback_data: 'set_text_invite_title' }],
                     [{ text: '📝 متن نداشتن اشتراک فعال', callback_data: 'set_text_empty_subs' }],
+                    [{ text: '📝 متن درخواست نمایندگی', callback_data: 'set_text_agency_prompt' }],
+                    [{ text: '📝 متن موفقیت درخواست نمایندگی', callback_data: 'set_text_agency_success' }],
                     [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
                 ]
             }
@@ -1634,18 +1640,59 @@ bot.on('callback_query', async (callbackQuery) => {
     if (data === 'my_subs') {
         const subs = db.userSubscriptions[userId];
         if (subs && Array.isArray(subs) && subs.length > 0) {
-            let subText = `📱 **اشتراک‌های فعال شما (${subs.length} عدد):** 🌟\n\n`;
+            let inlineBtns = [];
             subs.forEach((sub, idx) => {
-                subText += `🔹 **اشتراک شماره ${idx + 1}**\n` +
-                           `📦 پلن: ${sub.planName}\n` +
-                           `🌐 کل حجم: ${sub.totalVolume || sub.volume}\n` +
-                           `⏳ انقضا: ${sub.expiryDate}\n` +
-                           `🔗 **لینک اشتراک:**\n\`${sub.configLink}\`\n\n`;
+                let shortTitle = sub.planName || `اشتراک شماره ${idx + 1}`;
+                inlineBtns.push([{ text: `💎 ${shortTitle} (انقضا: ${sub.expiryDate})`, callback_data: `view_sub_${idx}` }]);
             });
-            bot.sendMessage(chatId, subText, { parse_mode: 'Markdown' });
+            inlineBtns.push([{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'back_to_main' }]);
+
+            bot.sendMessage(chatId, `💎 **لیست اشتراک های فعال شما:**`, {
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: inlineBtns }
+            });
         } else {
             bot.sendMessage(chatId, db.botTexts.empty_subs);
         }
+        return;
+    }
+
+    if (data.startsWith('view_sub_')) {
+        const subIndex = parseInt(data.replace('view_sub_', ''), 10);
+        const subs = db.userSubscriptions[userId];
+        if (subs && subs[subIndex]) {
+            const sub = subs[subIndex];
+            let subDetailMsg = `📱 **جزئیات اشتراک:**\n\n` +
+                               `📦 پلن: \`${sub.planName}\`\n` +
+                               `🌐 حجم کل: \`${sub.totalVolume || sub.volume}\`\n` +
+                               `⏳ انقضا: \`${sub.expiryDate}\`\n\n` +
+                               `🔗 **لینک اشتراک اختصاصی:**\n\`${sub.configLink}\``;
+
+            if (sub.extractedConfigs && sub.extractedConfigs.length > 0) {
+                subDetailMsg += `\n\n⚙️ **کانفیگ‌ها:**\n\`\`\`\n${sub.extractedConfigs.join('\n\n')}\n\`\`\``;
+            }
+
+            bot.sendMessage(chatId, subDetailMsg, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[{ text: '🔙 بازگشت به لیست اشتراک‌ها', callback_data: 'my_subs' }]]
+                }
+            });
+        } else {
+            bot.answerCallbackQuery(callbackQuery.id, { text: '❌ این اشتراک دیگر یافت نشد.', show_alert: true });
+        }
+        return;
+    }
+
+    if (data === 'agency_request') {
+        db.userStates[chatId] = { step: 'waiting_for_agency_info' };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.agency_prompt, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[{ text: '🔙 انصراف و بازگشت', callback_data: 'back_to_main' }]]
+            }
+        });
         return;
     }
 
@@ -1685,7 +1732,6 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
-// هندلر پیام‌های متنی
 bot.on('message', async (msg) => {
     loadDatabase();
     trackUserAndNotifyAdmin(msg);
@@ -1707,7 +1753,32 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // مرحله اول: دریافت آیدی یا یوزرنیم کاربر برای افزودن اشتراک (اصلاح شده برای مطابقت کامل با چت آیدی عددی)
+    if (db.userStates[chatId] && db.userStates[chatId].step === 'waiting_for_agency_info') {
+        delete db.userStates[chatId];
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.agency_success);
+
+        const userInfo = db.usersDetailMap[chatId] || { name: 'کاربر', username: 'ندارد' };
+        const cleanUsername = (userInfo.username || 'ندارد').replace('@', '');
+
+        const agencyReport = `🤝 **درخواست نمایندگی جدید!**\n\n` +
+                             `👤 **نام کاربر:** ${userInfo.name}\n` +
+                             `🔗 **یوزرنیم:** @${cleanUsername}\n` +
+                             `🆔 **شناسه عددی:** \`${chatId}\`\n\n` +
+                             `📝 **توضیحات/اطلاعات ارسالی مشتری:**\n${text}`;
+
+        const agencyKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '👤 ارتباط مستقیم با متقاضی', url: `tg://user?id=${chatId}` }]
+                ]
+            }
+        };
+
+        bot.sendMessage(ADMIN_CHAT_ID, agencyReport, { parse_mode: 'Markdown', ...agencyKeyboard }).catch(() => {});
+        return;
+    }
+
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_waiting_for_user_identifier') {
         let inputVal = text.trim();
         let targetUserId = null;
@@ -1724,7 +1795,7 @@ bot.on('message', async (msg) => {
             if (foundKey) {
                 targetUserId = foundKey;
             } else {
-                targetUserId = cleanUname; // استفاده از خود یوزرنیم به عنوان کلید یکتا اگر چت آیدی عددی نبود
+                targetUserId = cleanUname;
                 db.usersDetailMap[targetUserId] = {
                     name: `کاربر (${inputVal})`,
                     username: inputVal.startsWith('@') ? inputVal : `@${inputVal}`,
@@ -1740,7 +1811,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // مرحله دوم: دریافت لینک سابسکریپشن و ثبت برای کاربر
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_manual_add_sub_link') {
         const targetUserId = db.userStates[chatId].targetUserId;
         const configLink = text.trim();
