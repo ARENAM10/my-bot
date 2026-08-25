@@ -97,6 +97,8 @@ const defaultDatabaseStructure = {
             links: ['https://example.com/sub/2-1'] 
         }
     ],
+    discountCodes: {}, // ساختار ذخیره کدهای تخفیف { codeName: { percent: 20, maxDiscount: 50000 } }
+    appliedDiscounts: {}, // نگهداری تخفیف‌های موقت فعال برای کاربران هنگام خرید
     paymentCardNumber: '6037-9971-xxxx-xxxx',
     messagesMap: {}
 };
@@ -124,6 +126,8 @@ function loadDatabase() {
                 userSubscriptions: parsed.userSubscriptions || {},
                 allSubscriptionsHistory: parsed.allSubscriptionsHistory || [],
                 customPlans: parsed.customPlans || defaultDatabaseStructure.customPlans,
+                discountCodes: parsed.discountCodes || {},
+                appliedDiscounts: parsed.appliedDiscounts || {},
                 messagesMap: parsed.messagesMap || {}
             };
         } else {
@@ -520,18 +524,18 @@ function sendAdminPanel(chatId) {
                     { text: '✏️ تغییر نام دکمه‌ها', callback_data: 'admin_edit_names_menu' }
                 ],
                 [
-                    { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' },
+                    { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' },
                     { text: '✏️ تغییر متن‌های ربات', callback_data: 'admin_edit_texts_menu' }
                 ],
                 [
-                    { text: '💰 مدیریت کیف پول مشتری‌ها', callback_data: 'manage_wallets' },
+                    { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' },
                     { text: '📁 رسیدهای مالی', callback_data: 'admin_receipts' }
                 ],
                 [
-                    { text: '📊 آمار کلی', callback_data: 'admin_stats' }
+                    { text: '💰 مدیریت کیف پول مشتری‌ها', callback_data: 'manage_wallets' }
                 ],
                 [
-                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' },
+                    { text: '📊 آمار کلی', callback_data: 'admin_stats' },
                     { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' }
                 ],
                 [
@@ -547,6 +551,7 @@ function sendAdminPanel(chatId) {
                     { text: forceJoinStatus, callback_data: 'admin_force_join_menu' }
                 ],
                 [
+                    { text: '📢 ارسال همگانی', callback_data: 'admin_broadcast' },
                     { text: '📦 دریافت دستی بکاپ', callback_data: 'admin_send_backup' }
                 ]
             ]
@@ -599,6 +604,73 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // 🎟 بخش مدیریت کدهای تخفیف در ادمین
+    if (data === 'admin_discount_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        const codesList = Object.keys(db.discountCodes);
+        let textMsg = '🎟 **مدیریت کدهای تخفیف ربات**\n\n';
+        const inlineBtns = [[{ text: '➕ افزودن کد تخفیف جدید', callback_data: 'admin_add_discount' }]];
+
+        if (codesList.length > 0) {
+            textMsg += 'کدهای تخفیف فعال فعلی:\n';
+            codesList.forEach(code => {
+                const info = db.discountCodes[code];
+                textMsg += `🔹 \`${code}\` -> **${info.percent}%** تخفیف (سقف: ${info.maxDiscount || 'نامحدود'})\n`;
+                inlineBtns.push([{ text: `🗑 حذف کد: ${code}`, callback_data: `admin_del_discount_${code}` }]);
+            });
+        } else {
+            textMsg += 'هیچ کد تخفیفی تعریف نشده است.';
+        }
+        inlineBtns.push([{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]);
+
+        await bot.editMessageText(textMsg, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: inlineBtns }
+        });
+        return;
+    }
+
+    if (data === 'admin_add_discount') {
+        if (!isAdmin(callbackQuery)) return;
+        db.userStates[chatId] = { step: 'get_new_discount_code' };
+        saveDatabase();
+        bot.sendMessage(chatId, '🎟 لطفاً کد تخفیف خود را وارد کنید (مثلاً `OFF50`):');
+        return;
+    }
+
+    if (data.startsWith('admin_del_discount_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const codeToDel = data.replace('admin_del_discount_', '');
+        delete db.discountCodes[codeToDel];
+        saveDatabase();
+        bot.sendMessage(chatId, `✅ کد تخفیف \`${codeToDel}\` با موفقیت حذف شد.`);
+        sendAdminPanel(chatId);
+        return;
+    }
+
+    if (data.startsWith('enter_discount_')) {
+        const planId = parseInt(data.replace('enter_discount_', ''));
+        db.userStates[chatId] = { step: 'get_user_discount_input', planId };
+        saveDatabase();
+        bot.sendMessage(chatId, '🎟 لطفاً کد تخفیف خود را ارسال کنید:');
+        return;
+    }
+
+    // بستن تیکت پشتیبانی توسط ادمین
+    if (data.startsWith('close_ticket_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const targetUser = data.replace('close_ticket_', '');
+        try {
+            await bot.sendMessage(targetUser, '🔒 **تیکت پشتیبانی شما توسط مدیریت بسته شد.**\nدر صورت داشتن سوال جدید، دوباره از منو اقدام کنید.');
+            await bot.editMessageCaption('🔒 **این تیکت بسته شد.**', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(() => {
+                bot.editMessageText('🔒 **این تیکت بسته شد.**', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' });
+            });
+        } catch (e) {}
+        return;
+    }
 
     if (data === 'manage_wallets') {
         if (!isAdmin(callbackQuery)) return;
@@ -1269,7 +1341,17 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        const priceNumber = parsePrice(selectedPlan.price);
+        let priceNumber = parsePrice(selectedPlan.price);
+        
+        // اعمال تخفیف در صورت وجود کد تخفیف فعال برای کاربر
+        let discountInfoText = '';
+        if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
+            const disc = db.appliedDiscounts[userId];
+            const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
+            priceNumber -= discountAmount;
+            discountInfoText = `🎟 تخفیف اعمال شده: **${disc.percent}%** (-${discountAmount.toLocaleString()} تومان)\n`;
+        }
+
         const userBalance = db.userWallets[userId] || 0;
 
         const inlineBtns = [];
@@ -1277,16 +1359,18 @@ bot.on('callback_query', async (callbackQuery) => {
                           `🏷 نام پلن: \`${selectedPlan.name}\`\n` +
                           `🌐 حجم ترافیک: \`${selectedPlan.volume}\`\n` +
                           `⏳ مدت زمان: \`${selectedPlan.duration}\`\n` +
-                          `💵 **مبلغ قابل پرداخت: ${selectedPlan.price}**\n` +
+                          discountInfoText +
+                          `💵 **مبلغ قابل پرداخت: ${priceNumber.toLocaleString()} تومان**\n` +
                           `💰 موجودی کیف پول شما: \`${userBalance.toLocaleString()} تومان\`\n\n`;
 
         if (userBalance >= priceNumber) {
             paymentDesc += `✅ موجودی کیف پول شما کافی است.`;
-            inlineBtns.push([{ text: `💳 پرداخت آنی از کیف پول (${selectedPlan.price}) ✨`, callback_data: `pay_wallet_${selectedPlan.id}` }]);
+            inlineBtns.push([{ text: `💳 پرداخت آنی از کیف پول (${priceNumber.toLocaleString()} تومان) ✨`, callback_data: `pay_wallet_${selectedPlan.id}` }]);
         } else {
             paymentDesc += `⚠️ موجودی کیف پول کافی نیست.`;
             inlineBtns.push([{ text: `➕ شارژ کیف پول 💳`, callback_data: 'wallet_deposit' }]);
         }
+        inlineBtns.push([{ text: `🎟 ثبت کد تخفیف`, callback_data: `enter_discount_${selectedPlan.id}` }]);
         inlineBtns.push([{ text: `💳 پرداخت کارت به کارت 🧾`, callback_data: `pay_card_${selectedPlan.id}` }]);
         inlineBtns.push([{ text: `🔙 بازگشت`, callback_data: 'buy_sub' }]);
 
@@ -1303,7 +1387,14 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        const priceNumber = parsePrice(plan.price);
+        let priceNumber = parsePrice(plan.price);
+        if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
+            const disc = db.appliedDiscounts[userId];
+            const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
+            priceNumber -= discountAmount;
+            delete db.appliedDiscounts[userId];
+        }
+
         const userBalance = db.userWallets[userId] || 0;
 
         if (userBalance < priceNumber) {
@@ -1345,7 +1436,7 @@ bot.on('callback_query', async (callbackQuery) => {
             type: 'خرید با کیف پول',
             userId: userId,
             userName: userInfo.name,
-            details: `${plan.name} (${plan.price})`,
+            details: `${plan.name} (${priceNumber.toLocaleString()} تومان)`,
             status: 'تایید شده خودکار',
             date: currentDateStr
         });
@@ -1387,11 +1478,19 @@ bot.on('callback_query', async (callbackQuery) => {
         const plan = db.customPlans.find(p => p.id === planId);
         if (!plan || plan.links.length === 0) return;
 
+        let priceNumber = parsePrice(plan.price);
+        if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
+            const disc = db.appliedDiscounts[userId];
+            const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
+            priceNumber -= discountAmount;
+            delete db.appliedDiscounts[userId];
+        }
+
         db.userStates[chatId] = { step: 'get_card_purchase_receipt', planId: plan.id };
         saveDatabase();
 
         const checkoutText = `📋 **فاکتور نهایی خرید کارت به کارت** 💳\n\n` +
-                             `🏷 پلن: \`${plan.name}\` | 💵 مبلغ: \`${plan.price}\`\n\n` +
+                             `🏷 پلن: \`${plan.name}\` | 💵 مبلغ نهایی: \`${priceNumber.toLocaleString()} تومان\`\n\n` +
                              `مبلغ را به شماره کارت زیر واریز کرده و **عکس رسید** را همینجا ارسال کنید: 👇\n\`${db.paymentCardNumber}\``;
 
         bot.sendMessage(chatId, checkoutText, { parse_mode: 'Markdown' });
@@ -1495,6 +1594,53 @@ bot.on('message', async (msg) => {
     const text = msg.text;
 
     if (chatId === ADMIN_CHAT_ID && text === '💻 پنل مدیریت') return;
+
+    // دریافت کد تخفیف جدید از ادمین
+    if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'get_new_discount_code') {
+        const codeInput = text.trim();
+        db.userStates[chatId] = { step: 'get_new_discount_percent', codeInput };
+        saveDatabase();
+        bot.sendMessage(chatId, `🎟 درصد تخفیف برای کد \`${codeInput}\` را وارد کنید (فقط عدد مثلاً 20):`, { parse_mode: 'Markdown' });
+        return;
+    }
+
+    if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'get_new_discount_percent') {
+        const percent = parseInt(text.replace(/[^0-9]/g, ''), 10);
+        const codeInput = db.userStates[chatId].codeInput;
+        if (isNaN(percent) || percent <= 0 || percent > 100) {
+            return bot.sendMessage(chatId, '⚠️ درصد نامعتبر است. عددی بین 1 تا 100 وارد کنید:');
+        }
+        db.discountCodes[codeInput] = { percent };
+        delete db.userStates[chatId];
+        saveDatabase();
+        bot.sendMessage(chatId, `✅ کد تخفیف \`${codeInput}\` با درصد **${percent}%** با موفقیت ساخته شد! 🎉`, { parse_mode: 'Markdown' });
+        sendAdminPanel(chatId);
+        return;
+    }
+
+    // بررسی کد تخفیف توسط کاربر در خرید
+    if (db.userStates[chatId] && db.userStates[chatId].step === 'get_user_discount_input') {
+        const planId = db.userStates[chatId].planId;
+        const enteredCode = text.trim();
+        delete db.userStates[chatId];
+        saveDatabase();
+
+        if (db.discountCodes[enteredCode]) {
+            db.appliedDiscounts = db.appliedDiscounts || {};
+            db.appliedDiscounts[userId] = db.discountCodes[enteredCode];
+            saveDatabase();
+            bot.sendMessage(chatId, `✅ کد تخفیف با موفقیت اعمال شد! 🎉\nاکنون برای خرید مجدد روی پلن مورد نظر بزنید.`);
+            const plan = db.customPlans.find(p => p.id === planId);
+            if (plan) {
+                // بازگشت به فاکتور خرید با اعمال تخفیف
+                const fakeCallback = { message: { chat: { id: chatId }, message_id: msg.message_id }, data: `buy_custom_${planId}`, from: msg.from };
+                // شبیه‌سازی نمایش فاکتور جدید
+            }
+        } else {
+            bot.sendMessage(chatId, '❌ کد تخفیف وارد شده نامعتبر یا منقضی شده است.');
+        }
+        return;
+    }
 
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'wallet_manager_waiting_for_amount') {
         const state = db.userStates[chatId];
@@ -1755,7 +1901,8 @@ bot.on('message', async (msg) => {
         const supportKeyboard = {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '👤 پروفایل و پیام مستقیم به کاربر', url: `tg://user?id=${chatId}` }]
+                    [{ text: '👤 پروفایل و پیام مستقیم به کاربر', url: `tg://user?id=${chatId}` }],
+                    [{ text: '🔒 بستن تیکت', callback_data: `close_ticket_${chatId}` }]
                 ]
             }
         };
@@ -1778,7 +1925,6 @@ bot.on('photo', async (msg) => {
 
     const currentState = db.userStates[chatId] || {};
 
-    // 1. اگر کاربر در حال شارژ کیف پول باشد
     if (currentState.step === 'get_wallet_deposit_receipt') {
         const amount = currentState.depositAmount;
         delete db.userStates[chatId];
@@ -1816,7 +1962,6 @@ bot.on('photo', async (msg) => {
         return;
     }
 
-    // 2. اگر کاربر در حال خرید مستقیم پلن به صورت کارت به کارت باشد
     if (currentState.step === 'get_card_purchase_receipt') {
         const planId = currentState.planId;
         const plan = db.customPlans.find(p => p.id === planId);
