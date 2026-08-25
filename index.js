@@ -1670,6 +1670,7 @@ bot.on('callback_query', async (callbackQuery) => {
         let priceNumber = parsePrice(selectedPlan.price);
         let discountInfoText = '';
         
+        // بررسی تخفیف خودِ کاربر نماینده (اگر خود کاربر نماینده باشد)
         let agentDiscountPercent = 0;
         if (db.agents && db.agents[userId]) {
             agentDiscountPercent = db.agents[userId].discountPercent || 0;
@@ -1918,22 +1919,14 @@ bot.on('message', async (msg) => {
             const depositKey = `deposit_${userId}`;
             db.pending_deposits[depositKey] = { amount };
             
-            // --- ویرایش شده: بررسی اینکه آیا رسید از این کاربر با وضعیت "در انتظار تایید" وجود دارد یا خیر (جلوگیری از ثبت تکراری) ---
-            const existingIndex = db.receiptsHistory.findIndex(r => r.userId.toString() === userId.toString() && r.status === 'در انتظار تایید' && r.type === 'شارژ کیف پول');
-            const receiptData = {
+            db.receiptsHistory.push({
                 type: 'شارژ کیف پول',
                 userId: userId,
                 userName: msg.from.first_name || 'کاربر',
                 details: `${amount.toLocaleString()} تومان`,
                 status: 'در انتظار تایید',
                 date: getPersianDateTime()
-            };
-
-            if (existingIndex !== -1) {
-                db.receiptsHistory[existingIndex] = receiptData;
-            } else {
-                db.receiptsHistory.push(receiptData);
-            }
+            });
             saveDatabase();
 
             bot.sendMessage(chatId, '✅ رسید شارژ کیف پول با موفقیت برای مدیریت ارسال شد.\nبه‌زودی پس از بررسی، حساب شما شارژ خواهد شد. 🙏✨').catch(() => {});
@@ -1971,22 +1964,14 @@ bot.on('message', async (msg) => {
             const plan = db.customPlans.find(p => p.id === planId);
             const planName = plan ? plan.name : 'پلن خرید';
 
-            // --- ویرایش شده: جلوگیری از ثبت تکراری رسید خرید کارت به کارت در صورت وجود رسید معلق قبلی ---
-            const existingCardIndex = db.receiptsHistory.findIndex(r => r.userId.toString() === userId.toString() && r.status === 'در انتظار تایید' && r.type === 'خرید کارت به کارت');
-            const cardReceiptData = {
+            db.receiptsHistory.push({
                 type: 'خرید کارت به کارت',
                 userId: userId,
                 userName: msg.from.first_name || 'کاربر',
                 details: `${planName} (${amountToPay.toLocaleString()} تومان)`,
                 status: 'در انتظار تایید',
                 date: getPersianDateTime()
-            };
-
-            if (existingCardIndex !== -1) {
-                db.receiptsHistory[existingCardIndex] = cardReceiptData;
-            } else {
-                db.receiptsHistory.push(cardReceiptData);
-            }
+            });
             saveDatabase();
 
             bot.sendMessage(chatId, '✅ رسید پرداخت کارت به کارت شما ارسال شد.\nپس از بررسی، لینک اشتراک برای شما ارسال خواهد شد. 🚀').catch(() => {});
@@ -2478,43 +2463,41 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (text.includes(names.my_subs)) {
-        await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
-        return;
-    }
-
     if (text.includes(names.free_sub)) {
-        if (!db.isFreeSubEnabled) {
-            bot.sendMessage(chatId, '❌ اشتراک هدیه در حال حاضر غیرفعال است.').catch(() => {});
-            return;
-        }
+        if (!db.isFreeSubEnabled) return;
         bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
     if (text.includes(names.test_server)) {
-        if (!db.isTestServerEnabled) {
-            bot.sendMessage(chatId, '❌ سرور تست در حال حاضر غیرفعال است.').catch(() => {});
-            return;
-        }
-        bot.sendMessage(chatId, `🧪 **کانفیگ سرور تست:**\n\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
+        if (!db.isTestServerEnabled) return;
+        bot.sendMessage(chatId, `🧪 **سرور تست رایگان:**\n\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
     if (text.includes(names.invite)) {
-        if (!db.isInviteSystemEnabled) {
-            bot.sendMessage(chatId, '❌ سیستم دعوت دوستان غیرفعال است.').catch(() => {});
-            return;
-        }
-        const me = await bot.getMe();
-        const inviteLink = `https://t.me/${me.username}?start=${chatId}`;
-        const refCount = db.referals[chatId] || 0;
+        if (!db.isInviteSystemEnabled) return;
+        const botInfo = await bot.getMe();
+        const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
+        const refCount = db.referals[userId] || 0;
 
-        const customInviteText = (db.botTexts.invite_title || '')
+        const inviteMsg = (db.botTexts.invite_title || '')
             .replace('{inviteLink}', inviteLink)
             .replace('{count}', refCount);
 
-        bot.sendMessage(chatId, customInviteText, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, inviteMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.my_subs)) {
+        await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
+        return;
+    }
+
+    if (text.includes(names.agency_request)) {
+        db.userStates[chatId] = { step: 'agency_waiting_message' };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -2526,33 +2509,7 @@ bot.on('message', async (msg) => {
     if (text.includes(names.support)) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
         saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.support_prompt, {
-            reply_markup: {
-                keyboard: [[{ text: '❌ انصراف و بازگشت' }]],
-                resize_keyboard: true,
-                is_persistent: true
-            }
-        }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.agency_request)) {
-        db.userStates[chatId] = { step: 'agency_waiting_message' };
-        saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.agency_prompt, {
-            reply_markup: {
-                keyboard: [[{ text: '❌ انصراف و بازگشت' }]],
-                resize_keyboard: true,
-                is_persistent: true
-            }
-        }).catch(() => {});
-        return;
-    }
-
-    if (text === '❌ انصراف و بازگشت') {
-        delete db.userStates[chatId];
-        saveDatabase();
-        sendMainMenu(chatId);
+        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 });
