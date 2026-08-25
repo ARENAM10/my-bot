@@ -759,10 +759,10 @@ bot.on('callback_query', async (callbackQuery) => {
             return bot.answerCallbackQuery(callbackQuery.id, { text: "شما دسترسی ندارید!", show_alert: true });
         }
         const parts = data.split("_");
-        const targetUserId = parseInt(parts[2]);
+        const targetUserId = parseInt(parts[2], 10);
 
         if (data.startsWith("accept_agent_")) {
-            const discount = parseInt(parts[3], 10); // اصلاح شده از int به parseInt
+            const discount = parseInt(parts[3], 10); 
             dbSqlite.run("UPDATE users SET is_agent = 1, discount_percent = ? WHERE user_id = ?", [discount, targetUserId], async () => {
                 await bot.editMessageText(`✅ درخواست کاربر \`${targetUserId}\` با موفقیت با **${discount}% تخفیف** تایید شد.`, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(() => {});
                 try {
@@ -1248,7 +1248,7 @@ bot.on('callback_query', async (callbackQuery) => {
         saveDatabase();
 
         if (action === 'approve') {
-            const planId = parseInt(parts[3]);
+            const planId = parseInt(parts[3], 10);
             const plan = db.customPlans.find(p => p.id === planId);
 
             if (plan && plan.links.length > 0) {
@@ -1525,7 +1525,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data.startsWith('edit_p_')) {
-        const planId = parseInt(data.split('_')[2]);
+        const planId = parseInt(data.split('_')[2], 10);
         db.userStates[chatId] = { step: 'edit_plan_get_name', targetPlanId: planId };
         saveDatabase();
         bot.sendMessage(chatId, '✏️ نام جدید پلن را وارد کنید:', { parse_mode: 'Markdown' }).catch(() => {});
@@ -1533,7 +1533,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data.startsWith('add_link_')) {
-        const planId = parseInt(data.split('_')[2]);
+        const planId = parseInt(data.split('_')[2], 10);
         db.userStates[chatId] = { step: 'get_extra_link_for_plan', targetPlanId: planId };
         saveDatabase();
         bot.sendMessage(chatId, '🔗 لینک سابسکریپشن یا کانفیگ جدید را ارسال کنید:', { parse_mode: 'Markdown' }).catch(() => {});
@@ -1541,7 +1541,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data.startsWith('del_plan_')) {
-        const planId = parseInt(data.split('_')[2]);
+        const planId = parseInt(data.split('_')[2], 10);
         db.customPlans = db.customPlans.filter(p => p.id !== planId);
         saveDatabase();
         bot.sendMessage(chatId, '🗑 پلن با موفقیت حذف شد.').catch(() => {});
@@ -1685,7 +1685,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data.startsWith('buy_custom_')) {
-        const planId = parseInt(data.split('_')[2]);
+        const planId = parseInt(data.split('_')[2], 10);
         const selectedPlan = db.customPlans.find(p => p.id === planId);
 
         if (!selectedPlan || selectedPlan.links.length === 0) {
@@ -1734,7 +1734,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data.startsWith('pay_wallet_')) {
-        const planId = parseInt(data.split('_')[2]);
+        const planId = parseInt(data.split('_')[2], 10);
         const plan = db.customPlans.find(p => p.id === planId);
 
         if (!plan || plan.links.length === 0) {
@@ -1831,7 +1831,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     if (data.startsWith('pay_card_')) {
-        const planId = parseInt(data.split('_')[2]);
+        const planId = parseInt(data.split('_')[2], 10);
         const plan = db.customPlans.find(p => p.id === planId);
         if (!plan) {
             bot.sendMessage(chatId, '❌ پلن نامعتبر است.').catch(() => {});
