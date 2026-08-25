@@ -1707,7 +1707,7 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // مرحله اول: دریافت آیدی یا یوزرنیم کاربر برای افزودن اشتراک
+    // مرحله اول: دریافت آیدی یا یوزرنیم کاربر برای افزودن اشتراک (اصلاح شده برای مطابقت کامل با چت آیدی عددی)
     if (chatId === ADMIN_CHAT_ID && db.userStates[chatId] && db.userStates[chatId].step === 'admin_waiting_for_user_identifier') {
         let inputVal = text.trim();
         let targetUserId = null;
@@ -1724,7 +1724,7 @@ bot.on('message', async (msg) => {
             if (foundKey) {
                 targetUserId = foundKey;
             } else {
-                targetUserId = `uname_${cleanUname}`;
+                targetUserId = cleanUname; // استفاده از خود یوزرنیم به عنوان کلید یکتا اگر چت آیدی عددی نبود
                 db.usersDetailMap[targetUserId] = {
                     name: `کاربر (${inputVal})`,
                     username: inputVal.startsWith('@') ? inputVal : `@${inputVal}`,
