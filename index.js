@@ -30,7 +30,6 @@ const bot = new TelegramBot(TOKEN, {
 
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
-const ADMIN_WEB_PASSWORD = 'admin_secure_password';
 
 const CHANNEL_LOG_ID = '-1004488082323';
 
@@ -247,84 +246,13 @@ const REWARD_AMOUNT = 5000;
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// صفحه اصلی وب‌سرور (فقط راهنمای ورود به پنل ادمین)
+// وب‌سرور ساده فقط برای زنده نگه داشتن پورت روی هاست (مثل Render یا Replit)
 app.get('/', (req, res) => {
-    res.send(`
-        <html dir="rtl"><head><title>پنل مدیریت آرنا</title></head>
-        <body style="font-family:Tahoma;text-align:center;padding-top:80px;background:#f4f7f6;">
-            <h2>🛡️ سامانه مدیریت اختصاصی ربات آرنا</h2>
-            <p>برای ورود به پنل مدیریت کلیک کنید: <a href="/admin" style="color:#28a745;font-weight:bold;text-decoration:none;">ورود به پنل ادمین</a></p>
-        </body></html>
-    `);
-});
-
-app.get('/admin', (req, res) => {
-    res.send(`
-        <html dir="rtl"><head><title>ورود به پنل مدیریت</title>
-        <style>body{font-family:Tahoma;background:#f4f7f6;text-align:center;padding-top:50px;} .box{background:white;padding:30px;width:350px;margin:auto;border-radius:10px;box-shadow:0 0 10px rgba(0,0,0,0.1);} input{width:100%;padding:10px;margin:10px 0;border:1px solid #ccc;border-radius:5px;} button{background:#28a745;color:white;border:none;padding:10px;width:100%;border-radius:5px;cursor:pointer;}</style>
-        </head><body>
-            <div class="box">
-                <h3>🔐 ورود به پنل ادمین</h3>
-                <form action="/admin/login" method="POST">
-                    <input type="password" name="password" placeholder="رمز عبور ادمین" required>
-                    <button type="submit">ورود به پنل</button>
-                </form>
-            </div>
-        </body></html>
-    `);
-});
-
-app.post('/admin/login', (req, res) => {
-    if (req.body.password === ADMIN_WEB_PASSWORD) {
-        res.redirect('/admin/dashboard');
-    } else {
-        res.send('<script>alert("رمز عبور اشتباه است!"); window.location="/admin";</script>');
-    }
-});
-
-// داشبورد اختصاصی ادمین (کاملاً پاکسازی‌شده از کدهای مشتریان)
-app.get('/admin/dashboard', (req, res) => {
-    loadDatabase();
-    let usersListHtml = '';
-    const uniqueUsers = [...new Set(db.allUsers)];
-    uniqueUsers.forEach(uId => {
-        const info = db.usersDetailMap[uId] || { name: 'نامشخص', username: 'ندارد', joinedAt: getPersianDateTime() };
-        const wallet = db.userWallets[uId] || 0;
-        usersListHtml += `<tr><td>${uId}</td><td>${info.name}</td><td>${info.username}</td><td>${wallet.toLocaleString()} تومان</td><td>${info.joinedAt || getPersianDateTime()}</td></tr>`;
-    });
-
-    res.send(`
-        <html dir="rtl"><head><title>داشبورد مدیریت</title>
-        <style>
-            body{font-family:Tahoma;background:#f8f9fa;margin:0;padding:20px;} 
-            .container{max-width:1100px;margin:auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.05);} 
-            h2{color:#333;border-bottom:2px solid #28a745;padding-bottom:10px;} 
-            table{width:100%;border-collapse:collapse;margin-top:15px;} 
-            th,td{border:1px solid #dee2e6;padding:10px;text-align:center;font-size:14px;} 
-            th{background:#343a40;color:white;}
-            .stats-box{display:flex;gap:15px;margin:20px 0;}
-            .stat-card{background:#e9ecef;padding:15px;border-radius:8px;flex:1;text-align:center;}
-        </style>
-        </head><body>
-            <div class="container">
-                <h2>👑 داشبورد اختصاصی پنل مدیریت ادمین</h2>
-                <div class="stats-box">
-                    <div class="stat-card"><b>تعداد کل کاربران:</b><br>${uniqueUsers.length} نفر</div>
-                    <div class="stat-card"><b>کل اشتراک‌های صادر شده:</b><br>${db.allSubscriptionsHistory.length} عدد</div>
-                </div>
-                <h3>👥 لیست کاربران ربات</h3>
-                <table>
-                    <tr><th>آیدی عددی</th><th>نام</th><th>نام کاربری</th><th>کیف پول</th><th>تاریخ عضویت</th></tr>
-                    ${usersListHtml}
-                </table>
-                <br><a href="/admin" style="color:red;text-decoration:none;font-weight:bold;">🚪 خروج از پنل مدیریت</a>
-            </div>
-        </body></html>
-    `);
+    res.send('Bot is running successfully!');
 });
 
 app.listen(PORT, () => {
-    console.log(`Server & Web Panel running on port ${PORT}`);
+    console.log(`Bot Server running on port ${PORT}`);
 });
 
 function isAdmin(msgOrQuery) {
@@ -586,11 +514,13 @@ function sendAdminPanel(chatId) {
     const freeSubStatus = db.isFreeSubEnabled ? '🟢 اشتراک رایگان: روشن' : '🔴 اشتراک رایگان: خاموش';
     const inviteStatus = db.isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
     
+    const uniqueUsersCount = [...new Set(db.allUsers)].length;
+
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
                 [
-                    { text: '🌐 ورود به پنل ادمین (وب)', url: `http://localhost:${PORT}/admin` }
+                    { text: `📊 آمار ربات (${uniqueUsersCount} کاربر)`, callback_data: 'admin_stats' }
                 ],
                 [
                     { text: '⚙️ مدیریت پلن‌ها', callback_data: 'admin_manage_plans' },
@@ -2416,7 +2346,7 @@ bot.on('message', async (msg) => {
         }
         const testLink = db.testServerConfig;
         const parsedData = await fetchAndParseConfig(testLink);
-        let testMsg = `🧪 **سرور تست پرسرعت آرنا:**\n\n🔗 لینک:\n\`${testLink}\``;
+        let testMsg = `🧪 **سرور تست رایگان:**\n\n🔗 لینک:\n\`${testLink}\``;
         if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
             testMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
         }
@@ -2425,15 +2355,20 @@ bot.on('message', async (msg) => {
 
     if (text.includes(names.invite)) {
         if (!db.isInviteSystemEnabled) {
-            return bot.sendMessage(chatId, '❌ سیستم دعوت دوستان غیرفعال است.').catch(() => {});
+            return bot.sendMessage(chatId, '❌ سیستم زیرمجموعه‌گیری غیرفعال است.').catch(() => {});
         }
         const botInfo = await bot.getMe();
         const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
-        const count = db.referals[userId] || 0;
-        const inviteText = (db.botTexts.invite_title || '')
+        const refCount = db.referals[userId] || 0;
+        const customInviteText = (db.botTexts.invite_title || '')
             .replace('{inviteLink}', inviteLink)
-            .replace('{count}', count);
-        return bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
+            .replace('{count}', refCount);
+
+        return bot.sendMessage(chatId, customInviteText, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+
+    if (text.includes(names.tutorial)) {
+        return bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
     }
 
     if (text.includes(names.agency_request)) {
@@ -2441,11 +2376,4 @@ bot.on('message', async (msg) => {
         saveDatabase();
         return bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
     }
-
-    if (text.includes(names.tutorial)) {
-        bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
 });
-
-console.log("Bot and Web Panel successfully configured and running!");
