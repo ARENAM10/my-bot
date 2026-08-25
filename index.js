@@ -447,6 +447,9 @@ function getPersistentMenuKeyboard() {
     }
     
     keyboardRows.push([{ text: `🤝 ${names.agency_request} 👑` }, { text: `📖 ${names.tutorial} 💡` }]);
+    
+    // 🚪 دکمه خروج از ربات (بستن کیبورد)
+    keyboardRows.push([{ text: '🚪 خروج از ربات' }]);
 
     return {
         reply_markup: {
@@ -589,7 +592,6 @@ function sendAdminPanel(chatId) {
     });
 }
 
-// تابع حرفه‌ای و کاملاً اصلاح‌شده‌ی بخش اشتراک‌های من
 async function sendUserSubscriptionsPage(chatId, messageId, userId, page = 0, callbackQueryId = null) {
     const userSubs = db.userSubscriptions[userId] || [];
     
@@ -1726,7 +1728,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
 // هندل کردن پیام‌های متنی کاربران و دکمه‌های شیشه‌ای منوی اصلی
 bot.on('message', async (msg) => {
-    if (!msg.text || msg.text.startsWith('/')) return;
+    if (!msg.text) return;
     loadDatabase();
 
     const chatId = msg.chat.id;
@@ -1736,6 +1738,35 @@ bot.on('message', async (msg) => {
     trackUserAndNotifyAdmin(msg);
     const canProceed = await handleForceJoin(msg);
     if (!canProceed) return;
+
+    // 🚪 هندل کردن دکمه خروج از ربات
+    if (text === '🚪 خروج از ربات') {
+        delete db.userStates[chatId];
+        saveDatabase();
+        await bot.sendMessage(chatId, '👋 کیبورد ربات بسته شد. هر وقت خواستی دوباره برگردی، دستور /start رو بفرست.', {
+            reply_markup: {
+                remove_keyboard: true
+            }
+        });
+        return;
+    }
+
+    // 💬 پاسخ مستقیم ادمین به مشتری (با قابلیت Reply روی پیام کاربر در چت ادمین)
+    if (isAdmin(msg) && msg.reply_to_message) {
+        const repliedText = msg.reply_to_message.text || msg.reply_to_message.caption || '';
+        const matchUserId = repliedText.match(/شناسه عددی \(Chat ID\):\s*`?(\d+)`?/);
+        
+        if (matchUserId && matchUserId[1]) {
+            const targetCustomerId = matchUserId[1];
+            try {
+                await bot.sendMessage(targetCustomerId, `💬 **پاسخ پشتیبانی:**\n\n${text}`);
+                await bot.sendMessage(chatId, '✅ پاسخ شما با موفقیت برای مشتری ارسال شد.');
+            } catch (e) {
+                await bot.sendMessage(chatId, '❌ خطا در ارسال پیام به مشتری (احتمالاً ربات را بلاک کرده است).');
+            }
+            return;
+        }
+    }
 
     const names = db.menuNames;
     const userState = db.userStates[chatId];
@@ -2047,20 +2078,15 @@ bot.on('message', async (msg) => {
         }
 
         if (step === 'support_waiting_message') {
-            const userObj = msg.from;
-            const name = userObj.first_name || 'بدون نام';
-            const username = userObj.username ? `@${userObj.username}` : 'ندارد';
-            
             delete db.userStates[chatId];
             saveDatabase();
 
-            bot.sendMessage(chatId, db.botTexts.support_success);
-
-            const supportForwardMsg = `📩 **پیام جدید در پشتیبانی آنلاین**\n\n` +
-                                     `👤 فرستنده: ${name}\n` +
-                                     `🔗 نام کاربری: ${username}\n` +
-                                     `🆔 چت آیدی: \`${userId}\`\n\n` +
-                                     `💬 **متن پیام:**\n${text}`;
+            const userInfo = db.usersDetailMap[userId] || { name: 'نامشخص', username: 'ندارد' };
+            const supportForwardMsg = `📩 **پیام جدید پشتیبانی از طرف مشتری:**\n\n` +
+                                      `👤 **نام:** ${userInfo.name}\n` +
+                                      `🔗 **یوزرنیم:** ${userInfo.username}\n` +
+                                      `🆔 **شناسه عددی (Chat ID):** \`${userId}\`\n\n` +
+                                      `💬 **متن پیام:**\n${text}`;
 
             const supportKeyboard = {
                 reply_markup: {
@@ -2073,7 +2099,8 @@ bot.on('message', async (msg) => {
                 }
             };
 
-            bot.sendMessage(ADMIN_CHAT_ID, supportForwardMsg, { parse_mode: 'Markdown', ...supportKeyboard }).catch(() => {});
+            await bot.sendMessage(ADMIN_CHAT_ID, supportForwardMsg, { parse_mode: 'Markdown', ...supportKeyboard });
+            await bot.sendMessage(chatId, db.botTexts.support_success || '🎯 پیام شما با موفقیت به پشتیبانی ارسال شد!', { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() });
             return;
         }
 
@@ -2178,17 +2205,19 @@ bot.on('message', async (msg) => {
         }
     }
 
-    // بررسی دکمه‌های کیبورد شیشه‌ای منوی اصلی (Reply Keyboard)
+    // منوی اصلی دکمه‌ها
     if (text.includes(names.buy_sub)) {
         const availablePlans = db.customPlans.filter(p => p.links && p.links.length > 0);
         if (availablePlans.length === 0) {
-            return bot.sendMessage(chatId, db.botTexts.no_plans);
+            bot.sendMessage(chatId, db.botTexts.no_plans, getPersistentMenuKeyboard());
+            return;
         }
         let planText = db.botTexts.store_title;
         const planButtons = availablePlans.map(p => [
             { text: `🌐 ${p.name} - ${p.volume} | 💰 ${p.price} ✨`, callback_data: `buy_custom_${p.id}` }
         ]);
-        return bot.sendMessage(chatId, planText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: planButtons } });
+        bot.sendMessage(chatId, planText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: planButtons } });
+        return;
     }
 
     if (text.includes(names.wallet)) {
@@ -2203,18 +2232,21 @@ bot.on('message', async (msg) => {
         const customWalletText = (db.botTexts.wallet_title || '')
             .replace('{balance}', balance.toLocaleString())
             .replace('{userId}', userId);
-        return bot.sendMessage(chatId, customWalletText, { parse_mode: 'Markdown', ...walletKeyboard });
+
+        bot.sendMessage(chatId, customWalletText, { parse_mode: 'Markdown', ...walletKeyboard });
+        return;
     }
 
     if (text.includes(names.my_subs)) {
-        await sendUserSubscriptionsPage(chatId, null, userId, 0);
+        await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
         return;
     }
 
     if (text.includes(names.support)) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
         saveDatabase();
-        return bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' });
+        return;
     }
 
     if (text.includes(names.free_sub)) {
@@ -2263,7 +2295,8 @@ bot.on('message', async (msg) => {
     }
 
     if (text.includes(names.tutorial)) {
-        return bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' });
+        return;
     }
 });
 
