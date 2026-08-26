@@ -861,14 +861,21 @@ bot.on('callback_query', async (callbackQuery) => {
         const subs = db.userSubscriptions[userId];
         if (subs && subs[subIndex]) {
             const sub = subs[subIndex];
+            
+            // 🔄 خواندن و بروزرسانی اطلاعات از خود لینک هنگام کلیک کاربر
+            const freshData = await fetchAndParseConfig(sub.configLink);
+            if (freshData.total !== 'نامشخص') sub.totalVolume = freshData.total;
+            if (freshData.expireDate !== 'نامشخص') sub.expiryDate = freshData.expireDate;
+            saveDatabase();
+
             let subDetailMsg = `📱 **جزئیات اشتراک شما:**\n\n` +
                                `📦 پلن: \`${sub.planName}\`\n` +
                                `🌐 حجم کل: \`${sub.totalVolume || sub.volume}\`\n` +
                                `⏳ تاریخ انقضا: \`${sub.expiryDate}\`\n\n` +
                                `🔗 **لینک اشتراک:**\n\`${sub.configLink}\``;
 
-            if (sub.extractedConfigs && sub.extractedConfigs.length > 0) {
-                subDetailMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${sub.extractedConfigs.join('\n\n')}\n\`\`\``;
+            if (freshData.extractedConfigs && freshData.extractedConfigs.length > 0) {
+                subDetailMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${freshData.extractedConfigs.join('\n\n')}\n\`\`\``;
             }
 
             await bot.editMessageText(subDetailMsg, {
@@ -1901,7 +1908,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // 📩 مدیریت پاسخ ادمین به تیکت پشتیبانی مشتری از طریق ریپلای روی پیام دریافتی
     if (isAdmin(msg) && msg.reply_to_message) {
         const repliedText = msg.reply_to_message.text || msg.reply_to_message.caption || '';
         const matchUserId = repliedText.match(/شناسه:\s*`?(\d+)`?/);
@@ -2464,66 +2470,66 @@ bot.on('message', async (msg) => {
 
         if (step === 'get_new_plan_price') {
             if (!isAdmin(msg)) return;
-            const st = db.userStates[chatId];
-            const newPlan = {
+            const planData = userState;
+            db.customPlans.push({
                 id: Date.now(),
-                name: st.planName,
-                volume: st.planVolume,
-                duration: st.planDuration,
+                name: planData.planName,
+                volume: planData.planVolume,
+                duration: planData.planDuration,
                 price: text,
                 links: []
-            };
-            db.customPlans.push(newPlan);
+            });
             delete db.userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, '✅ پلن جدید با موفقیت ایجاد شد! اکنون می‌توانید از بخش مدیریت پلن‌ها برای آن لینک انبار اضافه کنید. 🎉').catch(() => {});
+            bot.sendMessage(chatId, '✅ پلن جدید با موفقیت ایجاد شد! اکنون می‌توانید از بخش مدیریت پلن‌ها به آن لینک اضافه کنید. 🎉').catch(() => {});
             sendAdminPanel(chatId);
-            return;
-        }
-
-        if (step === 'get_extra_link_for_plan') {
-            if (!isAdmin(msg)) return;
-            const planId = userState.targetPlanId;
-            const plan = db.customPlans.find(p => p.id === planId);
-            if (plan) {
-                plan.links.push(text);
-                delete db.userStates[chatId];
-                saveDatabase();
-                bot.sendMessage(chatId, `✅ لینک جدید با موفقیت به پلن **${plan.name}** اضافه شد.\n📊 تعداد کل لینک‌های این پلن: ${plan.links.length} عدد`, { parse_mode: 'Markdown' }).catch(() => {});
-            } else {
-                bot.sendMessage(chatId, '❌ پلن مورد نظر یافت نشد.').catch(() => {});
-            }
             return;
         }
 
         if (step === 'edit_plan_get_name') {
             if (!isAdmin(msg)) return;
-            const planId = userState.targetPlanId;
-            const plan = db.customPlans.find(p => p.id === planId);
+            const plan = db.customPlans.find(p => p.id === userState.targetPlanId);
             if (plan) {
                 plan.name = text;
-                delete db.userStates[chatId];
                 saveDatabase();
-                bot.sendMessage(chatId, `✅ نام پلن به **${text}** تغییر یافت.`).catch(() => {});
+                bot.sendMessage(chatId, '✅ نام پلن با موفقیت ویرایش شد.').catch(() => {});
             }
+            delete db.userStates[chatId];
+            saveDatabase();
+            return;
+        }
+
+        if (step === 'get_extra_link_for_panel' || step === 'get_extra_link_for_plan') {
+            if (!isAdmin(msg)) return;
+            const plan = db.customPlans.find(p => p.id === userState.targetPlanId);
+            if (plan) {
+                if (!plan.links) plan.links = [];
+                plan.links.push(text);
+                saveDatabase();
+                bot.sendMessage(chatId, '✅ لینک جدید با موفقیت به انبار این پلن اضافه شد. 📦').catch(() => {});
+            }
+            delete db.userStates[chatId];
+            saveDatabase();
             return;
         }
 
         if (step === 'support_waiting_message') {
             delete db.userStates[chatId];
             saveDatabase();
-
-            bot.sendMessage(chatId, db.botTexts.support_success, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
-
-            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
-            const cleanUsername = (userInfo.username || 'ندارد').replace('@', '');
-            const ticketText = `📩 **تیکت پشتیبانی جدید:**\n\n` +
-                               `👤 نام: ${userInfo.name}\n` +
-                               `🔗 یوزرنیم: @${cleanUsername}\n` +
-                               `🆔 شناسه: \`${userId}\`\n\n` +
-                               `💬 **متن پیام:**\n${text}`;
-
-            const ticketKeyboard = {
+            
+            bot.sendMessage(chatId, db.botTexts.support_success, { parse_mode: 'Markdown' }).catch(() => {});
+            
+            const userObj = msg.from;
+            const name = userObj.first_name || 'بدون نام';
+            const username = userObj.username ? `@${userObj.username}` : 'ندارد';
+            
+            const supportForwardMsg = `💬 **پیام جدید پشتیبانی از کاربر:**\n\n` +
+                                     `👤 نام: ${name}\n` +
+                                     `🔗 یوزرنیم: ${username}\n` +
+                                     `🆔 شناسه: \`${userId}\`\n\n` +
+                                     `✉️ **متن پیام:**\n${text}`;
+            
+            const supportKeyboard = {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }],
@@ -2531,8 +2537,8 @@ bot.on('message', async (msg) => {
                     ]
                 }
             };
-
-            bot.sendMessage(ADMIN_CHAT_ID, ticketText, { parse_mode: 'Markdown', ...ticketKeyboard }).catch(() => {});
+            
+            bot.sendMessage(ADMIN_CHAT_ID, supportForwardMsg, { parse_mode: 'Markdown', ...supportKeyboard }).catch(() => {});
             return;
         }
 
@@ -2540,15 +2546,17 @@ bot.on('message', async (msg) => {
             delete db.userStates[chatId];
             saveDatabase();
 
-            bot.sendMessage(chatId, db.botTexts.agency_success, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+            bot.sendMessage(chatId, db.botTexts.agency_success, { parse_mode: 'Markdown' }).catch(() => {});
 
-            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
-            const cleanUsername = (userInfo.username || 'ندارد').replace('@', '');
-            const agencyText = `🤝 **درخواست اخذ نمایندگی جدید:**\n\n` +
-                               `👤 نام: ${userInfo.name}\n` +
-                               `🔗 یوزرنیم: @${cleanUsername}\n` +
-                               `🆔 شناسه: \`${userId}\`\n\n` +
-                               `💬 **جزئیات درخواست:**\n${text}`;
+            const userObj = msg.from;
+            const name = userObj.first_name || 'بدون نام';
+            const username = userObj.username ? `@${userObj.username}` : 'ندارد';
+
+            const agencyMsg = `🤝 **درخواست نمایندگی جدید:**\n\n` +
+                              `👤 نام: ${name}\n` +
+                              `🔗 یوزرنیم: ${username}\n` +
+                              `🆔 شناسه: \`${userId}\`\n\n` +
+                              `📄 **رزومه / درخواست:**\n${text}`;
 
             const agencyKeyboard = {
                 reply_markup: {
@@ -2558,7 +2566,7 @@ bot.on('message', async (msg) => {
                 }
             };
 
-            bot.sendMessage(ADMIN_CHAT_ID, agencyText, { parse_mode: 'Markdown', ...agencyKeyboard }).catch(() => {});
+            bot.sendMessage(ADMIN_CHAT_ID, agencyMsg, { parse_mode: 'Markdown', ...agencyKeyboard }).catch(() => {});
             return;
         }
     }
