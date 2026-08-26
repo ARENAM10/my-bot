@@ -80,7 +80,7 @@ const defaultDatabaseStructure = {
     isFreeSubEnabled: true,
     freeSubConfig: 'vless://example-free-sub-link',
     isInviteSystemEnabled: true,
-    inviteRewardAmount: 5000, // مبلغ پیش‌فرض پاداش دعوت
+    inviteRewardAmount: 5000, // 🎁 مبلغ پیش‌فرض پاداش دعوت
     userStates: {},
     menuNames: {
         buy_sub: '🛒 خرید اشتراک VIP',
@@ -151,7 +151,7 @@ function loadDatabase() {
             db = {
                 ...defaultDatabaseStructure,
                 ...parsed,
-                inviteRewardAmount: parsed.inviteRewardAmount !== undefined ? parsed.inviteRewardAmount : 5000,
+                inviteRewardAmount: parsed.inviteRewardAmount !== undefined ? parsed.inviteRewardAmount : defaultDatabaseStructure.inviteRewardAmount,
                 menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
                 botTexts: { ...defaultDatabaseStructure.botTexts, ...(parsed.botTexts || {}) },
                 userStates: parsed.userStates || {},
@@ -473,17 +473,17 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     if (!canProceed) return;
 
     const payload = match ? match[1] : null; 
-    const rewardAmount = db.inviteRewardAmount || 5000;
+    const currentReward = db.inviteRewardAmount || 5000;
 
     if (payload && db.isInviteSystemEnabled && payload !== chatId.toString()) {
         const refId = payload;
         if (!db.userWallets[`referred_${chatId}`]) {
             db.userWallets[`referred_${chatId}`] = true; 
-            db.userWallets[refId] = (db.userWallets[refId] || 0) + rewardAmount;
+            db.userWallets[refId] = (db.userWallets[refId] || 0) + currentReward;
             db.referals[refId] = (db.referals[refId] || 0) + 1;
             saveDatabase();
 
-            bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${rewardAmount.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
+            bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${currentReward.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
                 .catch(() => {});
         }
     }
@@ -524,7 +524,6 @@ function sendAdminPanel(chatId) {
     const inviteStatus = db.isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
     
     const uniqueUsersCount = [...new Set(db.allUsers)].length;
-    const currentReward = (db.inviteRewardAmount || 5000).toLocaleString();
 
     const adminKeyboard = {
         reply_markup: {
@@ -533,7 +532,7 @@ function sendAdminPanel(chatId) {
                     { text: `📊 آمار ربات (${uniqueUsersCount} کاربر)`, callback_data: 'admin_stats' }
                 ],
                 [
-                    { text: `🎁 پاداش دعوت: ${currentReward} ت`, callback_data: 'admin_set_invite_reward' }
+                    { text: `🎁 تنظیم پاداش دعوت (${(db.inviteRewardAmount || 5000).toLocaleString()} ت)`, callback_data: 'admin_set_invite_reward' }
                 ],
                 [
                     { text: '🤝 مدیریت نمایندگان', callback_data: 'admin_agents_menu' },
@@ -697,13 +696,11 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // --- مدیریت تنظیم مبلغ پاداش دعوت ---
     if (data === 'admin_set_invite_reward') {
         if (!isAdmin(callbackQuery)) return;
-        db.userStates[chatId] = { step: 'get_new_invite_reward_amount' };
+        db.userStates[chatId] = { step: 'get_new_invite_reward' };
         saveDatabase();
-        const currentAmt = (db.inviteRewardAmount || 5000).toLocaleString();
-        await bot.sendMessage(chatId, `🎁 **تغییر مبلغ پاداش دعوت**\n\nمبلغ پاداش فعلی: \`${currentAmt} تومان\`\n\nلطفاً مبلغ جدید را به تومان (فقط عدد، مثلاً `10000`) ارسال کنید:`, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, `🎁 **تنظیم مبلغ پاداش دعوت**\n\nمبلغ فعلی: \`${(db.inviteRewardAmount || 5000).toLocaleString()} تومان\`\n\nلطفاً مبلغ جدید پاداش را به تومان و به عدد وارد کنید (مثلا 10000):`, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -2022,19 +2019,16 @@ bot.on('message', async (msg) => {
     if (userState && userState.step) {
         const step = userState.step;
 
-        // --- دریافت مقدار جدید پاداش دعوت ---
-        if (step === 'get_new_invite_reward_amount') {
+        if (step === 'get_new_invite_reward') {
             if (!isAdmin(msg)) return;
-            const newAmount = parseInt(text.replace(/[^0-9]/g, ''), 10);
-            if (isNaN(newAmount) || newAmount < 0) {
-                return bot.sendMessage(chatId, '❌ مبلغ نامعتبر است. لطفاً یک عدد صحیح وارد کنید:').catch(() => {});
+            const newReward = parseInt(text.replace(/[^0-9]/g, ''), 10);
+            if (isNaN(newReward) || newReward < 0) {
+                return bot.sendMessage(chatId, '❌ مبلغ نامعتبر است. یک عدد صحیح وارد کنید:').catch(() => {});
             }
-
-            db.inviteRewardAmount = newAmount;
+            db.inviteRewardAmount = newReward;
             delete db.userStates[chatId];
             saveDatabase();
-
-            bot.sendMessage(chatId, `✅ مبلغ پاداش هر دعوت با موفقیت به **${newAmount.toLocaleString()} تومان** تغییر یافت. 🎉`, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `✅ پاداش دعوت با موفقیت به **${newReward.toLocaleString()} تومان** تغییر یافت. 🎉`, { parse_mode: 'Markdown' }).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
@@ -2513,18 +2507,13 @@ bot.on('message', async (msg) => {
         if (!db.isInviteSystemEnabled) return;
         const botInfo = await bot.getMe();
         const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
-        const refCount = db.referals[userId] || 0;
+        const count = db.referals[userId] || 0;
 
-        const customInviteText = (db.botTexts.invite_title || '')
+        let inviteText = (db.botTexts.invite_title || '')
             .replace('{inviteLink}', inviteLink)
-            .replace('{count}', refCount);
+            .replace('{count}', count);
 
-        bot.sendMessage(chatId, customInviteText, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.my_subs)) {
-        await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
+        bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
