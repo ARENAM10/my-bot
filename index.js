@@ -80,6 +80,7 @@ const defaultDatabaseStructure = {
     isFreeSubEnabled: true,
     freeSubConfig: 'vless://example-free-sub-link',
     isInviteSystemEnabled: true,
+    inviteRewardAmount: 5000, // مبلغ پیش‌فرض پاداش دعوت
     userStates: {},
     menuNames: {
         buy_sub: '🛒 خرید اشتراک VIP',
@@ -150,6 +151,7 @@ function loadDatabase() {
             db = {
                 ...defaultDatabaseStructure,
                 ...parsed,
+                inviteRewardAmount: parsed.inviteRewardAmount !== undefined ? parsed.inviteRewardAmount : 5000,
                 menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
                 botTexts: { ...defaultDatabaseStructure.botTexts, ...(parsed.botTexts || {}) },
                 userStates: parsed.userStates || {},
@@ -243,7 +245,6 @@ async function sendBackupToAdmin() {
 }
 
 setInterval(sendBackupToAdmin, 24 * 60 * 60 * 1000);
-const REWARD_AMOUNT = 5000;  
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -472,15 +473,17 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     if (!canProceed) return;
 
     const payload = match ? match[1] : null; 
+    const rewardAmount = db.inviteRewardAmount || 5000;
+
     if (payload && db.isInviteSystemEnabled && payload !== chatId.toString()) {
         const refId = payload;
         if (!db.userWallets[`referred_${chatId}`]) {
             db.userWallets[`referred_${chatId}`] = true; 
-            db.userWallets[refId] = (db.userWallets[refId] || 0) + REWARD_AMOUNT;
+            db.userWallets[refId] = (db.userWallets[refId] || 0) + rewardAmount;
             db.referals[refId] = (db.referals[refId] || 0) + 1;
             saveDatabase();
 
-            bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${REWARD_AMOUNT.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
+            bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${rewardAmount.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
                 .catch(() => {});
         }
     }
@@ -521,12 +524,16 @@ function sendAdminPanel(chatId) {
     const inviteStatus = db.isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
     
     const uniqueUsersCount = [...new Set(db.allUsers)].length;
+    const currentReward = (db.inviteRewardAmount || 5000).toLocaleString();
 
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
                 [
                     { text: `📊 آمار ربات (${uniqueUsersCount} کاربر)`, callback_data: 'admin_stats' }
+                ],
+                [
+                    { text: `🎁 پاداش دعوت: ${currentReward} ت`, callback_data: 'admin_set_invite_reward' }
                 ],
                 [
                     { text: '🤝 مدیریت نمایندگان', callback_data: 'admin_agents_menu' },
@@ -689,6 +696,16 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
+
+    // --- مدیریت تنظیم مبلغ پاداش دعوت ---
+    if (data === 'admin_set_invite_reward') {
+        if (!isAdmin(callbackQuery)) return;
+        db.userStates[chatId] = { step: 'get_new_invite_reward_amount' };
+        saveDatabase();
+        const currentAmt = (db.inviteRewardAmount || 5000).toLocaleString();
+        await bot.sendMessage(chatId, `🎁 **تغییر مبلغ پاداش دعوت**\n\nمبلغ پاداش فعلی: \`${currentAmt} تومان\`\n\nلطفاً مبلغ جدید را به تومان (فقط عدد، مثلاً `10000`) ارسال کنید:`, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
 
     // --- مدیریت نام دکمه‌های منو ---
     if (data === 'admin_edit_names_menu') {
@@ -1873,7 +1890,6 @@ bot.on('message', async (msg) => {
         return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.').catch(() => {});
     }
 
-    // تابع زیر بررسی می‌کند که آیا کاربر برای اولین بار استارت کرده یا وارد ربات شده و پیام را به ادمین ارسال می‌کند
     trackUserAndNotifyAdmin(msg);
     const canProceed = await handleForceJoin(msg);
     if (!canProceed) return;
@@ -2005,6 +2021,23 @@ bot.on('message', async (msg) => {
 
     if (userState && userState.step) {
         const step = userState.step;
+
+        // --- دریافت مقدار جدید پاداش دعوت ---
+        if (step === 'get_new_invite_reward_amount') {
+            if (!isAdmin(msg)) return;
+            const newAmount = parseInt(text.replace(/[^0-9]/g, ''), 10);
+            if (isNaN(newAmount) || newAmount < 0) {
+                return bot.sendMessage(chatId, '❌ مبلغ نامعتبر است. لطفاً یک عدد صحیح وارد کنید:').catch(() => {});
+            }
+
+            db.inviteRewardAmount = newAmount;
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            bot.sendMessage(chatId, `✅ مبلغ پاداش هر دعوت با موفقیت به **${newAmount.toLocaleString()} تومان** تغییر یافت. 🎉`, { parse_mode: 'Markdown' }).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
 
         if (step === 'admin_waiting_for_agent_identifier') {
             if (!isAdmin(msg)) return;
@@ -2481,6 +2514,7 @@ bot.on('message', async (msg) => {
         const botInfo = await bot.getMe();
         const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
         const refCount = db.referals[userId] || 0;
+
         const customInviteText = (db.botTexts.invite_title || '')
             .replace('{inviteLink}', inviteLink)
             .replace('{count}', refCount);
@@ -2494,13 +2528,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (text.includes(names.agency_request)) {
-        db.userStates[chatId] = { step: 'agency_waiting_message' };
-        saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
     if (text.includes(names.tutorial)) {
         bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
         return;
@@ -2509,7 +2536,14 @@ bot.on('message', async (msg) => {
     if (text.includes(names.support)) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
         saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.agency_request)) {
+        db.userStates[chatId] = { step: 'agency_waiting_message' };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } }).catch(() => {});
         return;
     }
 });
