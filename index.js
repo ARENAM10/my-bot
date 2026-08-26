@@ -2439,7 +2439,9 @@ bot.on('message', async (msg) => {
             }
             delete db.userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, `✅ موجودی کیف پول کاربر بروزرسانی شد.`).catch(() => {});
+
+            const actionText = action === 'inc' ? 'افزایش یافت' : 'کاهش یافت';
+            bot.sendMessage(chatId, `✅ موجودی حساب کاربر \`${targetUser}\` با موفقیت ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
     }
