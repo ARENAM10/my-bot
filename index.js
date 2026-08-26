@@ -2447,15 +2447,16 @@ bot.on('message', async (msg) => {
             const supportKeyboard = {
                 reply_markup: {
                     inline_keyboard: [
-                        [
-                            { text: '🔒 بستن تیکت', callback_data: `close_ticket_${userId}` }
-                        ]
+                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]
                     ]
                 }
             };
 
+            // ارسال پیام به ادمین جهت بررسی و امکان ریپلی کردن
             await bot.sendMessage(ADMIN_CHAT_ID, supportForwardMsg, { parse_mode: 'Markdown', ...supportKeyboard }).catch(() => {});
-            await bot.sendMessage(chatId, db.botTexts.support_success || '🎯 پیام شما با موفقیت به پشتیبانی ارسال شد!', { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+            
+            // ارسال پیام موفقیت به کاربر
+            await bot.sendMessage(chatId, db.botTexts.support_success, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
             return;
         }
 
@@ -2463,84 +2464,24 @@ bot.on('message', async (msg) => {
             delete db.userStates[chatId];
             saveDatabase();
 
-            bot.sendMessage(chatId, db.botTexts.agency_success).catch(() => {});
-            bot.sendMessage(ADMIN_CHAT_ID, `🤝 **درخواست نمایندگی VIP جدید:**\n\n👤 کاربر: ${msg.from.first_name} (\`${userId}\`)\n\n💬 **متن درخواست:**\n${text}`, { parse_mode: 'Markdown' }).catch(() => {});
+            const userInfo = db.usersDetailMap[userId] || { name: 'نامشخص', username: 'ندارد' };
+            const agencyForwardMsg = `🤝 **درخواست نمایندگی جدید:**\n\n` +
+                                     `👤 نام: ${userInfo.name}\n` +
+                                     `🔗 یوزرنیم: ${userInfo.username}\n` +
+                                     `🆔 شناسه عددی: \`${userId}\`\n\n` +
+                                     `📝 **متن درخواست/رزومه:**\n${text}`;
+
+            const agencyKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]
+                    ]
+                }
+            };
+
+            await bot.sendMessage(ADMIN_CHAT_ID, agencyForwardMsg, { parse_mode: 'Markdown', ...agencyKeyboard }).catch(() => {});
+            await bot.sendMessage(chatId, db.botTexts.agency_success, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
             return;
         }
-    }
-
-    if (isAdmin(msg)) {
-        return; 
-    }
-
-    if (text.includes(names.buy_sub)) {
-        const availablePlans = db.customPlans.filter(p => p.links && p.links.length > 0);
-        if (availablePlans.length === 0) {
-            bot.sendMessage(chatId, db.botTexts.no_plans, getPersistentMenuKeyboard()).catch(() => {});
-            return;
-        }
-        let planText = db.botTexts.store_title;
-        const planButtons = availablePlans.map(p => [
-            { text: `🌐 ${p.name} - ${p.volume} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
-        ]);
-
-        bot.sendMessage(chatId, planText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: planButtons } }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.free_sub)) {
-        if (!db.isFreeSubEnabled) {
-            bot.sendMessage(chatId, '❌ اشتراک هدیه در حال حاضر غیرفعال است.').catch(() => {});
-            return;
-        }
-        bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.test_server)) {
-        if (!db.isTestServerEnabled) {
-            bot.sendMessage(chatId, '❌ سرور تست در حال حاضر غیرفعال است.').catch(() => {});
-            return;
-        }
-        bot.sendMessage(chatId, `🧪 **لینک سرور تست رایگان:**\n\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.wallet)) {
-        const balance = db.userWallets[userId] || 0;
-        const walletKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '➕ شارژ کیف پول', callback_data: 'wallet_deposit' }]
-                ]
-            }
-        };
-        const customWalletText = (db.botTexts.wallet_title || '')
-            .replace('{balance}', balance.toLocaleString())
-            .replace('{userId}', userId);
-
-        bot.sendMessage(chatId, customWalletText, { parse_mode: 'Markdown', ...walletKeyboard }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.invite)) {
-        const inviteLink = `https://t.me/${(await bot.getMe()).username}?start=${chatId}`;
-        const count = db.referals[chatId] || 0;
-        const inviteText = (db.botTexts.invite_title || '')
-            .replace('{inviteLink}', inviteLink)
-            .replace('{count}', count);
-
-        bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.my_subs)) {
-        await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
-        return;
-    }
-
-    if (text.includes(names.tutorial)) {
-        bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
     }
 });
