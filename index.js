@@ -80,7 +80,7 @@ const defaultDatabaseStructure = {
     isFreeSubEnabled: true,
     freeSubConfig: 'vless://example-free-sub-link',
     isInviteSystemEnabled: true,
-    inviteRewardAmount: 5000, // 🎁 مبلغ پیش‌فرض پاداش دعوت
+    inviteRewardAmount: 5000, 
     userStates: {},
     menuNames: {
         buy_sub: '🛒 خرید اشتراک VIP',
@@ -704,7 +704,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- مدیریت نام دکمه‌های منو ---
     if (data === 'admin_edit_names_menu') {
         if (!isAdmin(callbackQuery)) return;
         const names = db.menuNames;
@@ -2474,6 +2473,18 @@ bot.on('message', async (msg) => {
         return;
     }
 
+    if (text.includes(names.free_sub)) {
+        if (!db.isFreeSubEnabled) return;
+        bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.test_server)) {
+        if (!db.isTestServerEnabled) return;
+        bot.sendMessage(chatId, `🧪 **سرور تست رایگان:**\n\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+        return;
+    }
+
     if (text.includes(names.wallet)) {
         const balance = db.userWallets[userId] || 0;
         const walletKeyboard = {
@@ -2491,48 +2502,45 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (text.includes(names.free_sub)) {
-        if (!db.isFreeSubEnabled) return;
-        bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.test_server)) {
-        if (!db.isTestServerEnabled) return;
-        bot.sendMessage(chatId, `🧪 **سرور تست رایگان:**\n\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
     if (text.includes(names.invite)) {
         if (!db.isInviteSystemEnabled) return;
         const botInfo = await bot.getMe();
         const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
         const count = db.referals[userId] || 0;
-
-        let inviteText = (db.botTexts.invite_title || '')
+        const customInviteText = (db.botTexts.invite_title || '')
             .replace('{inviteLink}', inviteLink)
             .replace('{count}', count);
 
-        bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, customInviteText, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
         return;
     }
 
-    if (text.includes(names.tutorial)) {
-        bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.support)) {
-        db.userStates[chatId] = { step: 'support_waiting_message' };
-        saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } }).catch(() => {});
+    if (text.includes(names.my_subs)) {
+        const userSubs = db.userSubscriptions[userId] || [];
+        if (userSubs.length === 0) {
+            bot.sendMessage(chatId, db.botTexts.empty_subs, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+        } else {
+            await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
+        }
         return;
     }
 
     if (text.includes(names.agency_request)) {
         db.userStates[chatId] = { step: 'agency_waiting_message' };
         saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } }).catch(() => {});
+        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.tutorial)) {
+        bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.support)) {
+        db.userStates[chatId] = { step: 'support_waiting_message' };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 });
