@@ -135,7 +135,7 @@ const defaultDatabaseStructure = {
     ],
     discountCodes: {}, 
     appliedDiscounts: {}, 
-    agents: {}, // ذخیره نمایندگان: { userId: { discountPercent: 15 } }
+    agents: {}, 
     paymentCardNumber: '6037-9971-xxxx-xxxx',
     messagesMap: {}
 };
@@ -485,7 +485,6 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
         }
     }
 
-    // اختصاص پنل کاملا انحصاری برای ادمین بدون دکمه‌های مشتریان
     if (isAdmin(msg)) {
         const adminReplyKeyboard = {
             reply_markup: {
@@ -535,34 +534,37 @@ function sendAdminPanel(chatId) {
                 ],
                 [
                     { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' },
-                    { text: '✏️ ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' }
+                    { text: '✏️ ویرایش نام دکمه‌ها', callback_data: 'admin_edit_names_menu' }
                 ],
                 [
-                    { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' },
-                    { text: '📁 رسیدهای مالی', callback_data: 'admin_receipts' }
+                    { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' },
+                    { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' }
                 ],
                 [
-                    { text: '💰 مدیریت کیف پول‌ها', callback_data: 'manage_wallets' },
-                    { text: '📱 مدیریت اشتراک کاربران', callback_data: 'manage_user_subs' }
+                    { text: '📁 رسیدهای مالی', callback_data: 'admin_receipts' },
+                    { text: '💰 مدیریت کیف پول‌ها', callback_data: 'manage_wallets' }
                 ],
                 [
-                    { text: '🚫 مسدودسازی کاربران', callback_data: 'admin_block_menu' },
-                    { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' }
+                    { text: '📱 مدیریت اشتراک کاربران', callback_data: 'manage_user_subs' },
+                    { text: '🚫 مسدودسازی کاربران', callback_data: 'admin_block_menu' }
                 ],
                 [
-                    { text: testServerStatus, callback_data: 'toggle_test_server' },
-                    { text: freeSubStatus, callback_data: 'toggle_free_sub' }
+                    { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' },
+                    { text: testServerStatus, callback_data: 'toggle_test_server' }
                 ],
                 [
-                    { text: '🧪 لینک سرور تست', callback_data: 'admin_set_test_link' },
-                    { text: '🎁 لینک اشتراک رایگان', callback_data: 'admin_set_free_link' }
+                    { text: freeSubStatus, callback_data: 'toggle_free_sub' },
+                    { text: '🧪 لینک سرور تست', callback_data: 'admin_set_test_link' }
                 ],
                 [
-                    { text: inviteStatus, callback_data: 'toggle_invite_system' },
-                    { text: forceJoinStatus, callback_data: 'admin_force_join_menu' }
+                    { text: '🎁 لینک اشتراک رایگان', callback_data: 'admin_set_free_link' },
+                    { text: inviteStatus, callback_data: 'toggle_invite_system' }
                 ],
                 [
-                    { text: '📢 ارسال پیام همگانی', callback_data: 'admin_broadcast' },
+                    { text: forceJoinStatus, callback_data: 'admin_force_join_menu' },
+                    { text: '📢 ارسال پیام همگانی', callback_data: 'admin_broadcast' }
+                ],
+                [
                     { text: '📦 پشتیبان‌گیری دستی', callback_data: 'admin_send_backup' }
                 ]
             ]
@@ -688,7 +690,40 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // --- مدیریت نمایندگان ---
+    // --- مدیریت نام دکمه‌های منو ---
+    if (data === 'admin_edit_names_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        const names = db.menuNames;
+        const editNamesKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: `✏️ خرید اشتراک: ${names.buy_sub}`, callback_data: 'set_name_buy_sub' }],
+                    [{ text: `✏️ اشتراک هدیه: ${names.free_sub}`, callback_data: 'set_name_free_sub' }],
+                    [{ text: `✏️ سرور تست: ${names.test_server}`, callback_data: 'set_name_test_server' }],
+                    [{ text: `✏️ کیف پول: ${names.wallet}`, callback_data: 'set_name_wallet' }],
+                    [{ text: `✏️ دعوت دوستان: ${names.invite}`, callback_data: 'set_name_invite' }],
+                    [{ text: `✏️ اشتراک‌های من: ${names.my_subs}`, callback_data: 'set_name_my_subs' }],
+                    [{ text: `✏️ نمایندگی: ${names.agency_request}`, callback_data: 'set_name_agency_request' }],
+                    [{ text: `✏️ آموزش: ${names.tutorial}`, callback_data: 'set_name_tutorial' }],
+                    [{ text: `✏️ پشتیبانی: ${names.support}`, callback_data: 'set_name_support' }],
+                    [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
+                ]
+            }
+        };
+        await bot.editMessageText('✏️ **تغییر نام دکمه‌های منوی اصلی**\nگزینه مورد نظر را انتخاب کنید:', { parse_mode: 'Markdown', ...editNamesKeyboard }).catch(() => {});
+        return;
+    }
+
+    if (data.startsWith('set_name_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const key = data.replace('set_name_', '');
+        db.userStates[chatId] = { step: 'get_new_menu_name', targetKey: key };
+        saveDatabase();
+        bot.sendMessage(chatId, `✏️ نام جدید این دکمه را ارسال کنید:`, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    // --- بقیه بخش‌های ربات ---
     if (data === 'admin_agents_menu') {
         if (!isAdmin(callbackQuery)) return;
         const agentsList = Object.keys(db.agents || {});
@@ -1302,38 +1337,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data === 'admin_edit_names_menu') {
-        if (!isAdmin(callbackQuery)) return;
-        const names = db.menuNames;
-        const editNamesKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: `✏️ خرید اشتراک: ${names.buy_sub}`, callback_data: 'set_name_buy_sub' }],
-                    [{ text: `✏️ اشتراک هدیه: ${names.free_sub}`, callback_data: 'set_name_free_sub' }],
-                    [{ text: `✏️ سرور تست: ${names.test_server}`, callback_data: 'set_name_test_server' }],
-                    [{ text: `✏️ کیف پول: ${names.wallet}`, callback_data: 'set_name_wallet' }],
-                    [{ text: `✏️ دعوت دوستان: ${names.invite}`, callback_data: 'set_name_invite' }],
-                    [{ text: `✏️ اشتراک‌های من: ${names.my_subs}`, callback_data: 'set_name_my_subs' }],
-                    [{ text: `✏️ نمایندگی: ${names.agency_request}`, callback_data: 'set_name_agency_request' }],
-                    [{ text: `✏️ آموزش: ${names.tutorial}`, callback_data: 'set_name_tutorial' }],
-                    [{ text: `✏️ پشتیبانی: ${names.support}`, callback_data: 'set_name_support' }],
-                    [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
-                ]
-            }
-        };
-        bot.sendMessage(chatId, '✏️ **تغییر نام دکمه‌های منوی اصلی**\nگزینه مورد نظر را انتخاب کنید:', { parse_mode: 'Markdown', ...editNamesKeyboard }).catch(() => {});
-        return;
-    }
-
-    if (data.startsWith('set_name_')) {
-        if (!isAdmin(callbackQuery)) return;
-        const key = data.replace('set_name_', '');
-        db.userStates[chatId] = { step: 'get_new_menu_name', targetKey: key };
-        saveDatabase();
-        bot.sendMessage(chatId, `✏️ نام جدید این دکمه را ارسال کنید:`, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
     if (data === 'admin_edit_texts_menu') {
         if (!isAdmin(callbackQuery)) return;
         const editTextKeyboard = {
@@ -1670,7 +1673,6 @@ bot.on('callback_query', async (callbackQuery) => {
         let priceNumber = parsePrice(selectedPlan.price);
         let discountInfoText = '';
         
-        // بررسی تخفیف خودِ کاربر نماینده (اگر خود کاربر نماینده باشد)
         let agentDiscountPercent = 0;
         if (db.agents && db.agents[userId]) {
             agentDiscountPercent = db.agents[userId].discountPercent || 0;
@@ -2004,7 +2006,6 @@ bot.on('message', async (msg) => {
     if (userState && userState.step) {
         const step = userState.step;
 
-        // --- مراحل ثبت نماینده جدید ---
         if (step === 'admin_waiting_for_agent_identifier') {
             if (!isAdmin(msg)) return;
             let targetId = text.replace('@', '').trim();
@@ -2170,7 +2171,7 @@ bot.on('message', async (msg) => {
             db.menuNames[key] = text;
             delete db.userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, `✅ نام دکمه تغییر یافت.`).catch(() => {});
+            bot.sendMessage(chatId, `✅ نام دکمه با موفقیت تغییر یافت.`).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
@@ -2480,24 +2481,17 @@ bot.on('message', async (msg) => {
         const botInfo = await bot.getMe();
         const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
         const refCount = db.referals[userId] || 0;
-
-        const inviteMsg = (db.botTexts.invite_title || '')
+        
+        const inviteText = (db.botTexts.invite_title || '')
             .replace('{inviteLink}', inviteLink)
             .replace('{count}', refCount);
 
-        bot.sendMessage(chatId, inviteMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
     if (text.includes(names.my_subs)) {
         await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
-        return;
-    }
-
-    if (text.includes(names.agency_request)) {
-        db.userStates[chatId] = { step: 'agency_waiting_message' };
-        saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -2509,7 +2503,14 @@ bot.on('message', async (msg) => {
     if (text.includes(names.support)) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
         saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.agency_request)) {
+        db.userStates[chatId] = { step: 'agency_waiting_message' };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } }).catch(() => {});
         return;
     }
 });
