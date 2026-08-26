@@ -1927,7 +1927,7 @@ bot.on('message', async (msg) => {
         if (matchUserId && matchUserId[1]) {
             const targetCustomerId = matchUserId[1];
             try {
-                await bot.sendMessage(targetCustomerId, `💬 **پاسخ پشتیبانی:**\n\n${text}`);
+                await bot.sendMessage(targetCustomerId, `💬 **پاسخ پشتیبانی/مدیریت:**\n\n${text}`);
                 await bot.sendMessage(chatId, '✅ پاسخ با موفقیت به مشتری ارسال شد.');
             } catch (e) {
                 await bot.sendMessage(chatId, '❌ خطا در ارسال پیام به کاربر (ممکن است ربات را بلاک کرده باشد).').catch(() => {});
@@ -2482,91 +2482,18 @@ bot.on('message', async (msg) => {
             const agencyCaption = `🤝 **درخواست جدید اخذ نمایندگی:**\n\n` +
                                   `👤 از طرف: ${msg.from.first_name || 'بدون نام'} (\`${userId}\`)\n` +
                                   `🔗 یوزرنیم: @${msg.from.username || 'ندارد'}\n\n` +
-                                  `📝 متن درخواست:\n${text}`;
+                                  `📝 متن درخواست/رزومه:\n${text}`;
 
             const agencyKeyboard = {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]
+                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }],
+                        [{ text: '🔒 بستن تیکت', callback_data: `close_ticket_${userId}` }]
                     ]
                 }
             };
 
             bot.sendMessage(ADMIN_CHAT_ID, agencyCaption, { parse_mode: 'Markdown', ...agencyKeyboard }).catch(() => {});
-            return;
-        }
-
-        if (step === 'get_new_plan_name') {
-            const planName = text;
-            db.userStates[chatId] = { step: 'get_new_plan_volume', newPlanData: { name: planName } };
-            saveDatabase();
-            bot.sendMessage(chatId, '🌐 حجم پلن را وارد کنید (مثلاً `20 گیگابایت` یا `نامحدود`):', { parse_mode: 'Markdown' }).catch(() => {});
-            return;
-        }
-
-        if (step === 'get_new_plan_volume') {
-            const volume = text;
-            userState.newPlanData.volume = volume;
-            db.userStates[chatId] = { step: 'get_new_plan_duration', newPlanData: userState.newPlanData };
-            saveDatabase();
-            bot.sendMessage(chatId, '⏳ مدت زمان پلن را وارد کنید (مثلاً `30 روزه`):', { parse_mode: 'Markdown' }).catch(() => {});
-            return;
-        }
-
-        if (step === 'get_new_plan_duration') {
-            const duration = text;
-            userState.newPlanData.duration = duration;
-            db.userStates[chatId] = { step: 'get_new_plan_price', newPlanData: userState.newPlanData };
-            saveDatabase();
-            bot.sendMessage(chatId, '💵 قیمت پلن را وارد کنید (مثلاً `120,000 تومان`):', { parse_mode: 'Markdown' }).catch(() => {});
-            return;
-        }
-
-        if (step === 'get_new_plan_price') {
-            const price = text;
-            const newPlan = userState.newPlanData;
-            newPlan.price = price;
-            newPlan.id = Date.now();
-            newPlan.links = [];
-
-            db.customPlans.push(newPlan);
-            delete db.userStates[chatId];
-            saveDatabase();
-
-            bot.sendMessage(chatId, `✅ پلن جدید با موفقیت ایجاد شد!\nحالا از طریق بخش مدیریت پلن‌ها می‌توانید برای آن لینک انبار اضافه کنید. 🚀`).catch(() => {});
-            sendAdminPanel(chatId);
-            return;
-        }
-
-        if (step === 'edit_plan_get_name') {
-            const targetPlanId = userState.targetPlanId;
-            const p = db.customPlans.find(item => item.id === targetPlanId);
-            if (p) {
-                p.name = text;
-                saveDatabase();
-                bot.sendMessage(chatId, '✅ نام پلن بروز شد.').catch(() => {});
-            } else {
-                bot.sendMessage(chatId, '❌ پلن یافت نشد.').catch(() => {});
-            }
-            delete db.userStates[chatId];
-            saveDatabase();
-            sendAdminPanel(chatId);
-            return;
-        }
-
-        if (step === 'get_extra_link_for_plan') {
-            const targetPlanId = userState.targetPlanId;
-            const p = db.customPlans.find(item => item.id === targetPlanId);
-            if (p) {
-                if (!p.links) p.links = [];
-                p.links.push(text);
-                saveDatabase();
-                bot.sendMessage(chatId, `✅ لینک با موفقیت به انبار این پلن اضافه شد.\n📊 تعداد کل لینک‌های این پلن: ${p.links.length} عدد`).catch(() => {});
-            } else {
-                bot.sendMessage(chatId, '❌ پلن یافت نشد.').catch(() => {});
-            }
-            delete db.userStates[chatId];
-            saveDatabase();
             return;
         }
     }
