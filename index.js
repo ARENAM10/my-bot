@@ -297,7 +297,6 @@ function trackUserAndNotifyAdmin(msg) {
         }
         saveDatabase();
 
-        // 🟢 اصلاح مشکل سوم: ارسال پیام استارت کاربر جدید به مدیریت با بررسی دقیق‌تر
         if (isBrandNew && chatId.toString() !== ADMIN_CHAT_ID.toString()) {
             const keyboard = {
                 reply_markup: {
@@ -697,7 +696,6 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    // هندل دکمه پشتیبانی و اخذ نمایندگی از منوی اصلی شیشه ای یا متنی
     const currentMenuNames = db.menuNames;
     if (data === 'support' || data === 'support_online' || msg.text === `📞 ${currentMenuNames.support}`) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
@@ -1918,7 +1916,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // هندل دکمه‌های متنی پشتیبانی و اخذ نمایندگی
     const currentMenuNames = db.menuNames;
     if (text === `📞 ${currentMenuNames.support}`) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
@@ -2049,6 +2046,69 @@ bot.on('message', async (msg) => {
 
     if (userState && userState.step) {
         const step = userState.step;
+
+        // 📞 بخش پشتیبانی (ارسال پیام کاربر به ادمین)
+        if (step === 'support_waiting_message') {
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            bot.sendMessage(chatId, db.botTexts.support_success, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+
+            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
+            const cleanUsername = (userInfo.username || 'ندارد').replace('@', '');
+
+            const supportMsgToAdmin = `📞 **پیام جدید به بخش پشتیبانی**\n\n` +
+                                      `👤 **نام کاربر:** ${userInfo.name}\n` +
+                                      `🔗 **یوزرنیم:** @${cleanUsername}\n` +
+                                      `🆔 **شناسه عددی:** \`${userId}\`\n` +
+                                      `🕒 **زمان:** ${getPersianDateTime()}\n\n` +
+                                      `💬 **متن پیام:**\n${text}`;
+
+            const adminSupportKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }],
+                        [{ text: '🔒 بستن تیکت', callback_data: `close_ticket_${userId}` }]
+                    ]
+                }
+            };
+
+            bot.sendMessage(ADMIN_CHAT_ID, supportMsgToAdmin, { parse_mode: 'Markdown', ...adminSupportKeyboard }).catch((err) => {
+                console.log('❌ خطا در ارسال پیام پشتیبانی به ادمین:', err);
+            });
+            return;
+        }
+
+        // 🤝 بخش اخذ نمایندگی (ارسال درخواست کاربر به ادمین)
+        if (step === 'agency_waiting_message') {
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            bot.sendMessage(chatId, db.botTexts.agency_success, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
+
+            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
+            const cleanUsername = (userInfo.username || 'ندارد').replace('@', '');
+
+            const agencyMsgToAdmin = `🤝 **درخواست جدید اخذ نمایندگی**\n\n` +
+                                     `👤 **نام کاربر:** ${userInfo.name}\n` +
+                                     `🔗 **یوزرنیم:** @${cleanUsername}\n` +
+                                     `🆔 **شناسه عددی:** \`${userId}\`\n` +
+                                     `🕒 **زمان:** ${getPersianDateTime()}\n\n` +
+                                     `📄 **متن درخواست / رزومه:**\n${text}`;
+
+            const adminAgencyKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]
+                    ]
+                }
+            };
+
+            bot.sendMessage(ADMIN_CHAT_ID, agencyMsgToAdmin, { parse_mode: 'Markdown', ...adminAgencyKeyboard }).catch((err) => {
+                console.log('❌ خطا در ارسال درخواست نمایندگی به ادمین:', err);
+            });
+            return;
+        }
 
         if (step === 'get_new_invite_reward') {
             if (!isAdmin(msg)) return;
@@ -2448,61 +2508,6 @@ bot.on('message', async (msg) => {
                 saveDatabase();
                 bot.sendMessage(chatId, `✅ نام پلن به **${text}** تغییر یافت.`).catch(() => {});
             }
-            return;
-        }
-
-        // 📞 اصلاح مشکل اول: دریافت پیام پشتیبانی و ارسال صحیح به ادمین همراه با دکمه‌های کنترلی
-        if (step === 'support_waiting_message') {
-            delete db.userStates[chatId];
-            saveDatabase();
-
-            bot.sendMessage(chatId, db.botTexts.support_success, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
-
-            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
-            const cleanUsername = (userInfo.username || 'ندارد').replace('@', '');
-            const ticketText = `📩 **تیکت پشتیبانی جدید:**\n\n` +
-                               `👤 نام: ${userInfo.name}\n` +
-                               `🔗 یوزرنیم: @${cleanUsername}\n` +
-                               `🆔 شناسه عددی: \`${userId}\`\n\n` +
-                               `💬 **متن پیام:**\n${text}`;
-
-            const ticketKeyboard = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }],
-                        [{ text: '🔒 بستن تیکت', callback_data: `close_ticket_${userId}` }]
-                    ]
-                }
-            };
-
-            bot.sendMessage(ADMIN_CHAT_ID, ticketText, { parse_mode: 'Markdown', ...ticketKeyboard }).catch((err) => console.log('❌ خطا در ارسال تیکت پشتیبانی به ادمین:', err));
-            return;
-        }
-
-        // 🤝 اصلاح مشکل دوم: دریافت درخواست نمایندگی و ارسال صحیح به ادمین همراه با دکمه‌های پروفایل
-        if (step === 'agency_waiting_message') {
-            delete db.userStates[chatId];
-            saveDatabase();
-
-            bot.sendMessage(chatId, db.botTexts.agency_success, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
-
-            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
-            const cleanUsername = (userInfo.username || 'ندارد').replace('@', '');
-            const agencyText = `🤝 **درخواست اخذ نمایندگی جدید:**\n\n` +
-                               `👤 نام: ${userInfo.name}\n` +
-                               `🔗 یوزرنیم: @${cleanUsername}\n` +
-                               `🆔 شناسه عددی: \`${userId}\`\n\n` +
-                               `💬 **جزئیات درخواست/رزومه:**\n${text}`;
-
-            const agencyKeyboard = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]
-                    ]
-                }
-            };
-
-            bot.sendMessage(ADMIN_CHAT_ID, agencyText, { parse_mode: 'Markdown', ...agencyKeyboard }).catch((err) => console.log('❌ خطا در ارسال درخواست نمایندگی به ادمین:', err));
             return;
         }
     }
