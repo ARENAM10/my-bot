@@ -34,7 +34,7 @@ const ADMIN_CHAT_ID = 8923324852;
 const CHANNEL_LOG_ID = '-1004488082323';
 
 const userCooldowns = new Map();
-const COOLDOWN_TIME = 1500; // کاهش کمی زمان کول‌دان برای سرعت بیشتر در عین پایداری
+const COOLDOWN_TIME = 1500; 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -723,7 +723,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- بقیه بخش‌های ربات ---
     if (data === 'admin_agents_menu') {
         if (!isAdmin(callbackQuery)) return;
         const agentsList = Object.keys(db.agents || {});
@@ -1874,6 +1873,7 @@ bot.on('message', async (msg) => {
         return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.').catch(() => {});
     }
 
+    // تابع زیر بررسی می‌کند که آیا کاربر برای اولین بار استارت کرده یا وارد ربات شده و پیام را به ادمین ارسال می‌کند
     trackUserAndNotifyAdmin(msg);
     const canProceed = await handleForceJoin(msg);
     if (!canProceed) return;
@@ -2481,17 +2481,23 @@ bot.on('message', async (msg) => {
         const botInfo = await bot.getMe();
         const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
         const refCount = db.referals[userId] || 0;
-        
-        const inviteText = (db.botTexts.invite_title || '')
+        const customInviteText = (db.botTexts.invite_title || '')
             .replace('{inviteLink}', inviteLink)
             .replace('{count}', refCount);
 
-        bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, customInviteText, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
     if (text.includes(names.my_subs)) {
         await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
+        return;
+    }
+
+    if (text.includes(names.agency_request)) {
+        db.userStates[chatId] = { step: 'agency_waiting_message' };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -2503,14 +2509,7 @@ bot.on('message', async (msg) => {
     if (text.includes(names.support)) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
         saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } }).catch(() => {});
-        return;
-    }
-
-    if (text.includes(names.agency_request)) {
-        db.userStates[chatId] = { step: 'agency_waiting_message' };
-        saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } }).catch(() => {});
+        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 });
