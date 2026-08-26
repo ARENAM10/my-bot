@@ -697,6 +697,64 @@ bot.on('callback_query', async (callbackQuery) => {
     } catch (e) {}
 
     const currentMenuNames = db.menuNames;
+    
+    // --- 🎁 مدیریت بخش اشتراک رایگان و سرور تست و دعوت دوستان در دکمه‌های شیشه‌ای و متنی ---
+    if (data === 'free_sub' || msg.text === `🎁 ${currentMenuNames.free_sub}`) {
+        if (!db.isFreeSubEnabled) {
+            return bot.sendMessage(chatId, '❌ بخش اشتراک هدیه در حال حاضر غیرفعال است.').catch(() => {});
+        }
+        if (!db.freeSubConfig || db.freeSubConfig === 'vless://example-free-sub-link') {
+            return bot.sendMessage(chatId, '⚠️ لینک اشتراک هدیه توسط مدیریت تنظیم نشده است.').catch(() => {});
+        }
+
+        // بررسی اینکه آیا کاربر قبلاً اشتراک رایگان گرفته است یا خیر
+        if (!db.userWallets) db.userWallets = {};
+        if (db.userWallets[`free_claimed_${userId}`]) {
+            return bot.sendMessage(chatId, '⚠️ شما قبلاً اشتراک هدیه خود را دریافت کرده‌اید! هر کاربر تنها یک بار می‌تواند اشتراک هدیه بگیرد. 🎁').catch(() => {});
+        }
+
+        db.userWallets[`free_claimed_${userId}`] = true;
+        saveDatabase();
+
+        const freeMsg = `🎁 **اشتراک هدیه و رایگان شما آماده است!** 🚀\n\n` +
+                        `لینک اختصاصی شما:\n\`${db.freeSubConfig}\``;
+        await bot.sendMessage(chatId, freeMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (data === 'test_server' || msg.text === `🧪 ${currentMenuNames.test_server}`) {
+        if (!db.isTestServerEnabled) {
+            return bot.sendMessage(chatId, '❌ بخش سرور تست در حال حاضر غیرفعال است.').catch(() => {});
+        }
+        if (!db.testServerConfig || db.testServerConfig === 'vless://example-test-server-link') {
+            return bot.sendMessage(chatId, '⚠️ لینک سرور تست توسط مدیریت تنظیم نشده است.').catch(() => {});
+        }
+
+        const testMsg = `🧪 **اطلاعات اتصال به سرور تست آرنا:** ⚡️\n\n` +
+                        `می‌توانید از کانفیگ زیر برای تست کیفیت و پینگ سرورها استفاده کنید:\n\n` +
+                        `\`${db.testServerConfig}\``;
+        await bot.sendMessage(chatId, testMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (data === 'invite' || msg.text === `👥 ${currentMenuNames.invite}`) {
+        if (!db.isInviteSystemEnabled) {
+            return bot.sendMessage(chatId, '❌ سیستم دعوت از دوستان در حال حاضر غیرفعال است.').catch(() => {});
+        }
+
+        const botInfo = await bot.getMe();
+        const botUsername = botInfo.username;
+        const inviteLink = `https://t.me/${botUsername}?start=${userId}`;
+        const refCount = db.referals && db.referals[userId] ? db.referals[userId] : 0;
+
+        let inviteText = (db.botTexts.invite_title || '')
+            .replace('{inviteLink}', inviteLink)
+            .replace('{count}', refCount);
+
+        await bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
     if (data === 'support' || data === 'support_online' || msg.text === `📞 ${currentMenuNames.support}`) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
         saveDatabase();
@@ -1917,6 +1975,63 @@ bot.on('message', async (msg) => {
     }
 
     const currentMenuNames = db.menuNames;
+    
+    // --- 🎁 هندل دکمه‌های متنی اشتراک رایگان، سرور تست و دعوت دوستان ---
+    if (text === `🎁 ${currentMenuNames.free_sub}`) {
+        if (!db.isFreeSubEnabled) {
+            return bot.sendMessage(chatId, '❌ بخش اشتراک هدیه در حال حاضر غیرفعال است.').catch(() => {});
+        }
+        if (!db.freeSubConfig || db.freeSubConfig === 'vless://example-free-sub-link') {
+            return bot.sendMessage(chatId, '⚠️ لینک اشتراک هدیه توسط مدیریت تنظیم نشده است.').catch(() => {});
+        }
+
+        if (!db.userWallets) db.userWallets = {};
+        if (db.userWallets[`free_claimed_${userId}`]) {
+            return bot.sendMessage(chatId, '⚠️ شما قبلاً اشتراک هدیه خود را دریافت کرده‌اید! هر کاربر تنها یک بار می‌تواند اشتراک هدیه بگیرد. 🎁').catch(() => {});
+        }
+
+        db.userWallets[`free_claimed_${userId}`] = true;
+        saveDatabase();
+
+        const freeMsg = `🎁 **اشتراک هدیه و رایگان شما آماده است!** 🚀\n\n` +
+                        `لینک اختصاصی شما:\n\`${db.freeSubConfig}\``;
+        await bot.sendMessage(chatId, freeMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text === `🧪 ${currentMenuNames.test_server}`) {
+        if (!db.isTestServerEnabled) {
+            return bot.sendMessage(chatId, '❌ بخش سرور تست در حال حاضر غیرفعال است.').catch(() => {});
+        }
+        if (!db.testServerConfig || db.testServerConfig === 'vless://example-test-server-link') {
+            return bot.sendMessage(chatId, '⚠️ لینک سرور تست توسط مدیریت تنظیم نشده است.').catch(() => {});
+        }
+
+        const testMsg = `🧪 **اطلاعات اتصال به سرور تست آرنا:** ⚡️\n\n` +
+                        `می‌توانید از کانفیگ زیر برای تست کیفیت و پینگ سرورها استفاده کنید:\n\n` +
+                        `\`${db.testServerConfig}\``;
+        await bot.sendMessage(chatId, testMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text === `👥 ${currentMenuNames.invite}`) {
+        if (!db.isInviteSystemEnabled) {
+            return bot.sendMessage(chatId, '❌ سیستم دعوت از دوستان در حال حاضر غیرفعال است.').catch(() => {});
+        }
+
+        const botInfo = await bot.getMe();
+        const botUsername = botInfo.username;
+        const inviteLink = `https://t.me/${botUsername}?start=${userId}`;
+        const refCount = db.referals && db.referals[userId] ? db.referals[userId] : 0;
+
+        let inviteText = (db.botTexts.invite_title || '')
+            .replace('{inviteLink}', inviteLink)
+            .replace('{count}', refCount);
+
+        await bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
     if (text === `📞 ${currentMenuNames.support}`) {
         db.userStates[chatId] = { step: 'support_waiting_message' };
         saveDatabase();
@@ -2047,7 +2162,6 @@ bot.on('message', async (msg) => {
     if (userState && userState.step) {
         const step = userState.step;
 
-        // 📞 بخش پشتیبانی (ارسال پیام کاربر به ادمین)
         if (step === 'support_waiting_message') {
             delete db.userStates[chatId];
             saveDatabase();
@@ -2079,7 +2193,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // 🤝 بخش اخذ نمایندگی (ارسال درخواست کاربر به ادمین)
         if (step === 'agency_waiting_message') {
             delete db.userStates[chatId];
             saveDatabase();
@@ -2460,55 +2573,3 @@ bot.on('message', async (msg) => {
             db.userStates[chatId].planDuration = text;
             db.userStates[chatId].step = 'get_new_plan_price';
             saveDatabase();
-            bot.sendMessage(chatId, '💵 قیمت پلن را وارد کنید (مثلاً `150,000 تومان`):', { parse_mode: 'Markdown' }).catch(() => {});
-            return;
-        }
-
-        if (step === 'get_new_plan_price') {
-            if (!isAdmin(msg)) return;
-            const st = db.userStates[chatId];
-            const newPlan = {
-                id: Date.now(),
-                name: st.planName,
-                volume: st.planVolume,
-                duration: st.planDuration,
-                price: text,
-                links: []
-            };
-            db.customPlans.push(newPlan);
-            delete db.userStates[chatId];
-            saveDatabase();
-            bot.sendMessage(chatId, '✅ پلن جدید با موفقیت ایجاد شد! اکنون می‌توانید از بخش مدیریت پلن‌ها برای آن لینک انبار اضافه کنید. 🎉').catch(() => {});
-            sendAdminPanel(chatId);
-            return;
-        }
-
-        if (step === 'get_extra_link_for_plan') {
-            if (!isAdmin(msg)) return;
-            const planId = userState.targetPlanId;
-            const plan = db.customPlans.find(p => p.id === planId);
-            if (plan) {
-                plan.links.push(text);
-                delete db.userStates[chatId];
-                saveDatabase();
-                bot.sendMessage(chatId, `✅ لینک جدید با موفقیت به پلن **${plan.name}** اضافه شد.\n📊 تعداد کل لینک‌های این پلن: ${plan.links.length} عدد`, { parse_mode: 'Markdown' }).catch(() => {});
-            } else {
-                bot.sendMessage(chatId, '❌ پلن مورد نظر یافت نشد.').catch(() => {});
-            }
-            return;
-        }
-
-        if (step === 'edit_plan_get_name') {
-            if (!isAdmin(msg)) return;
-            const planId = userState.targetPlanId;
-            const plan = db.customPlans.find(p => p.id === planId);
-            if (plan) {
-                plan.name = text;
-                delete db.userStates[chatId];
-                saveDatabase();
-                bot.sendMessage(chatId, `✅ نام پلن به **${text}** تغییر یافت.`).catch(() => {});
-            }
-            return;
-        }
-    }
-});
