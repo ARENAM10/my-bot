@@ -2446,32 +2446,15 @@ bot.on('message', async (msg) => {
             delete db.userStates[chatId];
             saveDatabase();
 
-            const actionTitle = action === 'inc' ? 'افزایش یافت' : 'کاهش یافت';
-            bot.sendMessage(chatId, `✅ مبلغ ${amount.toLocaleString()} تومان به حساب کاربر \`${targetUser}\` ${actionTitle}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' }).catch(() => {});
+            const actionText = action === 'inc' ? 'افزایش یافت' : 'کاهش یافت';
+            bot.sendMessage(chatId, `✅ عملیات موفق:\nمبلغ ${amount.toLocaleString()} تومان از حساب کاربر \`${targetUser}\` ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' }).catch(() => {});
+
             try {
                 const notifyText = action === 'inc' 
                     ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
                     : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر گردید.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
-                bot.sendMessage(targetUser, notifyText);
+                await bot.sendMessage(targetUser, notifyText);
             } catch (e) {}
-            return;
-        }
-
-        if (step === 'get_broadcast_content') {
-            delete db.userStates[chatId];
-            saveDatabase();
-            const users = [...new Set(db.allUsers)];
-            bot.sendMessage(chatId, `📢 ارسال پیام همگانی به ${users.length} کاربر شروع شد...`).catch(() => {});
-            
-            let successCount = 0;
-            for (const uId of users) {
-                try {
-                    await bot.sendMessage(uId, text, { parse_mode: 'Markdown' });
-                    successCount++;
-                    await sleep(50);
-                } catch (e) {}
-            }
-            bot.sendMessage(chatId, `✅ پیام همگانی با موفقیت به ${successCount} کاربر ارسال شد.`);
             return;
         }
     }
