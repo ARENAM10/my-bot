@@ -1217,6 +1217,7 @@ bot.on('callback_query', async (callbackQuery) => {
         if (action === 'inc') {
             db.userWallets[targetUser] = currentBalance + amount;
         } else {
+            // جلوگیری از منفی شدن موجودی کاربر
             db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
         }
 
@@ -2440,6 +2441,7 @@ bot.on('message', async (msg) => {
             if (action === 'inc') {
                 db.userWallets[targetUser] = currentBalance + amount;
             } else {
+                // اصلاح بخش کاهش موجودی برای جلوگیری از منفی شدن موجودی کیف پول کاربر
                 db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
             }
 
@@ -2447,13 +2449,14 @@ bot.on('message', async (msg) => {
             saveDatabase();
 
             const actionText = action === 'inc' ? 'افزایش یافت' : 'کاهش یافت';
+            
             bot.sendMessage(chatId, `✅ عملیات موفق:\nمبلغ ${amount.toLocaleString()} تومان از حساب کاربر \`${targetUser}\` ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' }).catch(() => {});
-
+            
             try {
                 const notifyText = action === 'inc' 
                     ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
                     : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر گردید.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
-                await bot.sendMessage(targetUser, notifyText);
+                bot.sendMessage(targetUser, notifyText).catch(() => {});
             } catch (e) {}
             return;
         }
