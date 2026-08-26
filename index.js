@@ -1901,29 +1901,15 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    // 👑 مدیریت ریپلای ادمین روی پیام‌های تیکت پشتیبانی جهت ارسال پاسخ به کاربر
     if (isAdmin(msg) && msg.reply_to_message) {
-        const repliedMsg = msg.reply_to_message;
-        const repliedMessageId = repliedMsg.message_id;
-        const repliedText = repliedMsg.text || repliedMsg.caption || '';
+        const repliedText = msg.reply_to_message.text || msg.reply_to_message.caption || '';
+        const matchUserId = repliedText.match(/شناسه عددی:\s*`?(\d+)`?/);
         
-        let targetCustomerId = null;
-
-        // بررسی از طریق نقشه پیام‌ها در دیتابیس (messagesMap)
-        if (db.messagesMap && db.messagesMap[repliedMessageId]) {
-            targetCustomerId = db.messagesMap[repliedMessageId];
-        } else {
-            // استخراج شناسه کاربری از داخل متن پیام ریپلای شده به صورت امن
-            const matchUserId = repliedText.match(/(?:شناسه|شناسه عددی):\s*`?(\d+)`?/);
-            if (matchUserId && matchUserId[1]) {
-                targetCustomerId = matchUserId[1];
-            }
-        }
-        
-        if (targetCustomerId) {
+        if (matchUserId && matchUserId[1]) {
+            const targetCustomerId = matchUserId[1];
             try {
                 await bot.sendMessage(targetCustomerId, `💬 **پاسخ پشتیبانی:**\n\n${text}`);
-                await bot.sendMessage(chatId, '✅ پاسخ با موفقیت به کاربر ارسال شد.');
+                await bot.sendMessage(chatId, '✅ پاسخ با موفقیت ارسال شد.');
             } catch (e) {
                 await bot.sendMessage(chatId, '❌ خطا در ارسال پیام به کاربر (ممکن است ربات را بلاک کرده باشد).').catch(() => {});
             }
@@ -2457,11 +2443,7 @@ bot.on('message', async (msg) => {
                 }
             };
 
-            bot.sendMessage(ADMIN_CHAT_ID, ticketText, { parse_mode: 'Markdown', ...ticketKeyboard }).then((sentMsg) => {
-                if (!db.messagesMap) db.messagesMap = {};
-                db.messagesMap[sentMsg.message_id] = userId;
-                saveDatabase();
-            }).catch(() => {});
+            bot.sendMessage(ADMIN_CHAT_ID, ticketText, { parse_mode: 'Markdown', ...ticketKeyboard }).catch(() => {});
             return;
         }
 
@@ -2487,46 +2469,38 @@ bot.on('message', async (msg) => {
                 }
             };
 
-            bot.sendMessage(ADMIN_CHAT_ID, agencyText, { parse_mode: 'Markdown', ...agencyKeyboard }).then((sentMsg) => {
-                if (!db.messagesMap) db.messagesMap = {};
-                db.messagesMap[sentMsg.message_id] = userId;
-                saveDatabase();
-            }).catch(() => {});
+            bot.sendMessage(ADMIN_CHAT_ID, agencyText, { parse_mode: 'Markdown', ...agencyKeyboard }).catch(() => {});
             return;
         }
     }
 
-    if (text === names.support) {
-        db.userStates[chatId] = { step: 'support_waiting_message' };
-        saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (text === names.agency_request) {
-        db.userStates[chatId] = { step: 'agency_waiting_message' };
-        saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (text === names.buy_sub) {
+    if (text.includes(names.buy_sub)) {
         const availablePlans = db.customPlans.filter(p => p.links && p.links.length > 0);
         if (availablePlans.length === 0) {
-            bot.sendMessage(chatId, db.botTexts.no_plans).catch(() => {});
+            bot.sendMessage(chatId, db.botTexts.no_plans, getPersistentMenuKeyboard()).catch(() => {});
             return;
         }
-
         let planText = db.botTexts.store_title;
         const planButtons = availablePlans.map(p => [
             { text: `🌐 ${p.name} - ${p.volume} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
         ]);
-
         bot.sendMessage(chatId, planText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: planButtons } }).catch(() => {});
         return;
     }
 
-    if (text === names.wallet) {
+    if (text.includes(names.free_sub)) {
+        if (!db.isFreeSubEnabled) return;
+        bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.test_server)) {
+        if (!db.isTestServerEnabled) return;
+        bot.sendMessage(chatId, `🧪 **سرور تست رایگان:**\n\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.wallet)) {
         const balance = db.userWallets[userId] || 0;
         const walletKeyboard = {
             reply_markup: {
@@ -2543,39 +2517,40 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (text === names.invite) {
-        if (!db.isInviteSystemEnabled) {
-            return bot.sendMessage(chatId, '❌ سیستم دعوت دوستان در حال حاضر غیرفعال است.').catch(() => {});
-        }
-        bot.getMe().then((botInfo) => {
-            const inviteLink = `https://t.me/${botInfo.username}?start=${userId}`;
-            const refCount = db.referals[userId] || 0;
-            const inviteMsg = (db.botTexts.invite_title || '')
-                .replace('{inviteLink}', inviteLink)
-                .replace('{count}', refCount);
+    if (text.includes(names.invite)) {
+        const botInfo = await bot.getMe();
+        const inviteLink = `https://t.me/${botInfo.username}?start=${chatId}`;
+        const refCount = db.referals[chatId] || 0;
+        const inviteText = (db.botTexts.invite_title || '')
+            .replace('{inviteLink}', inviteLink)
+            .replace('{count}', refCount);
 
-            bot.sendMessage(chatId, inviteMsg, { parse_mode: 'Markdown' }).catch(() => {});
-        });
+        bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
-    if (text === names.my_subs) {
+    if (text.includes(names.my_subs)) {
         await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
         return;
     }
 
-    if (text === names.tutorial) {
+    if (text.includes(names.agency_request)) {
+        db.userStates[chatId] = { step: 'agency_waiting_message' };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (text.includes(names.tutorial)) {
         bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
-    if (db.isFreeSubEnabled && text === names.free_sub) {
-        bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (db.isTestServerEnabled && text === names.test_server) {
-        bot.sendMessage(chatId, `🧪 **لینک سرور تست:**\n\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
+    // 📞 رفع مشکل پشتیبانی: تنظیم استیت کاربر به محض کلیک روی دکمه پشتیبانی
+    if (text.includes(names.support)) {
+        db.userStates[chatId] = { step: 'support_waiting_message' };
+        saveDatabase();
+        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } }).catch(() => {});
         return;
     }
 });
