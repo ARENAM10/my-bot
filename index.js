@@ -41,22 +41,26 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 function getPersianDateTime() {
     try {
         const now = new Date();
-        const dateStr = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+        const optionsDate = {
+            timeZone: 'Asia/Tehran',
             year: 'numeric',
             month: '2-digit',
             day: '2-digit'
-        }).format(now);
-        
-        const timeStr = now.toLocaleTimeString('fa-IR', {
+        };
+        const optionsTime = {
+            timeZone: 'Asia/Tehran',
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
             hour12: false
-        });
+        };
+
+        const dateStr = new Intl.DateTimeFormat('fa-IR-u-ca-persian', optionsDate).format(now);
+        const timeStr = new Intl.DateTimeFormat('fa-IR', optionsTime).format(now);
         
         return `${dateStr} - ${timeStr}`;
     } catch (e) {
-        return new Date().toLocaleString('fa-IR');
+        return new Date().toLocaleString('fa-IR', { timeZone: 'Asia/Tehran' });
     }
 }
 
@@ -371,7 +375,7 @@ async function fetchAndParseConfig(url) {
                         if (key.toLowerCase() === 'total') resultInfo.total = formatBytes(numVal);
                         if (key.toLowerCase() === 'expire') {
                             const date = new Date(numVal * 1000);
-                            resultInfo.expireDate = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+                            resultInfo.expireDate = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { timeZone: 'Asia/Tehran', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
                         }
                     }
                 });
@@ -862,7 +866,6 @@ bot.on('callback_query', async (callbackQuery) => {
         if (subs && subs[subIndex]) {
             const sub = subs[subIndex];
             
-            // 🔄 خواندن و بروزرسانی اطلاعات از خود لینک هنگام کلیک کاربر
             const freshData = await fetchAndParseConfig(sub.configLink);
             if (freshData.total !== 'نامشخص') sub.totalVolume = freshData.total;
             if (freshData.expireDate !== 'نامشخص') sub.expiryDate = freshData.expireDate;
@@ -2470,93 +2473,84 @@ bot.on('message', async (msg) => {
 
         if (step === 'get_new_plan_price') {
             if (!isAdmin(msg)) return;
-            const planData = userState;
-            db.customPlans.push({
+            const newPlan = {
                 id: Date.now(),
-                name: planData.planName,
-                volume: planData.planVolume,
-                duration: planData.planDuration,
+                name: userState.planName,
+                volume: userState.planVolume,
+                duration: userState.planDuration,
                 price: text,
                 links: []
-            });
+            };
+            db.customPlans.push(newPlan);
             delete db.userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, '✅ پلن جدید با موفقیت ایجاد شد! اکنون می‌توانید از بخش مدیریت پلن‌ها به آن لینک اضافه کنید. 🎉').catch(() => {});
+            bot.sendMessage(chatId, `✅ پلن جدید با موفقیت ایجاد شد! حالا از طریق بخش مدیریت پلن‌ها، لینک‌های انبار را به آن اضافه کنید.`).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
 
         if (step === 'edit_plan_get_name') {
             if (!isAdmin(msg)) return;
-            const plan = db.customPlans.find(p => p.id === userState.targetPlanId);
+            const planId = userState.targetPlanId;
+            const plan = db.customPlans.find(p => p.id === planId);
             if (plan) {
                 plan.name = text;
                 saveDatabase();
-                bot.sendMessage(chatId, '✅ نام پلن با موفقیت ویرایش شد.').catch(() => {});
+                bot.sendMessage(chatId, '✅ نام پلن ویرایش شد.').catch(() => {});
             }
             delete db.userStates[chatId];
-            saveDatabase();
+            sendAdminPanel(chatId);
             return;
         }
 
-        if (step === 'get_extra_link_for_panel' || step === 'get_extra_link_for_plan') {
+        if (step === 'get_extra_link_for_plan') {
             if (!isAdmin(msg)) return;
-            const plan = db.customPlans.find(p => p.id === userState.targetPlanId);
+            const planId = userState.targetPlanId;
+            const plan = db.customPlans.find(p => p.id === planId);
             if (plan) {
-                if (!plan.links) plan.links = [];
                 plan.links.push(text);
                 saveDatabase();
-                bot.sendMessage(chatId, '✅ لینک جدید با موفقیت به انبار این پلن اضافه شد. 📦').catch(() => {});
+                bot.sendMessage(chatId, `✅ لینک جدید به پلن اضافه شد.\n📦 تعداد کل لینک‌های انبار این پلن: ${plan.links.length} عدد`).catch(() => {});
             }
             delete db.userStates[chatId];
-            saveDatabase();
+            sendAdminPanel(chatId);
             return;
         }
 
         if (step === 'support_waiting_message') {
             delete db.userStates[chatId];
             saveDatabase();
-            
             bot.sendMessage(chatId, db.botTexts.support_success, { parse_mode: 'Markdown' }).catch(() => {});
-            
-            const userObj = msg.from;
-            const name = userObj.first_name || 'بدون نام';
-            const username = userObj.username ? `@${userObj.username}` : 'ندارد';
-            
-            const supportForwardMsg = `💬 **پیام جدید پشتیبانی از کاربر:**\n\n` +
-                                     `👤 نام: ${name}\n` +
-                                     `🔗 یوزرنیم: ${username}\n` +
-                                     `🆔 شناسه: \`${userId}\`\n\n` +
-                                     `✉️ **متن پیام:**\n${text}`;
-            
+
+            const supportMsg = `💬 **پیام جدید پشتیبانی از طرف مشتری:**\n\n` +
+                               `👤 نام: ${msg.from.first_name || 'بدون نام'}\n` +
+                               `🔗 یوزرنیم: ${msg.from.username ? '@' + msg.from.username : 'ندارد'}\n` +
+                               `🆔 شناسه:\` \`${userId}\` \`\n\n` +
+                               `✉️ متن پیام:\n${text}`;
+
             const supportKeyboard = {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }],
-                        [{ text: '🔒 بستن تیکت', callback_data: `close_ticket_${userId}` }]
+                        [{ text: '🔒 بستن تیکت', callback_data: `close_ticket_${userId}` }],
+                        [{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]
                     ]
                 }
             };
-            
-            bot.sendMessage(ADMIN_CHAT_ID, supportForwardMsg, { parse_mode: 'Markdown', ...supportKeyboard }).catch(() => {});
+
+            bot.sendMessage(ADMIN_CHAT_ID, supportMsg, { parse_mode: 'Markdown', ...supportKeyboard }).catch(() => {});
             return;
         }
 
         if (step === 'agency_waiting_message') {
             delete db.userStates[chatId];
             saveDatabase();
-
             bot.sendMessage(chatId, db.botTexts.agency_success, { parse_mode: 'Markdown' }).catch(() => {});
 
-            const userObj = msg.from;
-            const name = userObj.first_name || 'بدون نام';
-            const username = userObj.username ? `@${userObj.username}` : 'ندارد';
-
-            const agencyMsg = `🤝 **درخواست نمایندگی جدید:**\n\n` +
-                              `👤 نام: ${name}\n` +
-                              `🔗 یوزرنیم: ${username}\n` +
-                              `🆔 شناسه: \`${userId}\`\n\n` +
-                              `📄 **رزومه / درخواست:**\n${text}`;
+            const agencyMsg = `🤝 **درخواست جدید اخذ نمایندگی:**\n\n` +
+                              `👤 نام: ${msg.from.first_name || 'بدون نام'}\n` +
+                              `🔗 یوزرنیم: ${msg.from.username ? '@' + msg.from.username : 'ندارد'}\n` +
+                              `🆔 شناسه:\` \`${userId}\` \`\n\n` +
+                              `📝 متن درخواست:\n${text}`;
 
             const agencyKeyboard = {
                 reply_markup: {
