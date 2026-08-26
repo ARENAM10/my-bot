@@ -698,7 +698,6 @@ bot.on('callback_query', async (callbackQuery) => {
 
     const currentMenuNames = db.menuNames;
     
-    // --- 🎁 مدیریت بخش اشتراک رایگان و سرور تست و دعوت دوستان در دکمه‌های شیشه‌ای و متنی ---
     if (data === 'free_sub' || msg.text === `🎁 ${currentMenuNames.free_sub}`) {
         if (!db.isFreeSubEnabled) {
             return bot.sendMessage(chatId, '❌ بخش اشتراک هدیه در حال حاضر غیرفعال است.').catch(() => {});
@@ -707,7 +706,6 @@ bot.on('callback_query', async (callbackQuery) => {
             return bot.sendMessage(chatId, '⚠️ لینک اشتراک هدیه توسط مدیریت تنظیم نشده است.').catch(() => {});
         }
 
-        // بررسی اینکه آیا کاربر قبلاً اشتراک رایگان گرفته است یا خیر
         if (!db.userWallets) db.userWallets = {};
         if (db.userWallets[`free_claimed_${userId}`]) {
             return bot.sendMessage(chatId, '⚠️ شما قبلاً اشتراک هدیه خود را دریافت کرده‌اید! هر کاربر تنها یک بار می‌تواند اشتراک هدیه بگیرد. 🎁').catch(() => {});
@@ -1976,7 +1974,6 @@ bot.on('message', async (msg) => {
 
     const currentMenuNames = db.menuNames;
     
-    // --- 🎁 هندل دکمه‌های متنی اشتراک رایگان، سرور تست و دعوت دوستان ---
     if (text === `🎁 ${currentMenuNames.free_sub}`) {
         if (!db.isFreeSubEnabled) {
             return bot.sendMessage(chatId, '❌ بخش اشتراک هدیه در حال حاضر غیرفعال است.').catch(() => {});
@@ -2453,7 +2450,33 @@ bot.on('message', async (msg) => {
             db.paymentCardNumber = text;
             delete db.userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, `✅ شماره کارت جدید ثبت شد: \`${text}\``, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `✅ شماره کارت با موفقیت تغییر یافت.`).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
+
+        if (step === 'get_broadcast_content') {
+            if (!isAdmin(msg)) return;
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            const allUsers = [...new Set(db.allUsers)];
+            bot.sendMessage(chatId, `📢 ارسال پیام همگانی به ${allUsers.length} کاربر آغاز شد...`).catch(() => {});
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const uId of allUsers) {
+                try {
+                    await bot.sendMessage(uId, text, { parse_mode: 'Markdown' });
+                    successCount++;
+                    await sleep(50); 
+                } catch (e) {
+                    failCount++;
+                }
+            }
+
+            bot.sendMessage(chatId, `✅ **ارسال پیام همگانی به پایان رسید.**\n\n📤 موفق: \`${successCount}\` نفر\n❌ ناموفق: \`${failCount}\` نفر`, { parse_mode: 'Markdown' }).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
@@ -2462,7 +2485,7 @@ bot.on('message', async (msg) => {
             if (!isAdmin(msg)) return;
             const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
             if (isNaN(amount) || amount <= 0) {
-                return bot.sendMessage(chatId, '❌ لطفاً یک مبلغ معتبر به عدد وارد کنید:').catch(() => {});
+                return bot.sendMessage(chatId, '❌ مبلغ نامعتبر است. یک عدد صحیح وارد کنید:').catch(() => {});
             }
 
             const targetUser = userState.targetUser;
@@ -2479,23 +2502,24 @@ bot.on('message', async (msg) => {
             saveDatabase();
 
             const actionText = action === 'inc' ? 'افزایش یافت' : 'کاهش یافت';
-            bot.sendMessage(chatId, `✅ عملیات موفق:\nمبلغ ${amount.toLocaleString()} تومان ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`).catch(() => {});
+            bot.sendMessage(chatId, `✅ عملیات موفق:\nمبلغ ${amount.toLocaleString()} تومان به حساب کاربر \`${targetUser}\` ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' }).catch(() => {});
             
             try {
                 const notifyText = action === 'inc' 
                     ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
                     : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر گردید.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
-                bot.sendMessage(targetUser, notifyText);
+                await bot.sendMessage(targetUser, notifyText);
             } catch (e) {}
+            sendAdminPanel(chatId);
             return;
         }
 
         if (step === 'get_new_discount_code') {
             if (!isAdmin(msg)) return;
             const code = text.toUpperCase();
-            db.userStates[chatId] = { step: 'get_new_discount_percent', code };
+            db.userStates[chatId] = { step: 'get_new_discount_percent', codeToCreate: code };
             saveDatabase();
-            bot.sendMessage(chatId, `🎟 درصد تخفیف برای کد \`${code}\` را وارد کنید (فقط عدد، مثلاً 20):`, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `🎟 لطفاً **درصد تخفیف** را برای کد \`${code}\` وارد کنید (فقط عدد، مثلاً 20):`, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
 
@@ -2505,71 +2529,115 @@ bot.on('message', async (msg) => {
             if (isNaN(percent) || percent <= 0 || percent > 100) {
                 return bot.sendMessage(chatId, '❌ درصد نامعتبر است. عددی بین 1 تا 100 وارد کنید:').catch(() => {});
             }
-            const code = userState.code;
+
+            const code = userState.codeToCreate;
+            if (!db.discountCodes) db.discountCodes = {};
             db.discountCodes[code] = { percent };
             delete db.userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, `✅ کد تخفیف \`${code}\` با **${percent}%** تخفیف ثبت شد.`).catch(() => {});
+
+            bot.sendMessage(chatId, `✅ کد تخفیف \`${code}\` با **${percent}%** تخفیف ساخته شد! 🎉`, { parse_mode: 'Markdown' }).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
 
         if (step === 'get_user_discount_input') {
-            const codeInput = text.toUpperCase();
-            delete db.userStates[chatId];
-            saveDatabase();
+            const planId = userState.planId;
+            const code = text.toUpperCase();
 
-            if (db.discountCodes[codeInput]) {
-                const discObj = db.discountCodes[codeInput];
+            if (db.discountCodes && db.discountCodes[code]) {
+                const disc = db.discountCodes[code];
                 if (!db.appliedDiscounts) db.appliedDiscounts = {};
-                db.appliedDiscounts[userId] = discObj;
+                db.appliedDiscounts[userId] = disc;
+                delete db.userStates[chatId];
                 saveDatabase();
-                bot.sendMessage(chatId, `✅ کد تخفیف با موفقیت اعمال شد! (${discObj.percent}% تخفیف) 🎉`).catch(() => {});
+
+                bot.sendMessage(chatId, `✅ کد تخفیف \`${code}\` (${disc.percent}٪) با موفقیت روی فاکتور شما اعمال شد! 🎉`).catch(() => {});
             } else {
-                bot.sendMessage(chatId, '❌ کد تخفیف نامعتبر یا منقضی شده است.').catch(() => {});
+                delete db.userStates[chatId];
+                saveDatabase();
+                bot.sendMessage(chatId, '❌ کد تخفیف وارد شده معتبر یا منقضی شده است.').catch(() => {});
             }
-            return;
-        }
-
-        if (step === 'get_broadcast_content') {
-            if (!isAdmin(msg)) return;
-            const broadcastText = text;
-            delete db.userStates[chatId];
-            saveDatabase();
-
-            bot.sendMessage(chatId, '🚀 ارسال پیام همگانی آغاز شد...').catch(() => {});
-            let successCount = 0;
-            const uniqueUsers = [...new Set(db.allUsers)];
-            for (const uId of uniqueUsers) {
-                try {
-                    await bot.sendMessage(uId, broadcastText, { parse_mode: 'Markdown' });
-                    successCount++;
-                    await sleep(35);
-                } catch (e) {}
-            }
-            bot.sendMessage(chatId, `✅ پیام همگانی به \`${successCount}\` کاربر ارسال شد.`).catch(() => {});
             return;
         }
 
         if (step === 'get_new_plan_name') {
             if (!isAdmin(msg)) return;
-            db.userStates[chatId] = { step: 'get_new_plan_volume', planName: text };
+            const planName = text;
+            const newId = db.customPlans.length > 0 ? Math.max(...db.customPlans.map(p => p.id)) + 1 : 1;
+            db.userStates[chatId] = { step: 'get_new_plan_volume', newPlan: { id: newId, name: planName, links: [] } };
             saveDatabase();
-            bot.sendMessage(chatId, '🌐 حجم پلن را وارد کنید (مثلاً `20 گیگابایت` یا `نامحدود`):', { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, '🌐 حجم ترافیک پلن را وارد کنید (مثلاً `20 گیگابایت` یا `نامحدود`):', { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
 
         if (step === 'get_new_plan_volume') {
             if (!isAdmin(msg)) return;
-            db.userStates[chatId].planVolume = text;
-            db.userStates[chatId].step = 'get_new_plan_duration';
+            userState.newPlan.volume = text;
+            db.userStates[chatId] = { step: 'get_new_plan_duration', newPlan: userState.newPlan };
             saveDatabase();
-            bot.sendMessage(chatId, '⏳ مدت زمان پلن را وارد کنید (مثلاً `30 روزه`):', { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, '⏳ مدت زمان اعتبار پلن را وارد کنید (مثلاً `30 روزه`):', { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
 
         if (step === 'get_new_plan_duration') {
             if (!isAdmin(msg)) return;
-            db.userStates[chatId].planDuration = text;
-            db.userStates[chatId].step = 'get_new_plan_price';
+            userState.newPlan.duration = text;
+            db.userStates[chatId] = { step: 'get_new_plan_price', newPlan: userState.newPlan };
             saveDatabase();
+            bot.sendMessage(chatId, '💵 قیمت پلن را وارد کنید (مثلاً `150,000 تومان`):', { parse_mode: 'Markdown' }).catch(() => {});
+            return;
+        }
+
+        if (step === 'get_new_plan_price') {
+            if (!isAdmin(msg)) return;
+            userState.newPlan.price = text;
+            db.userStates[chatId] = { step: 'get_new_plan_links', newPlan: userState.newPlan };
+            saveDatabase();
+            bot.sendMessage(chatId, '🔗 لطفاً حداقل یک لینک سابسکریپشن یا کانفیگ برای این پلن ارسال کنید:', { parse_mode: 'Markdown' }).catch(() => {});
+            return;
+        }
+
+        if (step === 'get_new_plan_links') {
+            if (!isAdmin(msg)) return;
+            const link = text;
+            userState.newPlan.links.push(link);
+            db.customPlans.push(userState.newPlan);
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            bot.sendMessage(chatId, `✅ پلن جدید با نام **${userState.newPlan.name}** با موفقیت ساخته شد و به فروشگاه اضافه گردید! 🚀`, { parse_mode: 'Markdown' }).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
+
+        if (step === 'edit_plan_get_name') {
+            if (!isAdmin(msg)) return;
+            const planId = userState.targetPlanId;
+            const plan = db.customPlans.find(p => p.id === planId);
+            if (plan) {
+                plan.name = text;
+                saveDatabase();
+                bot.sendMessage(chatId, '✅ نام پلن با موفقیت ویرایش شد.').catch(() => {});
+            }
+            delete db.userStates[chatId];
+            sendAdminPanel(chatId);
+            return;
+        }
+
+        if (step === 'get_extra_link_for_plan') {
+            if (!isAdmin(msg)) return;
+            const planId = userState.targetPlanId;
+            const plan = db.customPlans.find(p => p.id === planId);
+            if (plan) {
+                if (!plan.links) plan.links = [];
+                plan.links.push(text);
+                saveDatabase();
+                bot.sendMessage(chatId, `✅ لینک جدید با موفقیت به انبار پلن «${plan.name}» اضافه شد.\n📊 مجموع لینک‌های موجود: ${plan.links.length} عدد`).catch(() => {});
+            }
+            delete db.userStates[chatId];
+            sendAdminPanel(chatId);
+            return;
+        }
+    }
+});
