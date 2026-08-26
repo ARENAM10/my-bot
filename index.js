@@ -17,7 +17,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
-// استفاده از polling با تنظیمات بهینه برای جلوگیری از تداخل درخواست‌ها
 const bot = new TelegramBot(TOKEN, { 
     polling: {
         interval: 300,
@@ -30,7 +29,6 @@ const bot = new TelegramBot(TOKEN, {
 
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
-
 const CHANNEL_LOG_ID = '-1004488082323';
 
 const userCooldowns = new Map();
@@ -155,6 +153,7 @@ function loadDatabase() {
             db = {
                 ...defaultDatabaseStructure,
                 ...parsed,
+                paymentCardNumber: parsed.paymentCardNumber || defaultDatabaseStructure.paymentCardNumber,
                 inviteRewardAmount: parsed.inviteRewardAmount !== undefined ? parsed.inviteRewardAmount : defaultDatabaseStructure.inviteRewardAmount,
                 menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
                 botTexts: { ...defaultDatabaseStructure.botTexts, ...(parsed.botTexts || {}) },
@@ -532,12 +531,8 @@ function sendAdminPanel(chatId) {
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
-                [
-                    { text: `📊 آمار ربات (${uniqueUsersCount} کاربر)`, callback_data: 'admin_stats' }
-                ],
-                [
-                    { text: `🎁 تنظیم پاداش دعوت (${(db.inviteRewardAmount || 5000).toLocaleString()} ت)`, callback_data: 'admin_set_invite_reward' }
-                ],
+                [{ text: `📊 آمار ربات (${uniqueUsersCount} کاربر)`, callback_data: 'admin_stats' }],
+                [{ text: `🎁 تنظیم پاداش دعوت (${(db.inviteRewardAmount || 5000).toLocaleString()} ت)`, callback_data: 'admin_set_invite_reward' }],
                 [
                     { text: '🤝 مدیریت نمایندگان', callback_data: 'admin_agents_menu' },
                     { text: '⚙️ مدیریت پلن‌ها', callback_data: 'admin_manage_plans' }
@@ -574,9 +569,7 @@ function sendAdminPanel(chatId) {
                     { text: forceJoinStatus, callback_data: 'admin_force_join_menu' },
                     { text: '📢 ارسال پیام همگانی', callback_data: 'admin_broadcast' }
                 ],
-                [
-                    { text: '📦 پشتیبان‌گیری دستی', callback_data: 'admin_send_backup' }
-                ]
+                [{ text: '📦 پشتیبان‌گیری دستی', callback_data: 'admin_send_backup' }]
             ]
         }
     };
@@ -702,7 +695,6 @@ bot.on('callback_query', async (callbackQuery) => {
 
     const names = db.menuNames;
     
-    // --- 🤝 مدیریت بخش اخذ نمایندگی ---
     if (data === 'menu_agency_request' || textButtonMatches(data, names.agency_request)) {
         db.userStates[chatId] = { step: 'waiting_for_agency_message' };
         saveDatabase();
@@ -710,7 +702,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // --- 📞 مدیریت بخش پشتیبانی آنلاین ---
     if (data === 'menu_support' || textButtonMatches(data, names.support)) {
         db.userStates[chatId] = { step: 'waiting_for_support_message' };
         saveDatabase();
@@ -723,6 +714,14 @@ bot.on('callback_query', async (callbackQuery) => {
         db.userStates[chatId] = { step: 'get_new_invite_reward' };
         saveDatabase();
         bot.sendMessage(chatId, `🎁 **تنظیم مبلغ پاداش دعوت**\n\nمبلغ فعلی: \`${(db.inviteRewardAmount || 5000).toLocaleString()} تومان\`\n\nلطفاً مبلغ جدید پاداش را به تومان و به عدد وارد کنید (مثلا 10000):`, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (data === 'admin_pay_settings') {
+        if (!isAdmin(callbackQuery)) return;
+        db.userStates[chatId] = { step: 'get_new_card_number' };
+        saveDatabase();
+        bot.sendMessage(chatId, `💳 **تنظیم شماره کارت**\n\nشماره کارت فعلی: \`${db.paymentCardNumber}\`\n\nشماره کارت جدید را ارسال کنید:`, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -1153,9 +1152,7 @@ bot.on('callback_query', async (callbackQuery) => {
                         { text: "➕ افزایش موجودی", callback_data: `w_inc_${targetChatId}` },
                         { text: "➖ کاهش موجودی", callback_data: `w_dec_${targetChatId}` }
                     ],
-                    [
-                        { text: "🔙 بازگشت به لیست", callback_data: "manage_wallets" }
-                    ]
+                    [{ text: "🔙 بازگشت به لیست", callback_data: "manage_wallets" }]
                 ]
             }
         }).catch(() => {});
@@ -1180,9 +1177,7 @@ bot.on('callback_query', async (callbackQuery) => {
                         { text: "➕ ۲۰۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_200000` },
                         { text: "➕ ۵۰۰ هزار تومان", callback_data: `w_amt_${action}_${targetUser}_500000` }
                     ],
-                    [
-                        { text: "🔙 بازگشت", callback_data: `wallet_user_${targetUser}` }
-                    ]
+                    [{ text: "🔙 بازگشت", callback_data: `wallet_user_${targetUser}` }]
                 ]
             }
         };
@@ -1217,7 +1212,6 @@ bot.on('callback_query', async (callbackQuery) => {
         if (action === 'inc') {
             db.userWallets[targetUser] = currentBalance + amount;
         } else {
-            // جلوگیری از منفی شدن موجودی کاربر
             db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
         }
 
@@ -1576,13 +1570,6 @@ bot.on('callback_query', async (callbackQuery) => {
 
     if (data === 'admin_back_to_panel') {
         sendAdminPanel(chatId);
-        return;
-    }
-
-    if (data === 'admin_pay_settings') {
-        db.userStates[chatId] = { step: 'get_new_card_number' };
-        saveDatabase();
-        bot.sendMessage(chatId, '💳 **تنظیم شماره کارت**\n\nشماره کارت فعلی: `' + db.paymentCardNumber + '`\n\nشماره کارت جدید را ارسال کنید:', { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -2056,7 +2043,6 @@ bot.on('message', async (msg) => {
         return bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
     }
 
-    // --- مدیریت پاسخ‌های مستقیم ادمین به کاربران (از طریق ریپلای یا دکمه) ---
     if (isAdmin(msg)) {
         const userState = db.userStates[chatId];
         
@@ -2189,7 +2175,16 @@ bot.on('message', async (msg) => {
     if (userState && userState.step) {
         const step = userState.step;
 
-        // --- 🤝 هندلر دریافت متن درخواست اخذ نمایندگی ---
+        // --- 💳 هندلر ذخیره شماره کارت جدید ---
+        if (step === 'get_new_card_number') {
+            db.paymentCardNumber = text;
+            delete db.userStates[chatId];
+            saveDatabase();
+            bot.sendMessage(chatId, `✅ شماره کارت با موفقیت به مقدار زیر تغییر یافت:\n\`${text}\``, { parse_mode: 'Markdown' }).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
+
         if (step === 'waiting_for_agency_message') {
             delete db.userStates[chatId];
             saveDatabase();
@@ -2217,7 +2212,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // --- 📞 هندلر دریافت پیام بخش پشتیبانی ---
         if (step === 'waiting_for_support_message') {
             delete db.userStates[chatId];
             saveDatabase();
@@ -2441,23 +2435,11 @@ bot.on('message', async (msg) => {
             if (action === 'inc') {
                 db.userWallets[targetUser] = currentBalance + amount;
             } else {
-                // اصلاح بخش کاهش موجودی برای جلوگیری از منفی شدن موجودی کیف پول کاربر
                 db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
             }
-
             delete db.userStates[chatId];
             saveDatabase();
-
-            const actionText = action === 'inc' ? 'افزایش یافت' : 'کاهش یافت';
-            
-            bot.sendMessage(chatId, `✅ عملیات موفق:\nمبلغ ${amount.toLocaleString()} تومان از حساب کاربر \`${targetUser}\` ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' }).catch(() => {});
-            
-            try {
-                const notifyText = action === 'inc' 
-                    ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
-                    : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر گردید.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
-                bot.sendMessage(targetUser, notifyText).catch(() => {});
-            } catch (e) {}
+            bot.sendMessage(chatId, `✅ موجودی کیف پول کاربر بروزرسانی شد.`).catch(() => {});
             return;
         }
     }
