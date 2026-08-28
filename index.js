@@ -17,13 +17,14 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
-// 🔹 تنظیم کاملاً بهینه‌شده پولینگ برای جلوگیری از تداخل و ارسال پیام‌های تکراری
+
+// 🔹 تنظیم دقیق و ایمن پولینگ برای جلوگیری از دریافت آپدیت‌های تکراری
 const bot = new TelegramBot(TOKEN, { 
     polling: {
         interval: 2000, 
         autoStart: true,
         params: {
-            timeout: 30
+            timeout: 10
         }
     } 
 });
@@ -32,33 +33,13 @@ const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 const CHANNEL_LOG_ID = '-1004488082323';
 
-// --- 🛑 سیستم پیشرفته و ایزوله ضد تکرار (Anti-Flood & Deduplication) ---
-const requestLocks = new Map(); // قفل اختصاصی برای جلوگیری از اجرای همزمان تراکنش‌ها
-const processedUpdates = new Set(); // ذخیره شناسه‌های آپدیت پردازش شده برای جلوگیری از تکرار پولینگ
-const processedMessages = new Set(); // 🔹 حافظه کمکی برای جلوگیری از پردازش تکراری متن پیام‌ها بدون دستور
+const userCooldowns = new Map();
+const COOLDOWN_TIME = 2000; // محدودیت زمان بین هر درخواست کاربر (۲ ثانیه)
 
-function isDuplicateUpdate(updateId) {
-    if (!updateId) return false;
-    if (processedUpdates.has(updateId)) return true;
-    processedUpdates.add(updateId);
-    if (processedUpdates.size > 10000) {
-        const firstItem = processedUpdates.values().next().value;
-        processedUpdates.delete(firstItem);
-    }
-    return false;
-}
-
-function isDuplicateMessage(msg) {
-    if (!msg || !msg.message_id) return false;
-    const msgKey = `${msg.chat.id}_${msg.message_id}`;
-    if (processedMessages.has(msgKey)) return true;
-    processedMessages.add(msgKey);
-    if (processedMessages.size > 10000) {
-        const firstItem = processedMessages.values().next().value;
-        processedMessages.delete(firstItem);
-    }
-    return false;
-}
+// مپ‌های ایمن برای جلوگیری از پردازش تکراری دکمه‌ها و پیام‌ها با پاکسازی خودکار
+const recentClicks = new Set();
+const recentMessages = new Set();
+const processedUpdateIds = new Set(); // جلوگیری از پردازش تکراری آپدیت‌ها
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -282,11 +263,6 @@ function parsePrice(priceStr) {
     return parseInt(digits, 10) || 0;
 }
 
-function textButtonMatches(dataOrText, targetMenuName) {
-    if (!dataOrText || !targetMenuName) return false;
-    return dataOrText.includes(targetMenuName) || targetMenuName.includes(dataOrText);
-}
-
 function trackUserAndNotifyAdmin(msg) {
     if (msg && msg.from && msg.from.id) {
         const userId = msg.from.id;
@@ -473,9 +449,7 @@ async function handleForceJoin(msg) {
     return true;
 }
 
-// 🔧 اصلاح و بهبود بخش استارت برای پوشش کامل دستورات ورودی
-async function processStartCommand(msg, match) {
-    if (isDuplicateUpdate(msg.update_id) || isDuplicateMessage(msg)) return;
+bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     loadDatabase(); 
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
@@ -524,14 +498,9 @@ async function processStartCommand(msg, match) {
     }
 
     sendMainMenu(chatId);
-}
-
-bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
-    processStartCommand(msg, match);
 });
 
 bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
-    if (isDuplicateUpdate(msg.update_id) || isDuplicateMessage(msg)) return;
     loadDatabase();
     const chatId = msg.chat.id;
     if (!isAdmin(msg)) {
@@ -666,22 +635,34 @@ async function sendUserSubscriptionsPage(chatId, messageId, userId, page = 0, ca
     } catch (e) {}
 }
 
-// --- ⚡️ مدیریت هوشمند کلیک دکمه‌های شیشه‌ای با قفل ضد تکرار و پاسخگویی تضمینی ---
+const activeTransactions = new Set();
+
 bot.on('callback_query', async (callbackQuery) => {
-    if (isDuplicateUpdate(callbackQuery.id)) return;
-    
+    // 🛡 فیلتر آپدیت‌های تکراری بر اساس ID
+    if (callbackQuery.id && processedUpdateIds.has(callbackQuery.id)) return;
+    if (callbackQuery.id) {
+        processedUpdateIds.add(callbackQuery.id);
+        if (processedUpdateIds.size > 2000) {
+            const firstKey = processedUpdateIds.values().next().value;
+            processedUpdateIds.delete(firstKey);
+        }
+    }
+
     const chatId = callbackQuery.message.chat.id;
     const userId = callbackQuery.from.id.toString();
     const data = callbackQuery.data;
+    const currentTime = Date.now();
+
+    const transactionKey = `${userId}_${data}`;
+    if (activeTransactions.has(transactionKey)) {
+        return bot.answerCallbackQuery(callbackQuery.id, { text: '⚠️ در حال پردازش، لطفاً صبور باشید...', show_alert: false }).catch(() => {});
+    }
+    activeTransactions.add(transactionKey);
+    setTimeout(() => activeTransactions.delete(transactionKey), 2500);
 
     try {
         await bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
-
-    const lockKey = `cb_${userId}_${data}`;
-    if (requestLocks.has(lockKey)) return;
-    requestLocks.set(lockKey, true);
-    setTimeout(() => requestLocks.delete(lockKey), 2000);
 
     loadDatabase(); 
     const msg = callbackQuery.message;
@@ -689,6 +670,14 @@ bot.on('callback_query', async (callbackQuery) => {
     if (!isAdmin(callbackQuery) && db.blockedUsers && db.blockedUsers.includes(userId)) {
         return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ شما مسدود شده‌اید.', show_alert: true }).catch(() => {});
     }
+
+    if (userCooldowns.has(userId)) {
+        const lastClickTime = userCooldowns.get(userId);
+        if (currentTime - lastClickTime < COOLDOWN_TIME) {
+            return;
+        }
+    }
+    userCooldowns.set(userId, currentTime);
 
     const userObj = callbackQuery.from;
     if (userObj) {
@@ -1808,17 +1797,18 @@ bot.on('callback_query', async (callbackQuery) => {
                           `🌐 حجم ترافیک: \`${selectedPlan.volume}\`\n` +
                           `⏳ مدت زمان: \`${selectedPlan.duration}\`\n` +
                           discountInfoText +
-                          `💵 **قابل پرداخت:** \`${priceNumber.toLocaleString()} تومان\`\n\n`;
+                          `💵 **مبلغ قابل پرداخت: ${priceNumber.toLocaleString()} تومان**\n` +
+                          `💰 موجودی کیف پول شما: \`${userBalance.toLocaleString()} تومان\`\n\n`;
 
         if (userBalance >= priceNumber) {
-            inlineBtns.push([{ text: `💳 پرداخت از کیف پول (${userBalance.toLocaleString()} ت)`, callback_data: `pay_wallet_${planId}` }]);
+            paymentDesc += `✅ موجودی کیف پول شما کافی است.`;
+            inlineBtns.push([{ text: `💳 پرداخت آنی از کیف پول (${priceNumber.toLocaleString()} ت)`, callback_data: `pay_wallet_${selectedPlan.id}` }]);
         } else {
-            inlineBtns.push([{ text: `⚠️ موجودی کافی نیست (شارژ کیف پول)`, callback_data: 'wallet_deposit' }]);
+            paymentDesc += `⚠️ موجودی کیف پول کافی نیست.`;
+            inlineBtns.push([{ text: `➕ شارژ کیف پول`, callback_data: 'wallet_deposit' }]);
         }
-
-        inlineBtns.push([{ text: `💳 پرداخت کارت به کارت`, callback_data: `pay_card_${planId}` }]);
-        inlineBtns.push([{ text: `🎟 ثبت کد تخفیف`, callback_data: `enter_discount_${planId}` }]);
-        inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: 'buy_sub' }]);
+        inlineBtns.push([{ text: `🎟 ثبت کد تخفیف`, callback_data: `enter_discount_${selectedPlan.id}` }]);
+        inlineBtns.push([{ text: `💳 پرداخت کارت به کارت`, callback_data: `pay_card_${selectedPlan.id}` }]);
 
         bot.sendMessage(chatId, paymentDesc, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineBtns } }).catch(() => {});
         return;
@@ -1826,339 +1816,449 @@ bot.on('callback_query', async (callbackQuery) => {
 
     if (data.startsWith('pay_wallet_')) {
         const planId = parseInt(data.split('_')[2]);
-        const selectedPlan = db.customPlans.find(p => p.id === planId);
-
-        if (!selectedPlan || selectedPlan.links.length === 0) {
-            bot.sendMessage(chatId, '❌ پلن مورد نظر نامعتبر یا به اتمام رسیده است.').catch(() => {});
-            return;
-        }
-
-        let priceNumber = parsePrice(selectedPlan.price);
-        let agentDiscountPercent = 0;
-        if (db.agents && db.agents[userId]) {
-            agentDiscountPercent = db.agents[userId].discountPercent || 0;
-        }
-        if (agentDiscountPercent > 0) {
-            priceNumber -= Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
-        }
-        if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
-            const disc = db.appliedDiscounts[userId];
-            priceNumber -= Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
-        }
-
-        const userBalance = db.userWallets[userId] || 0;
-        if (userBalance < priceNumber) {
-            bot.sendMessage(chatId, '❌ موجودی کیف پول شما برای پرداخت این مبلغ کافی نمی‌باشد.').catch(() => {});
-            return;
-        }
-
-        db.userWallets[userId] = userBalance - priceNumber;
-        if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
-            delete db.appliedDiscounts[userId];
-        }
-
-        const assignedLink = selectedPlan.links.shift();
-        const parsedData = await fetchAndParseConfig(assignedLink);
-        const currentDateStr = getPersianDateTime();
-        const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
-
-        const subObj = {
-            userId: userId,
-            userName: userInfo.name,
-            planName: selectedPlan.name,
-            expiryDate: parsedData.expireDate !== 'نامشخص' ? parsedData.expireDate : selectedPlan.duration,
-            volume: selectedPlan.volume,
-            totalVolume: parsedData.total,
-            upload: parsedData.upload,
-            download: parsedData.download,
-            configLink: assignedLink,
-            extractedConfigs: parsedData.extractedConfigs,
-            purchaseDate: currentDateStr
-        };
-
-        if (!db.userSubscriptions[userId]) {
-            db.userSubscriptions[userId] = [];
-        }
-        db.userSubscriptions[userId].push(subObj);
-        db.allSubscriptionsHistory.push(subObj);
-
-        logPurchaseToFile(subObj);
-        saveDatabase();
-
-        const rawUsername = userInfo.username || 'ندارد';
-        const cleanUsername = rawUsername.replace('@', '');
-        const purchaseMessage = `🛒 **خرید موفق جدید (از کیف پول):**\n` +
-                                `👤 **نام کاربری:** @${cleanUsername}\n` +
-                                `⏰ **زمان:** ${currentDateStr}\n` +
-                                `📦 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : selectedPlan.volume}\n\n` +
-                                `🔗 **لینک اشتراک:**\n\`${assignedLink}\``;
         
-        const channelKeyboard = {
-            reply_markup: {
-                inline_keyboard: [[{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]]
-            }
-        };
-
-        await bot.sendMessage(CHANNEL_LOG_ID, purchaseMessage, { parse_mode: 'Markdown', ...channelKeyboard }).catch(() => {});
-
-        let successMsg = `🎉 **خرید شما با موفقیت انجام شد!** 🚀\n\n` +
-                         `📦 پلن: \`${selectedPlan.name}\`\n` +
-                         `🌐 حجم: \`${parsedData.total}\`\n` +
-                         `⏳ انقضا: \`${subObj.expiryDate}\`\n\n` +
-                         `🔗 **لینک اشتراک اختصاصی:**\n\`${assignedLink}\``;
-
-        if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
-            successMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
+        const lockKey = `buying_${userId}`;
+        if (global[lockKey]) {
+            return bot.sendMessage(chatId, '⚠️ درخواست خرید قبلی شما در حال پردازش است. لطفاً منتظر بمانید.').catch(() => {});
         }
+        global[lockKey] = true;
 
-        bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        try {
+            loadDatabase();
+            const plan = db.customPlans.find(p => p.id === planId);
+
+            if (!plan || plan.links.length === 0) {
+                delete global[lockKey];
+                return bot.sendMessage(chatId, '❌ پلن نامعتبر یا به اتمام رسیده است.').catch(() => {});
+            }
+
+            let priceNumber = parsePrice(plan.price);
+            
+            let agentDiscountPercent = 0;
+            if (db.agents && db.agents[userId]) {
+                agentDiscountPercent = db.agents[userId].discountPercent || 0;
+            }
+            if (agentDiscountPercent > 0) {
+                const agentDiscountAmount = Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
+                priceNumber -= agentDiscountAmount;
+            }
+
+            if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
+                const disc = db.appliedDiscounts[userId];
+                const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
+                priceNumber -= discountAmount;
+                delete db.appliedDiscounts[userId];
+            }
+
+            const userBalance = db.userWallets[userId] || 0;
+
+            if (userBalance < priceNumber) {
+                delete global[lockKey];
+                return bot.sendMessage(chatId, '❌ موجودی کیف پول کافی نیست.').catch(() => {});
+            }
+
+            db.userWallets[userId] = userBalance - priceNumber;
+            const assignedLink = plan.links.shift();
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            const parsedData = await fetchAndParseConfig(assignedLink);
+            const currentDateStr = getPersianDateTime();
+            const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
+
+            const subObj = {
+                userId: userId,
+                userName: userInfo.name,
+                planName: plan.name,
+                expiryDate: parsedData.expireDate !== 'نامشخص' ? parsedData.expireDate : plan.duration,
+                volume: plan.volume,
+                totalVolume: parsedData.total,
+                upload: parsedData.upload,
+                download: parsedData.download,
+                configLink: assignedLink,
+                extractedConfigs: parsedData.extractedConfigs,
+                purchaseDate: currentDateStr
+            };
+
+            if (!db.userSubscriptions[userId]) {
+                db.userSubscriptions[userId] = [];
+            }
+            db.userSubscriptions[userId].push(subObj);
+            db.allSubscriptionsHistory.push(subObj);
+
+            logPurchaseToFile(subObj);
+            db.receiptsHistory.push({
+                type: 'خرید با کیف پول',
+                userId: userId,
+                userName: userInfo.name,
+                details: `${plan.name} (${priceNumber.toLocaleString()} تومان)`,
+                status: 'تایید شده خودکار',
+                date: currentDateStr
+            });
+            saveDatabase();
+
+            const rawUsername = userInfo.username || 'ندارد';
+            const cleanUsername = rawUsername.replace('@', '');
+            const purchaseMessage = `🛒 **خرید جدید ثبت شد:**\n` +
+                                    `👤 **نام کاربری:** @${cleanUsername}\n` +
+                                    `⏰ **زمان:** ${currentDateStr}\n` +
+                                    `📦 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}\n\n` +
+                                    `🔗 **لینک اشتراک:**\n\`${assignedLink}\``;
+            
+            const channelKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [[{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]]
+                }
+            };
+
+            await bot.sendMessage(CHANNEL_LOG_ID, purchaseMessage, { parse_mode: 'Markdown', ...channelKeyboard }).catch(() => {});
+
+            let userMsg = `🎉 **خرید با موفقیت انجام شد!** 🚀\n\n` +
+                          `📦 پلن: \`${plan.name}\`\n` +
+                          `🌐 حجم کل: \`${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}\`\n` +
+                          `⏳ انقضا: \`${subObj.expiryDate}\`\n` +
+                          `💰 موجودی جدید کیف پول: \`${db.userWallets[userId].toLocaleString()} تومان\`\n\n` +
+                          `🔗 **لینک اختصاصی اشتراک شما:**\n\`${assignedLink}\``;
+
+            if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
+                userMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
+            }
+
+            await bot.sendMessage(chatId, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        } finally {
+            delete global[lockKey];
+        }
         return;
     }
 
     if (data.startsWith('pay_card_')) {
         const planId = parseInt(data.split('_')[2]);
-        const selectedPlan = db.customPlans.find(p => p.id === planId);
-
-        if (!selectedPlan) {
-            bot.sendMessage(chatId, '❌ پلن یافت نشد.').catch(() => {});
+        const plan = db.customPlans.find(p => p.id === planId);
+        if (!plan) {
+            bot.sendMessage(chatId, '❌ پلن نامعتبر است.').catch(() => {});
             return;
         }
 
-        let priceNumber = parsePrice(selectedPlan.price);
+        let priceNumber = parsePrice(plan.price);
+        
         let agentDiscountPercent = 0;
         if (db.agents && db.agents[userId]) {
             agentDiscountPercent = db.agents[userId].discountPercent || 0;
         }
         if (agentDiscountPercent > 0) {
-            priceNumber -= Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
+            const agentDiscountAmount = Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
+            priceNumber -= agentDiscountAmount;
         }
+
         if (db.appliedDiscounts && db.appliedDiscounts[userId]) {
             const disc = db.appliedDiscounts[userId];
-            priceNumber -= Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
+            const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
+            priceNumber -= discountAmount;
+            delete db.appliedDiscounts[userId];
         }
 
-        db.userStates[chatId] = { step: 'get_card_purchase_receipt', planId };
+        db.userStates[chatId] = {
+            step: 'get_card_purchase_receipt',
+            planId: plan.id,
+            amountToPay: priceNumber
+        };
         saveDatabase();
 
-        const cardPayMsg = `💳 **پرداخت کارت به کارت**\n\n` +
-                           `📦 پلن: \`${selectedPlan.name}\`\n` +
-                           `💵 مبلغ قابل پرداخت: \`${priceNumber.toLocaleString()} تومان\`\n\n` +
-                           `لطفاً مبلغ را به شماره کارت زیر واریز نموده و **عکس رسید پرداخت** را همینجا ارسال کنید:\n\`${db.paymentCardNumber}\``;
-
-        bot.sendMessage(chatId, cardPayMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        const cardText = `💳 **پرداخت کارت به کارت**\n\n` +
+                         `📦 پلن: \`${plan.name}\`\n` +
+                         `💵 مبلغ قابل پرداخت: \`${priceNumber.toLocaleString()} تومان\`\n\n` +
+                         `لطفاً مبلغ را به شماره کارت زیر واریز کرده و **عکس رسید** را همینجا ارسال کنید:\n\`${db.paymentCardNumber}\``;
+        
+        bot.sendMessage(chatId, cardText, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 });
 
-// --- مدیریت پیام‌های متنی و استیت‌های کاربران ---
+function textButtonMatches(dataOrText, menuName) {
+    if (!dataOrText || !menuName) return false;
+    return dataOrText.includes(menuName) || dataOrText === menuName;
+}
+
 bot.on('message', async (msg) => {
-    if (isDuplicateUpdate(msg.update_id) || isDuplicateMessage(msg)) return;
-    if (!msg.text && !msg.photo) return;
-    
+    // 🛡 فیلتر پیام‌های تکراری بر اساس message_id
+    if (msg.message_id && processedUpdateIds.has(msg.message_id)) return;
+    if (msg.message_id) {
+        processedUpdateIds.add(msg.message_id);
+        if (processedUpdateIds.size > 2000) {
+            const firstKey = processedUpdateIds.values().next().value;
+            processedUpdateIds.delete(firstKey);
+        }
+    }
+
     loadDatabase();
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
     const text = msg.text ? msg.text.trim() : '';
+    const currentTime = Date.now();
 
-    if (text.startsWith('/start') || text === '💻 پنل مدیریت' || text === '/panel') {
-        return;
+    if (userCooldowns.has(userId)) {
+        const lastMsgTime = userCooldowns.get(userId);
+        if (currentTime - lastMsgTime < 800) { 
+            return;
+        }
     }
+    userCooldowns.set(userId, currentTime);
+
+    if (text) {
+        const msgKey = `${userId}_${text}`;
+        if (recentMessages.has(msgKey)) return;
+        recentMessages.add(msgKey);
+        setTimeout(() => recentMessages.delete(msgKey), 1200);
+    }
+
+    if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
+        return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.').catch(() => {});
+    }
+
+    trackUserAndNotifyAdmin(msg);
+    const canProceed = await handleForceJoin(msg);
+    if (!canProceed) return;
 
     if (text === '🚪 بستن کیبورد ربات') {
         delete db.userStates[chatId];
         saveDatabase();
-        return bot.sendMessage(chatId, '🚪 کیبورد ربات بسته شد. برای بازگشت مجدد از دستور /start استفاده کنید.', {
+        await bot.sendMessage(chatId, '👋 کیبورد ربات بسته شد. برای بازگشت مجدد دستور /start را ارسال کنید.', {
             reply_markup: { remove_keyboard: true }
         }).catch(() => {});
+        return;
     }
 
-    const state = db.userStates[chatId];
-    if (state) {
-        if (state.step === 'waiting_for_support_message') {
+    const names = db.menuNames;
+    if (text === `🛒 ${names.buy_sub}`) {
+        const availablePlans = db.customPlans.filter(p => p.links && p.links.length > 0);
+        if (availablePlans.length === 0) {
+            return bot.sendMessage(chatId, db.botTexts.no_plans).catch(() => {});
+        }
+        let planText = db.botTexts.store_title;
+        const planButtons = availablePlans.map(p => [
+            { text: `🌐 ${p.name} - ${p.volume} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
+        ]);
+        return bot.sendMessage(chatId, planText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: planButtons } }).catch(() => {});
+    }
+
+    if (text === `💳 ${names.wallet}`) {
+        const balance = db.userWallets[userId] || 0;
+        const walletKeyboard = {
+            reply_markup: {
+                inline_keyboard: [[{ text: '➕ شارژ کیف پول', callback_data: 'wallet_deposit' }]]
+            }
+        };
+        const customWalletText = (db.botTexts.wallet_title || '')
+            .replace('{balance}', balance.toLocaleString())
+            .replace('{userId}', userId);
+        return bot.sendMessage(chatId, customWalletText, { parse_mode: 'Markdown', ...walletKeyboard }).catch(() => {});
+    }
+
+    if (text === `📱 ${names.my_subs}`) {
+        return await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
+    }
+
+    if (text === `📞 ${names.support}`) {
+        db.userStates[chatId] = { step: 'waiting_for_support_message' };
+        saveDatabase();
+        return bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+
+    if (text === `🎁 ${names.free_sub}`) {
+        if (!db.isFreeSubEnabled) return;
+        return bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+
+    if (text === `🧪 ${names.test_server}`) {
+        if (!db.isTestServerEnabled) return;
+        return bot.sendMessage(chatId, `🧪 **سرور تست رایگان:**\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+
+    if (text === `👥 ${names.invite}`) {
+        if (!db.isInviteSystemEnabled) return;
+        const botInfo = await bot.getMe();
+        const inviteLink = `https://t.me/${botInfo.username}?start=${chatId}`;
+        const refCount = db.referals[chatId] || 0;
+        const inviteText = (db.botTexts.invite_title || '')
+            .replace('{inviteLink}', inviteLink)
+            .replace('{count}', refCount);
+        return bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+
+    if (text === `🤝 ${names.agency_request}`) {
+        db.userStates[chatId] = { step: 'waiting_for_agency_message' };
+        saveDatabase();
+        return bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+
+    if (text === `📖 ${names.tutorial}`) {
+        return bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+
+    const currentState = db.userStates[chatId];
+    if (currentState) {
+        if (currentState.step === 'waiting_for_support_message') {
             delete db.userStates[chatId];
             saveDatabase();
             
-            bot.sendMessage(chatId, db.botTexts.support_success, { parse_mode: 'Markdown' }).catch(() => {});
-            
-            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
+            await bot.sendMessage(chatId, db.botTexts.support_success, { parse_mode: 'Markdown' }).catch(() => {});
+
+            const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
             const forwardKeyboard = {
                 reply_markup: {
                     inline_keyboard: [
-                        [
-                            { text: '💬 پاسخ به کاربر', callback_data: `reply_user_${userId}` },
-                            { text: '🔒 بستن تیکت', callback_data: `close_ticket_${userId}` }
-                        ],
-                        [{ text: '👤 پروفایل کاربر', url: `tg://user?id=${userId}` }]
+                        [{ text: '💬 پاسخ به کاربر', callback_data: `reply_user_${userId}` }],
+                        [{ text: '🔒 بستن تیکت', callback_data: `close_ticket_${userId}` }]
                     ]
                 }
             };
 
-            bot.sendMessage(
-                ADMIN_CHAT_ID, 
-                `📞 **پیام جدید پشتیبانی از کاربر:**\n\n` +
-                `👤 نام: ${userInfo.name}\n` +
-                `🔗 یوزرنیم: ${userInfo.username}\n` +
-                `🆔 شناسه: \`${userId}\`\n\n` +
-                `✉️ متن پیام:\n${text}`, 
-                { parse_mode: 'Markdown', ...forwardKeyboard }
-            ).catch(() => {});
+            await bot.sendMessage(ADMIN_CHAT_ID, `📩 **پیام جدید از پشتیبانی:**\n\n👤 نام: ${userInfo.name}\n🆔 یوزرنیم: @${userInfo.username.replace('@', '')}\n🔢 آیدی عددی: \`${userId}\`\n\n💬 متن پیام:\n${text}`, { parse_mode: 'Markdown', ...forwardKeyboard }).catch(() => {});
             return;
         }
 
-        if (state.step === 'waiting_for_agency_message') {
+        if (currentState.step === 'waiting_for_agency_message') {
             delete db.userStates[chatId];
             saveDatabase();
+            
+            await bot.sendMessage(chatId, db.botTexts.agency_success, { parse_mode: 'Markdown' }).catch(() => {});
 
-            bot.sendMessage(chatId, db.botTexts.agency_success, { parse_mode: 'Markdown' }).catch(() => {});
-
-            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
+            const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
             const agencyKeyboard = {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '💬 پاسخ به درخواست', callback_data: `reply_user_${userId}` }],
-                        [{ text: '👤 پروفایل کاربر', url: `tg://user?id=${userId}` }]
+                        [{ text: '💬 پاسخ به کاربر', callback_data: `reply_user_${userId}` }]
                     ]
                 }
             };
 
-            bot.sendMessage(
-                ADMIN_CHAT_ID, 
-                `🤝 **درخواست نمایندگی جدید:**\n\n` +
-                `👤 نام: ${userInfo.name}\n` +
-                `🔗 یوزرنیم: ${userInfo.username}\n` +
-                `🆔 شناسه: \`${userId}\`\n\n` +
-                `📄 جزئیات درخواست:\n${text}`, 
-                { parse_mode: 'Markdown', ...agencyKeyboard }
-            ).catch(() => {});
+            await bot.sendMessage(ADMIN_CHAT_ID, `🤝 **درخواست نمایندگی جدید:**\n\n👤 نام: ${userInfo.name}\n🆔 یوزرنیم: @${userInfo.username.replace('@', '')}\n🔢 آیدی عددی: \`${userId}\`\n\n📄 متن درخواست:\n${text}`, { parse_mode: 'Markdown', ...agencyKeyboard }).catch(() => {});
             return;
         }
 
-        if (state.step === 'get_new_invite_reward') {
+        if (currentState.step === 'get_new_invite_reward') {
             if (!isAdmin(msg)) return;
-            const newAmount = parsePrice(text);
-            if (newAmount <= 0) {
-                return bot.sendMessage(chatId, '❌ مبلغ وارد شده نامعتبر است. لطفاً یک عدد صحیح وارد کنید:').catch(() => {});
+            const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
+            if (isNaN(amount) || amount <= 0) {
+                return bot.sendMessage(chatId, '❌ مبلغ وارد شده نامعتبر است. لطفاً فقط عدد وارد کنید:').catch(() => {});
             }
-            db.inviteRewardAmount = newAmount;
+            db.inviteRewardAmount = amount;
             delete db.userStates[chatId];
             saveDatabase();
-
-            bot.sendMessage(chatId, `✅ پاداش دعوت با موفقیت به \`${newAmount.toLocaleString()} تومان\` تغییر یافت.`).catch(() => {});
+            bot.sendMessage(chatId, `✅ پاداش دعوت با موفقیت به \`${amount.toLocaleString()} تومان\` تغییر یافت. 🎉`, { parse_mode: 'Markdown' }).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
 
-        if (state.step === 'get_new_card_number') {
+        if (currentState.step === 'get_new_card_number') {
             if (!isAdmin(msg)) return;
             db.paymentCardNumber = text;
             delete db.userStates[chatId];
             saveDatabase();
-
-            bot.sendMessage(chatId, `✅ شماره کارت با موفقیت به \`${text}\` بروزرسانی شد.`).catch(() => {});
+            bot.sendMessage(chatId, `✅ شماره کارت جدید با موفقیت ذخیره شد:\n\`${text}\``, { parse_mode: 'Markdown' }).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
 
-        if (state.step === 'get_new_menu_name') {
+        if (currentState.step === 'get_new_menu_name') {
             if (!isAdmin(msg)) return;
-            const targetKey = state.targetKey;
+            const targetKey = currentState.targetKey;
             db.menuNames[targetKey] = text;
             delete db.userStates[chatId];
             saveDatabase();
-
-            bot.sendMessage(chatId, `✅ نام دکمه با موفقیت تغییر کرد.`).catch(() => {});
+            bot.sendMessage(chatId, `✅ نام دکمه با موفقیت بهروزرسانی شد.`).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
 
-        if (state.step === 'admin_waiting_for_agent_identifier') {
+        if (currentState.step === 'admin_waiting_for_agent_identifier') {
             if (!isAdmin(msg)) return;
             let targetId = text.replace('@', '').trim();
-            let foundUId = targetId;
-
-            if (isNaN(targetId)) {
-                const matchedEntry = Object.entries(db.usersDetailMap).find(([uId, info]) => info.username && info.username.toLowerCase() === `@${targetId}`.toLowerCase());
-                if (matchedEntry) {
-                    foundUId = matchedEntry[0];
+            if (!isNaN(targetId)) {
+                targetId = targetId.toString();
+            } else {
+                const foundEntry = Object.entries(db.usersDetailMap).find(([id, info]) => info.username && info.username.replace('@', '').toLowerCase() === targetId.toLowerCase());
+                if (foundEntry) {
+                    targetId = foundEntry[0];
+                } else {
+                    return bot.sendMessage(chatId, '❌ کاربری با این مشخصات یافت نشد. لطفاً آیدی عددی یا یوزرنیم صحیح را ارسال کنید:').catch(() => {});
                 }
             }
-
-            db.userStates[chatId] = { step: 'admin_waiting_for_agent_percent', targetAgentId: foundUId };
+            db.userStates[chatId] = { step: 'admin_waiting_for_agent_discount', targetAgentId: targetId };
             saveDatabase();
-            bot.sendMessage(chatId, `🤝 کاربر انتخاب شد (\`${foundUId}\`). حالا **درصد تخفیف** نمایندگی را به عدد وارد کنید (مثلا 20):`, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `🤝 درصد تخفیف نماینده (مثلاً 20 برای 20 درصد) را وارد کنید:`, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
 
-        if (state.step === 'admin_waiting_for_agent_percent') {
+        if (currentState.step === 'admin_waiting_for_agent_discount') {
             if (!isAdmin(msg)) return;
             const percent = parseInt(text, 10);
-            const targetAgentId = state.targetAgentId;
-
+            const targetAgentId = currentState.targetAgentId;
             if (isNaN(percent) || percent < 0 || percent > 100) {
-                return bot.sendMessage(chatId, '❌ درصد نامعتبر است. عددی بین 0 تا 100 وارد کنید:').catch(() => {});
+                return bot.sendMessage(chatId, '❌ درصد وارد شده نامعتبر است (بین 0 تا 100):').catch(() => {});
             }
-
+            if (!db.agents) db.agents = {};
             db.agents[targetAgentId] = { discountPercent: percent };
             delete db.userStates[chatId];
             saveDatabase();
-
-            bot.sendMessage(chatId, `✅ نماینده با موفقیت ثبت شد.\nشناسه: \`${targetAgentId}\` | تخفیف: \`${percent}%\``, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `✅ نماینده با موفقیت ثبت شد.\nشناسه: \`${targetAgentId}\` | تخفیف: **${percent}%**`, { parse_mode: 'Markdown' }).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
 
-        if (state.step === 'admin_waiting_for_block_identifier') {
+        if (currentState.step === 'admin_waiting_for_block_identifier') {
             if (!isAdmin(msg)) return;
             let targetId = text.replace('@', '').trim();
-            let foundUId = targetId;
-
-            if (isNaN(targetId)) {
-                const matchedEntry = Object.entries(db.usersDetailMap).find(([uId, info]) => info.username && info.username.toLowerCase() === `@${targetId}`.toLowerCase());
-                if (matchedEntry) {
-                    foundUId = matchedEntry[0];
+            if (!isNaN(targetId)) {
+                targetId = targetId.toString();
+            } else {
+                const foundEntry = Object.entries(db.usersDetailMap).find(([id, info]) => info.username && info.username.replace('@', '').toLowerCase() === targetId.toLowerCase());
+                if (foundEntry) {
+                    targetId = foundEntry[0];
+                } else {
+                    return bot.sendMessage(chatId, '❌ کاربری با این مشخصات یافت نشد.').catch(() => {});
                 }
             }
-
             if (!db.blockedUsers) db.blockedUsers = [];
-            if (!db.blockedUsers.includes(foundUId)) {
-                db.blockedUsers.push(foundUId);
+            if (!db.blockedUsers.includes(targetId)) {
+                db.blockedUsers.push(targetId);
             }
             delete db.userStates[chatId];
             saveDatabase();
-
-            bot.sendMessage(chatId, `🚫 کاربر \`${foundUId}\` با موفقیت مسدود شد.`, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `🚫 کاربر با شناسه \`${targetId}\` مسدود شد.`, { parse_mode: 'Markdown' }).catch(() => {});
             try {
-                bot.sendMessage(foundUId, '❌ شما توسط مدیریت مسدود شدید.');
+                bot.sendMessage(targetId, '❌ **حساب کاربری شما توسط مدیریت مسدود گردید.**');
             } catch (e) {}
             sendAdminPanel(chatId);
             return;
         }
 
-        if (state.step === 'admin_waiting_for_user_identifier') {
+        if (currentState.step === 'admin_waiting_for_user_identifier') {
             if (!isAdmin(msg)) return;
             let targetId = text.replace('@', '').trim();
-            let foundUId = targetId;
-
-            if (isNaN(targetId)) {
-                const matchedEntry = Object.entries(db.usersDetailMap).find(([uId, info]) => info.username && info.username.toLowerCase() === `@${targetId}`.toLowerCase());
-                if (matchedEntry) {
-                    foundUId = matchedEntry[0];
+            if (!isNaN(targetId)) {
+                targetId = targetId.toString();
+            } else {
+                const foundEntry = Object.entries(db.usersDetailMap).find(([id, info]) => info.username && info.username.replace('@', '').toLowerCase() === targetId.toLowerCase());
+                if (foundEntry) {
+                    targetId = foundEntry[0];
+                } else {
+                    return bot.sendMessage(chatId, '❌ کاربری با این مشخصات یافت نشد. لطفاً آیدی عددی یا یوزرنیم صحیح را ارسال کنید:').catch(() => {});
                 }
             }
-
-            db.userStates[chatId] = { step: 'admin_manual_add_sub_link', targetUserId: foundUId };
+            db.userStates[chatId] = { step: 'admin_manual_add_sub_link', targetUserId: targetId };
             saveDatabase();
-            bot.sendMessage(chatId, `➕ **ثبت اشتراک دستی** برای کاربر (\`${foundUId}\`)\n\nلینک کانفیگ یا سابسکریپشن را بفرستید:`, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `➕ لطفاً **لینک کانفیگ یا سابسکریپشن** را برای این کاربر ارسال کنید:`, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
 
-        if (state.step === 'admin_manual_add_sub_link') {
+        if (currentState.step === 'admin_manual_add_sub_link') {
             if (!isAdmin(msg)) return;
-            const targetUserId = state.targetUserId;
-            const configLink = text;
-            const parsedData = await fetchAndParseConfig(configLink);
+            const targetUserId = currentState.targetUserId;
+            const link = text;
+            const parsedData = await fetchAndParseConfig(link);
             const currentDateStr = getPersianDateTime();
-            const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر دستی', username: 'ندارد' };
+            const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر', username: 'ندارد' };
 
             const subObj = {
                 userId: targetUserId,
@@ -2169,7 +2269,7 @@ bot.on('message', async (msg) => {
                 totalVolume: parsedData.total,
                 upload: parsedData.upload,
                 download: parsedData.download,
-                configLink: configLink,
+                configLink: link,
                 extractedConfigs: parsedData.extractedConfigs,
                 purchaseDate: currentDateStr
             };
@@ -2179,231 +2279,503 @@ bot.on('message', async (msg) => {
             }
             db.userSubscriptions[targetUserId].push(subObj);
             db.allSubscriptionsHistory.push(subObj);
-            logPurchaseToFile(subObj);
-
             delete db.userStates[chatId];
             saveDatabase();
 
             bot.sendMessage(chatId, `✅ اشتراک با موفقیت برای کاربر \`${targetUserId}\` ثبت و ارسال شد.`, { parse_mode: 'Markdown' }).catch(() => {});
-            bot.sendMessage(targetUserId, `🎉 **یک اشتراک جدید توسط مدیریت به حساب شما اضافه شد!** 🚀\n\n🔗 **لینک اشتراک:**\n\`${configLink}\``, { parse_mode: 'Markdown' }).catch(() => {});
-            sendAdminPanel(chatId);
+            bot.sendMessage(targetUserId, `🎉 **اشتراک جدید توسط مدیریت برای شما فعال شد!** 🚀\n\n🔗 لینک اشتراک:\n\`${link}\``, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
 
-        if (state.step === 'get_wallet_deposit_receipt' && msg.photo) {
-            const photoArray = msg.photo;
-            const fileId = photoArray[photoArray.length - 1].file_id;
-            const depositAmount = state.depositAmount || 0;
-            const depositKey = `deposit_${userId}`;
-
-            db.pending_deposits[depositKey] = { amount: depositAmount, fileId };
-            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
-            const currentDateStr = getPersianDateTime();
+        if (currentState.step === 'get_wallet_deposit_receipt') {
+            delete db.userStates[chatId];
+            saveDatabase();
+            
+            const depositAmount = currentState.depositAmount || 0;
+            const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
+            const cleanUname = (userInfo.username || 'ندارد').replace('@', '');
 
             db.receiptsHistory.push({
                 type: 'شارژ کیف پول',
-                userId,
+                userId: userId,
                 userName: userInfo.name,
-                details: `مبلغ: ${depositAmount.toLocaleString()} تومان`,
+                details: `${depositAmount.toLocaleString()} تومان`,
                 status: 'در انتظار تایید',
-                date: currentDateStr
+                date: getPersianDateTime()
             });
-
-            delete db.userStates[chatId];
+            db.pending_deposits[`deposit_${userId}`] = { amount: depositAmount };
             saveDatabase();
 
-            bot.sendMessage(chatId, '✅ **رسید شما دریافت شد و برای بررسی به مدیریت ارسال گردید.** 🙏', { parse_mode: 'Markdown' }).catch(() => {});
-
-            const confirmKeyboard = {
+            const adminReceiptKeyboard = {
                 reply_markup: {
                     inline_keyboard: [
                         [
-                            { text: '✅ تایید شارژ', callback_data: `approve_deposit_${userId}` },
-                            { text: '❌ رد رسید', callback_data: `reject_deposit_${userId}` }
+                            { text: '✅ تایید شارژ', callback_data: `approve_deposit_yes_${userId}` },
+                            { text: '❌ رد رسید', callback_data: `reject_deposit_no_${userId}` }
                         ],
                         [{ text: '👤 پروفایل کاربر', url: `tg://user?id=${userId}` }]
                     ]
                 }
             };
 
-            bot.sendPhoto(
-                ADMIN_CHAT_ID,
-                fileId,
-                {
-                    caption: `💳 **رسید جدید شارژ کیف پول:**\n\n` +
-                             `👤 نام: ${userInfo.name}\n` +
-                             `🔗 یوزرنیم: ${userInfo.username}\n` +
-                             `🆔 شناسه: \`${userId}\`\n` +
-                             `💵 مبلغ درخواستی: \`${depositAmount.toLocaleString()} تومان\``,
-                    parse_mode: 'Markdown',
-                    ...confirmKeyboard
-                }
-            ).catch(() => {});
+            const receiptCaption = `💳 **رسید جدید شارژ کیف پول:**\n\n` +
+                                   `👤 نام: ${userInfo.name}\n` +
+                                   `🆔 یوزرنیم: @${cleanUname}\n` +
+                                   `🔢 آیدی عددی: \`${userId}\`\n` +
+                                   `💵 مبلغ درخواستی: \`${depositAmount.toLocaleString()} تومان\``;
+
+            if (msg.photo && msg.photo.length > 0) {
+                const fileId = msg.photo[msg.photo.length - 1].file_id;
+                await bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: receiptCaption, parse_mode: 'Markdown', ...adminReceiptKeyboard }).catch(() => {});
+            } else {
+                await bot.sendMessage(ADMIN_CHAT_ID, receiptCaption + `\n\n📌 *(کاربر به جای عکس، متن ارسال کرده است)*`, { parse_mode: 'Markdown', ...adminReceiptKeyboard }).catch(() => {});
+            }
+
+            await bot.sendMessage(chatId, '✅ رسید شما با موفقیت دریافت شد و برای بررسی به مدیریت ارسال گردید. لطفاً منتظر بمانید 🙏', { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
 
-        if (state.step === 'get_card_purchase_receipt' && msg.photo) {
-            const photoArray = msg.photo;
-            const fileId = photoArray[photoArray.length - 1].file_id;
-            const planId = state.planId;
-            const cardKey = `card_pur_${userId}`;
+        if (currentState.step === 'get_card_purchase_receipt') {
+            const planId = currentState.planId;
+            const amountToPay = currentState.amountToPay;
+            delete db.userStates[chatId];
+            saveDatabase();
 
-            db.pending_card_purchases[cardKey] = { planId, fileId };
-            const selectedPlan = db.customPlans.find(p => p.id === planId);
-            const planName = selectedPlan ? selectedPlan.name : 'نامشخص';
-            const userInfo = db.usersDetailMap[userId] || { name: 'بدون نام', username: 'ندارد' };
-            const currentDateStr = getPersianDateTime();
+            const plan = db.customPlans.find(p => p.id === planId);
+            const planName = plan ? plan.name : 'نامشخص';
+            const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
+            const cleanUname = (userInfo.username || 'ندارد').replace('@', '');
 
             db.receiptsHistory.push({
                 type: 'خرید کارت به کارت',
-                userId,
+                userId: userId,
                 userName: userInfo.name,
-                details: `پلن: ${planName}`,
+                details: `${planName} (${amountToPay.toLocaleString()} تومان)`,
                 status: 'در انتظار تایید',
-                date: currentDateStr
+                date: getPersianDateTime()
             });
-
-            delete db.userStates[chatId];
+            db.pending_card_purchases[`card_pur_${userId}`] = { planId, amountToPay };
             saveDatabase();
 
-            bot.sendMessage(chatId, '✅ **رسید خرید کارت به کارت شما دریافت شد و پس از بررسی ادمین، اشتراک صادر خواهد شد.** 🙏', { parse_mode: 'Markdown' }).catch(() => {});
-
-            const confirmCardKeyboard = {
+            const adminCardKeyboard = {
                 reply_markup: {
                     inline_keyboard: [
                         [
-                            { text: '✅ تایید و ارسال اشتراک', callback_data: `approve_card_${userId}_${planId}` },
-                            { text: '❌ رد رسید', callback_data: `reject_card_${userId}` }
+                            { text: '✅ تایید و صدور اشتراک', callback_data: `approve_card_yes_${userId}_${planId}` },
+                            { text: '❌ رد رسید', callback_data: `reject_card_no_${userId}` }
                         ],
                         [{ text: '👤 پروفایل کاربر', url: `tg://user?id=${userId}` }]
                     ]
                 }
             };
 
-            bot.sendPhoto(
-                ADMIN_CHAT_ID,
-                fileId,
-                {
-                    caption: `🛒 **رسید خرید کارت به کارت جدید:**\n\n` +
-                             `👤 نام: ${userInfo.name}\n` +
-                             `🔗 یوزرنیم: ${userInfo.username}\n` +
-                             `🆔 شناسه: \`${userId}\`\n` +
-                             `📦 پلن درخواستی: \`${planName}\``,
-                    parse_mode: 'Markdown',
-                    ...confirmCardKeyboard
-                }
-            ).catch(() => {});
+            const cardCaption = `💳 **رسید جدید خرید کارت به کارت:**\n\n` +
+                                `👤 نام: ${userInfo.name}\n` +
+                                `🆔 یوزرنیم: @${cleanUname}\n` +
+                                `🔢 آیدی عددی: \`${userId}\`\n` +
+                                `📦 پلن درخواستی: \`${planName}\`\n` +
+                                `💵 مبلغ: \`${amountToPay.toLocaleString()} تومان\``;
+
+            if (msg.photo && msg.photo.length > 0) {
+                const fileId = msg.photo[msg.photo.length - 1].file_id;
+                await bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: cardCaption, parse_mode: 'Markdown', ...adminCardKeyboard }).catch(() => {});
+            } else {
+                await bot.sendMessage(ADMIN_CHAT_ID, cardCaption + `\n\n📌 *(کاربر به جای عکس، متن ارسال کرده است)*`, { parse_mode: 'Markdown', ...adminCardKeyboard }).catch(() => {});
+            }
+
+            await bot.sendMessage(chatId, '✅ رسید خرید شما دریافت شد. پس از بررسی توسط مدیریت، اشتراک شما صادر خواهد شد 🙏', { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
 
-        if (state.step === 'admin_reply_to_user') {
+        if (currentState.step === 'wallet_manager_waiting_for_amount') {
             if (!isAdmin(msg)) return;
-            const targetUser = state.targetUser;
+            const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
+            const targetUser = currentState.targetUser;
+            const action = currentState.action;
+
+            if (isNaN(amount) || amount <= 0) {
+                return bot.sendMessage(chatId, '❌ مبلغ وارد شده نامعتبر است. لطفاً عدد معتبر بفرستید:').catch(() => {});
+            }
+
+            const currentBalance = db.userWallets[targetUser] || 0;
+            if (action === 'inc') {
+                db.userWallets[targetUser] = currentBalance + amount;
+            } else {
+                db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
+            }
+
             delete db.userStates[chatId];
             saveDatabase();
 
+            const actionText = action === 'inc' ? 'افزایش یافت' : 'کاهش یافت';
+            bot.sendMessage(chatId, `✅ موجودی حساب کاربر \`${targetUser}\` به میزان ${amount.toLocaleString()} تومان ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' }).catch(() => {});
+            
             try {
-                await bot.sendMessage(targetUser, `📩 **پاسخ جدید از پشتیبانی:**\n\n${text}`);
-                bot.sendMessage(chatId, '✅ پاسخ شما با موفقیت به کاربر ارسال شد.').catch(() => {});
-            } catch (e) {
-                bot.sendMessage(chatId, '❌ خطا در ارسال پیام به کاربر (احتمالاً ربات را بلاک کرده است).').catch(() => {});
+                const notifyText = action === 'inc' 
+                    ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
+                    : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر گردید.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
+                await bot.sendMessage(targetUser, notifyText);
+            } catch (e) {}
+            return;
+        }
+
+        if (currentState.step === 'get_user_discount_input') {
+            const planId = currentState.planId;
+            const codeInput = text.toUpperCase();
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            if (db.discountCodes && db.discountCodes[codeInput]) {
+                const discObj = db.discountCodes[codeInput];
+                if (!db.appliedDiscounts) db.appliedDiscounts = {};
+                db.appliedDiscounts[userId] = { percent: discObj.percent, code: codeInput };
+                saveDatabase();
+
+                bot.sendMessage(chatId, `✅ کد تخفیف \`${codeInput}\` با موفقیت اعمال شد (${discObj.percent}% تخفیف)! 🎉\nلطفاً مجدداً از منوی خرید اقدام فرمایید.`, { parse_mode: 'Markdown' }).catch(() => {});
+            } else {
+                bot.sendMessage(chatId, '❌ کد تخفیف وارد شده نامعتبر یا منقضی شده است.', { parse_mode: 'Markdown' }).catch(() => {});
             }
             return;
         }
 
-        if (state.step === 'get_new_plan_name') {
+        if (currentState.step === 'admin_reply_to_user') {
             if (!isAdmin(msg)) return;
-            db.userStates[chatId] = { step: 'get_new_plan_volume', newPlanData: { name: text } };
+            const targetUser = currentState.targetUser;
+            delete db.userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, '🌐 لطفاً **حجم پلن** را وارد کنید (مثلا 50GB):').catch(() => {});
+
+            try {
+                await bot.sendMessage(targetUser, `💬 **پاسخ پشتیبانی از مدیریت:**\n\n${text}`, { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, `✅ پاسخ شما با موفقیت برای کاربر \`${targetUser}\` ارسال شد.`, { parse_mode: 'Markdown' }).catch(() => {});
+            } catch (e) {
+                bot.sendMessage(chatId, `❌ خطا در ارسال پیام به کاربر (احتمالاً ربات را بلاک کرده است).`).catch(() => {});
+            }
             return;
         }
 
-        if (state.step === 'get_new_plan_volume') {
+        if (currentState.step === 'get_broadcast_content') {
             if (!isAdmin(msg)) return;
-            state.newPlanData.volume = text;
-            state.step = 'get_new_plan_duration';
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            const allUsersList = [...new Set(db.allUsers)];
+            bot.sendMessage(chatId, `📢 ارسال پیام همگانی به ${allUsersList.length} کاربر آغاز شد...`).catch(() => {});
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const uId of allUsersList) {
+                try {
+                    await bot.sendMessage(uId, text, { parse_mode: 'Markdown' });
+                    successCount++;
+                    await sleep(40); // تأخیر کوتاه برای جلوگیری از محدودیت ارسال در تلگرام (Flood Wait)
+                } catch (e) {
+                    failCount++;
+                }
+            }
+
+            bot.sendMessage(chatId, `✅ **ارسال پیام همگانی به پایان رسید.**\n\n📤 موفق: ${successCount}\n❌ ناموفق: ${failCount}`, { parse_mode: 'Markdown' }).catch(() => {});
+            return;
+        }
+
+        if (currentState.step === 'get_new_plan_name') {
+            if (!isAdmin(msg)) return;
+            db.userStates[chatId] = { step: 'get_new_plan_volume', planName: text };
+            saveDatabase();
+            bot.sendMessage(chatId, '🌐 لطفاً **حجم پلن** را وارد کنید (مثلا 30 گیگابایت):').catch(() => {});
+            return;
+        }
+
+        if (currentState.step === 'get_new_plan_volume') {
+            if (!isAdmin(msg)) return;
+            db.userStates[chatId].volume = text;
+            db.userStates[chatId].step = 'get_new_plan_duration';
             saveDatabase();
             bot.sendMessage(chatId, '⏳ لطفاً **مدت زمان پلن** را وارد کنید (مثلا 30 روزه):').catch(() => {});
             return;
         }
 
-        if (state.step === 'get_new_plan_duration') {
+        if (currentState.step === 'get_new_plan_duration') {
             if (!isAdmin(msg)) return;
-            state.newPlanData.duration = text;
-            state.step = 'get_new_plan_price';
+            db.userStates[chatId].duration = text;
+            db.userStates[chatId].step = 'get_new_plan_price';
             saveDatabase();
-            bot.sendMessage(chatId, '💵 لطفاً **قیمت پلن** را به تومان وارد کنید (مثلا 75000):').catch(() => {});
+            bot.sendMessage(chatId, '💵 لطفاً **قیمت پلن** را به تومان وارد کنید (مثلا 150000):').catch(() => {});
             return;
         }
 
-        if (state.step === 'get_new_plan_price') {
+        if (currentState.step === 'get_new_plan_price') {
             if (!isAdmin(msg)) return;
-            state.newPlanData.price = text;
-            state.newPlanData.id = Date.now();
-            state.newPlanData.links = [];
+            const priceVal = text;
+            const state = db.userStates[chatId];
             
-            db.customPlans.push(state.newPlanData);
+            const newPlan = {
+                id: Date.now(),
+                name: state.planName,
+                volume: state.volume,
+                duration: state.duration,
+                price: priceVal,
+                links: []
+            };
+
+            db.customPlans.push(newPlan);
             delete db.userStates[chatId];
             saveDatabase();
 
-            bot.sendMessage(chatId, `✅ پلن جدید با موفقیت ایجاد شد.\nحالا می‌توانید با استفاده از بخش مدیریت پلن‌ها، لینک‌های کانفیگ را به آن اضافه کنید.`).catch(() => {});
+            bot.sendMessage(chatId, `✅ پلن جدید با موفقیت ایجاد شد!\nحالا از طریق بخش مدیریت پلن‌ها، می‌توانید به آن لینک اضافه کنید.`).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
 
-        if (state.step === 'edit_plan_field_value') {
+        if (currentState.step === 'get_extra_link_for_plan') {
             if (!isAdmin(msg)) return;
-            const planId = state.targetPlanId;
-            const field = state.targetField;
+            const planId = currentState.targetPlanId;
             const plan = db.customPlans.find(p => p.id === planId);
+            if (plan) {
+                plan.links.push(text);
+                delete db.userStates[chatId];
+                saveDatabase();
+                bot.sendMessage(chatId, `✅ لینک جدید با موفقیت به پلن **${plan.name}** اضافه شد.\nتعداد کل لینک‌های انبار: ${plan.links.length}`).catch(() => {});
+            } else {
+                bot.sendMessage(chatId, '❌ پلن یافت نشد.').catch(() => {});
+            }
+            return;
+        }
 
+        if (currentState.step === 'edit_plan_field_value') {
+            if (!isAdmin(msg)) return;
+            const planId = currentState.targetPlanId;
+            const field = currentState.targetField;
+            const plan = db.customPlans.find(p => p.id === planId);
+            
             if (plan) {
                 plan[field] = text;
                 delete db.userStates[chatId];
                 saveDatabase();
-                bot.sendMessage(chatId, '✅ مشخصات پلن با موفقیت بروزرسانی شد.').catch(() => {});
-                sendAdminPanel(chatId);
+                bot.sendMessage(chatId, `✅ مشخصات پلن با موفقیت به‌روزرسانی شد.`).catch(() => {});
+            } else {
+                bot.sendMessage(chatId, '❌ پلن یافت نشد.').catch(() => {});
             }
             return;
         }
 
-        if (state.step === 'get_extra_link_for_plan') {
+        if (currentState.step === 'get_new_discount_code') {
             if (!isAdmin(msg)) return;
-            const planId = state.targetPlanId;
-            const plan = db.customPlans.find(p => p.id === planId);
-
-            if (plan) {
-                if (!plan.links) plan.links = [];
-                plan.links.push(text);
-                delete db.userStates[chatId];
-                saveDatabase();
-                bot.sendMessage(chatId, `✅ لینک جدید به پلن «${plan.name}» اضافه شد.\n📊 مجموع لینک‌های انبار این پلن: ${plan.links.length} عدد`).catch(() => {});
-            }
+            const code = text.toUpperCase();
+            db.userStates[chatId] = { step: 'get_new_discount_percent', discountCode: code };
+            saveDatabase();
+            bot.sendMessage(chatId, `🎟 لطفاً درصد تخفیف را وارد کنید (مثلاً 20 برای 20 درصد):`).catch(() => {});
             return;
         }
 
-        if (state.step === 'get_new_test_link') {
+        if (currentState.step === 'get_new_discount_percent') {
+            if (!isAdmin(msg)) return;
+            const percent = parseInt(text, 10);
+            const code = currentState.discountCode;
+            if (isNaN(percent) || percent <= 0 || percent > 100) {
+                return bot.sendMessage(chatId, '❌ درصد نامعتبر است. بین 1 تا 100 وارد کنید:').catch(() => {});
+            }
+            if (!db.discountCodes) db.discountCodes = {};
+            db.discountCodes[code] = { percent };
+            delete db.userStates[chatId];
+            saveDatabase();
+            bot.sendMessage(chatId, `✅ کد تخفیف \`${code}\` با ${percent}% تخفیف ثبت شد.`).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
+
+        if (currentState.step === 'get_new_bot_text') {
+            if (!isAdmin(msg)) return;
+            const key = currentState.targetTextKey;
+            db.botTexts[key] = text;
+            delete db.userStates[chatId];
+            saveDatabase();
+            bot.sendMessage(chatId, `✅ متن مورد نظر با موفقیت به‌روزرسانی شد.`).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
+
+        if (currentState.step === 'get_new_channel_username') {
+            if (!isAdmin(msg)) return;
+            db.CHANNEL_USERNAME = text;
+            delete db.userStates[chatId];
+            saveDatabase();
+            bot.sendMessage(chatId, `✅ آیدی کانال جوین اجباری به \`${text}\` تغییر یافت.`).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
+
+        if (currentState.step === 'get_new_test_link') {
             if (!isAdmin(msg)) return;
             db.testServerConfig = text;
             delete db.userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, '✅ لینک سرور تست آپدیت شد.').catch(() => {});
+            bot.sendMessage(chatId, `✅ لینک سرور تست به‌روزرسانی شد.`).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
 
-        if (state.step === 'get_new_free_link') {
+        if (currentState.api_step === 'get_new_free_link' || currentState.step === 'get_new_free_link') {
             if (!isAdmin(msg)) return;
             db.freeSubConfig = text;
             delete db.userStates[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, '✅ لینک اشتراک هدیه آپدیت شد.').catch(() => {});
+            bot.sendMessage(chatId, `✅ لینک اشتراک هدیه به‌روزرسانی شد.`).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
+    }
+});
+        if (msg.document) {
+            const fileId = msg.document.file_id;
+            await bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: receiptCaption, parse_mode: 'Markdown', ...adminReceiptKeyboard }).catch(() => {});
+        } else {
+            await bot.sendMessage(ADMIN_CHAT_ID, receiptCaption + '\n\n⚠️ (کاربر بدون عکس و به شکل متن رسید را ارسال کرد)', { parse_mode: 'Markdown', ...adminReceiptKeyboard }).catch(() => {});
+        }
+
+        await bot.sendMessage(chatId, '✅ **رسید شما با موفقیت برای مدیریت ارسال شد.**\nپس از بررسی و تأیید، موجودی کیف پول شما به‌روزرسانی خواهد شد. 🙏✨', { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+        }
+
+        if (currentState.step === 'get_card_purchase_receipt') {
+            const planId = currentState.planId;
+            const amountToPay = currentState.amountToPay;
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            const plan = db.customPlans.find(p => p.id === planId);
+            const planName = plan ? plan.name : 'پلن ناشناخته';
+            const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
+            const cleanUname = (userInfo.username || 'ندارد').replace('@', '');
+
+            db.receiptsHistory.push({
+                type: 'خرید کارت به کارت',
+                userId: userId,
+                userName: userInfo.name,
+                details: `${planName} (${amountToPay.toLocaleString()} تومان)`,
+                status: 'در انتظار تایید',
+                date: getPersianDateTime()
+            });
+            db.pending_card_purchases[`card_pur_${userId}`] = { planId, amountToPay };
+            saveDatabase();
+
+            const adminCardKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '✅ تایید و صدور اشتراک', callback_data: `approve_card_yes_${userId}_${planId}` },
+                            { text: '❌ رد رسید', callback_data: `reject_card_no_${userId}` }
+                        ],
+                        [{ text: '👤 پروفایل کاربر', url: `tg://user?id=${userId}` }]
+                    ]
+                }
+            };
+
+            const cardCaption = `💳 **رسید خرید کارت به کارت جدید:**\n\n` +
+                                `👤 نام: ${userInfo.name}\n` +
+                                `🆔 یوزرنیم: @${cleanUname}\n` +
+                                `🔢 آیدی عددی: \`${userId}\`\n` +
+                                `📦 پلن درخواستی: \`${planName}\`\n` +
+                                `💵 مبلغ: \`${amountToPay.toLocaleString()} تومان\``;
+
+            if (msg.photo && msg.photo.length > 0) {
+                const fileId = msg.photo[msg.photo.length - 1].file_id;
+                await bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: cardCaption, parse_mode: 'Markdown', ...adminCardKeyboard }).catch(() => {});
+            } else if (msg.document) {
+                const fileId = msg.document.file_id;
+                await bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: cardCaption, parse_mode: 'Markdown', ...adminCardKeyboard }).catch(() => {});
+            } else {
+                await bot.sendMessage(ADMIN_CHAT_ID, cardCaption + '\n\n⚠️ (بدون فایل عکس)', { parse_mode: 'Markdown', ...adminCardKeyboard }).catch(() => {});
+            }
+
+            await bot.sendMessage(chatId, '✅ **رسید پرداخت شما برای مدیریت ارسال شد.**\nپس از بررسی و تأیید، لینک اشتراک شما صادر و ارسال خواهد شد. 🙏✨', { parse_mode: 'Markdown' }).catch(() => {});
+            return;
+        }
+
+        if (currentState.step === 'get_new_discount_code') {
+            if (!isAdmin(msg)) return;
+            const code = text.toUpperCase();
+            db.userStates[chatId] = { step: 'get_new_discount_percent', newDiscountCode: code };
+            saveDatabase();
+            bot.sendMessage(chatId, `🎟 درصد تخفیف برای کد \`${code}\` را وارد کنید (مثلا 20 برای 20 درصد):`, { parse_mode: 'Markdown' }).catch(() => {});
+            return;
+        }
+
+        if (currentState.step === 'get_new_discount_percent') {
+            if (!isAdmin(msg)) return;
+            const percent = parseInt(text, 10);
+            const code = currentState.newDiscountCode;
+            if (isNaN(percent) || percent <= 0 || percent > 100) {
+                return bot.sendMessage(chatId, '❌ درصد نامعتبر است. بین 1 تا 100 وارد کنید:').catch(() => {});
+            }
+            db.discountCodes[code] = { percent };
+            delete db.userStates[chatId];
+            saveDatabase();
+            bot.sendMessage(chatId, `✅ کد تخفیف \`${code}\` با تخفیف **${percent}%** ذخیره شد. 🎉`, { parse_mode: 'Markdown' }).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
 
-        if (state.step === 'get_new_channel_username') {
+        if (currentState.step === 'get_user_discount_input') {
+            const planId = currentState.planId;
+            const code = text.toUpperCase();
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            if (db.discountCodes && db.discountCodes[code]) {
+                const discountInfo = db.discountCodes[code];
+                if (!db.appliedDiscounts) db.appliedDiscounts = {};
+                db.appliedDiscounts[userId] = { code, percent: discountInfo.percent };
+                saveDatabase();
+
+                bot.sendMessage(chatId, `✅ کد تخفیف \`${code}\` با موفقیت اعمال شد (**${discountInfo.percent}% تخفیف**)! 🎉\nاکنون می‌توانید از بخش خرید اقدام کنید.`, { parse_mode: 'Markdown' }).catch(() => {});
+            } else {
+                bot.sendMessage(chatId, `❌ کد تخفیف وارد شده معتبر یا منقضی شده است.`, { parse_mode: 'Markdown' }).catch(() => {});
+            }
+            return;
+        }
+
+        if (currentState.step === 'admin_reply_to_user') {
+            if (!isAdmin(msg)) return;
+            const targetUser = currentState.targetUser;
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            try {
+                await bot.sendMessage(targetUser, `💬 **پاسخ مدیریت پشتیبانی:**\n\n${text}`);
+                bot.sendMessage(chatId, `✅ پاسخ شما با موفقیت برای کاربر \`${targetUser}\` ارسال شد.`).catch(() => {});
+            } catch (e) {
+                bot.sendMessage(chatId, `❌ خطا در ارسال پیام به کاربر (شاید ربات را بلاک کرده باشد).`).catch(() => {});
+            }
+            return;
+        }
+
+        if (currentState.step === 'get_broadcast_content') {
+            if (!isAdmin(msg)) return;
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            const allUsers = [...new Set(db.allUsers)];
+            bot.sendMessage(chatId, `🚀 ارسال پیام همگانی به ${allUsers.length} کاربر آغاز شد...`).catch(() => {});
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const uId of allUsers) {
+                try {
+                    await bot.sendMessage(uId, text, { parse_mode: 'Markdown' });
+                    successCount++;
+                    await sleep(50); // جلوگیری از محدودیت سرعت تلگرام (Flood Wait)
+                } catch (e) {
+                    failCount++;
+                }
+            }
+
+            bot.sendMessage(chatId, `📊 **گزارش ارسال همگانی:**\n\n✅ موفق: ${successCount}\n❌ ناموفق: ${failCount}`, { parse_mode: 'Markdown' }).catch(() => {});
+            return;
+        }
+
+        if (currentState.step === 'get_new_channel_username') {
             if (!isAdmin(msg)) return;
             db.CHANNEL_USERNAME = text;
             delete db.userStates[chatId];
@@ -2413,159 +2785,183 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        if (state.step === 'get_broadcast_content') {
+        if (currentState.step === 'get_new_test_link') {
             if (!isAdmin(msg)) return;
+            db.testServerConfig = text;
             delete db.userStates[chatId];
             saveDatabase();
-
-            const allUsers = [...new Set(db.allUsers)];
-            bot.sendMessage(chatId, `⏳ ارسال پیام همگانی به ${allUsers.length} کاربر آغاز شد...`).catch(() => {});
-
-            let successCount = 0;
-            for (const uId of allUsers) {
-                try {
-                    await bot.sendMessage(uId, text, { parse_mode: 'Markdown' });
-                    successCount++;
-                    await sleep(50); // تأخیر کوتاه برای جلوگیری از لیمیت شدن توسط تلگرام
-                } catch (e) {}
-            }
-
-            bot.sendMessage(chatId, `✅ پیام همگانی با موفقیت به ${successCount} کاربر ارسال شد.`).catch(() => {});
+            bot.sendMessage(chatId, `✅ لینک سرور تست به‌روزرسانی شد.`).catch(() => {});
+            sendAdminPanel(chatId);
             return;
         }
 
-        if (state.step === 'get_new_bot_text') {
+        if (currentState.step === 'get_new_free_link') {
             if (!isAdmin(msg)) return;
-            const textKey = state.targetTextKey;
+            db.freeSubConfig = text;
+            delete db.userStates[chatId];
+            saveDatabase();
+            bot.sendMessage(chatId, `✅ لینک اشتراک هدیه به‌روزرسانی شد.`).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
+
+        if (currentState.step === 'get_new_plan_name') {
+            if (!isAdmin(msg)) return;
+            db.userStates[chatId] = { step: 'get_new_plan_volume', newPlanName: text };
+            saveDatabase();
+            bot.sendMessage(chatId, '🌐 لطفاً **حجم پلن** را وارد کنید (مثلا 30 گیگ):').catch(() => {});
+            return;
+        }
+
+        if (currentState.step === 'get_new_plan_volume') {
+            if (!isAdmin(msg)) return;
+            db.userStates[chatId].step = 'get_new_plan_duration';
+            db.userStates[chatId].newPlanVolume = text;
+            saveDatabase();
+            bot.sendMessage(chatId, '⏳ لطفاً **مدت زمان پلن** را وارد کنید (مثلا 1 ماهه):').catch(() => {});
+            return;
+        }
+
+        if (currentState.step === 'get_new_plan_duration') {
+            if (!isAdmin(msg)) return;
+            db.userStates[chatId].step = 'get_new_plan_price';
+            db.userStates[chatId].newPlanDuration = text;
+            saveDatabase();
+            bot.sendMessage(chatId, '💵 لطفاً **قیمت پلن** را به تومان وارد کنید (مثلا 50000):').catch(() => {});
+            return;
+        }
+
+        if (currentState.step === 'get_new_plan_price') {
+            if (!isAdmin(msg)) return;
+            const dataState = db.userStates[chatId];
+            const newPlan = {
+                id: Date.now(),
+                name: dataState.newPlanName,
+                volume: dataState.newPlanVolume,
+                duration: dataState.newPlanDuration,
+                price: text,
+                links: []
+            };
+            db.customPlans.push(newPlan);
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            bot.sendMessage(chatId, `✅ پلن جدید با موفقیت ایجاد شد! اکنون می‌توانید از طریق مدیریت پلن‌ها برای آن لینک انبار اضافه کنید. 🎉`).catch(() => {});
+            sendAdminPanel(chatId);
+            return;
+        }
+
+        if (currentState.step === 'get_extra_link_for_plan') {
+            if (!isAdmin(msg)) return;
+            const planId = currentState.targetPlanId;
+            const plan = db.customPlans.find(p => p.id === planId);
+            if (plan) {
+                plan.links.push(text);
+                delete db.userStates[chatId];
+                saveDatabase();
+                bot.sendMessage(chatId, `✅ لینک با موفقیت به انبار پلن «${plan.name}» اضافه شد.\n📦 تعداد کل لینک‌های این پلن: ${plan.links.length} عدد`).catch(() => {});
+            } else {
+                bot.sendMessage(chatId, '❌ پلن یافت نشد.').catch(() => {});
+            }
+            return;
+        }
+
+        if (currentState.step === 'edit_plan_field_value') {
+            if (!isAdmin(msg)) return;
+            const planId = currentState.targetPlanId;
+            const field = currentState.targetField;
+            const plan = db.customPlans.find(p => p.id === planId);
+            if (plan) {
+                plan[field] = text;
+                delete db.userStates[chatId];
+                saveDatabase();
+                bot.sendMessage(chatId, `✅ مشخصات پلن با موفقیت به‌روزرسانی شد.`).catch(() => {});
+            } else {
+                bot.sendMessage(chatId, '❌ پلن یافت نشد.').catch(() => {});
+            }
+            return;
+        }
+
+        if (currentState.step === 'wallet_manager_waiting_for_amount') {
+            if (!isAdmin(msg)) return;
+            const amount = parseInt(text.replace(/[^0-9]/g, ''), 10);
+            const targetUser = currentState.targetUser;
+            const action = currentState.action;
+
+            if (isNaN(amount) || amount <= 0) {
+                return bot.sendMessage(chatId, '❌ مبلغ نامعتبر است. لطفاً فقط عدد وارد کنید:').catch(() => {});
+            }
+
+            const currentBalance = db.userWallets[targetUser] || 0;
+            if (action === 'inc') {
+                db.userWallets[targetUser] = currentBalance + amount;
+            } else {
+                db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
+            }
+
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            const actionText = action === 'inc' ? 'افزایش یافت' : 'کاهش یافت';
+            bot.sendMessage(chatId, `✅ عملیات موفق:\nمبلغ ${amount.toLocaleString()} تومان به حساب کاربر \`${targetUser}\` ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' }).catch(() => {});
+
+            try {
+                const notifyText = action === 'inc' 
+                    ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
+                    : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر گردید.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
+                bot.sendMessage(targetUser, notifyText);
+            } catch (e) {}
+            return;
+        }
+
+        if (currentState.step === 'get_new_bot_text') {
+            if (!isAdmin(msg)) return;
+            const textKey = currentState.targetTextKey;
             db.botTexts[textKey] = text;
             delete db.userStates[chatId];
             saveDatabase();
-
-            bot.sendMessage(chatId, '✅ متن مورد نظر با موفقیت بروزرسانی شد.').catch(() => {});
+            bot.sendMessage(chatId, `✅ متن بخش مورد نظر با موفقیت به‌روزرسانی شد! 🎉`).catch(() => {});
             sendAdminPanel(chatId);
             return;
         }
-
-        if (state.step === 'get_new_discount_code') {
-            if (!isAdmin(msg)) return;
-            const code = text.toUpperCase();
-            db.userStates[chatId] = { step: 'get_new_discount_percent', discountCode: code };
-            saveDatabase();
-            bot.sendMessage(chatId, `🎟 کد «${code}» ثبت شد. حالا **درصد تخفیف** را به عدد وارد کنید (مثلاً 20):`).catch(() => {});
-            return;
-        }
-
-        if (state.step === 'get_new_discount_percent') {
-            if (!isAdmin(msg)) return;
-            const percent = parseInt(text, 10);
-            const code = state.discountCode;
-
-            if (isNaN(percent) || percent <= 0 || percent > 100) {
-                return bot.sendMessage(chatId, '❌ درصد نامعتبر است. عددی بین 1 تا 100 وارد کنید:').catch(() => {});
-            }
-
-            db.discountCodes[code] = { percent };
-            delete db.userStates[chatId];
-            saveDatabase();
-
-            bot.sendMessage(chatId, `✅ کد تخفیف \`${code}\` با **${percent}%** تخفیف ایجاد شد.`, { parse_mode: 'Markdown' }).catch(() => {});
-            sendAdminPanel(chatId);
-            return;
-        }
-
-        if (state.step === 'get_user_discount_input') {
-            const code = text.toUpperCase();
-            const planId = state.planId;
-            delete db.userStates[chatId];
-            saveDatabase();
-
-            if (db.discountCodes[code]) {
-                const percent = db.discountCodes[code].percent;
-                if (!db.appliedDiscounts) db.appliedDiscounts = {};
-                db.appliedDiscounts[userId] = { code, percent };
-                saveDatabase();
-
-                bot.sendMessage(chatId, `✅ کد تخفیف \`${code}\` (${percent}٪) با موفقیت اعمال شد! 🎉 برای خرید مجدداً روی پلن مورد نظر کلیک کنید.`, { parse_mode: 'Markdown' }).catch(() => {});
-            } else {
-                bot.sendMessage(chatId, '❌ کد تخفیف وارد شده معتبر یا منقضی شده است.').catch(() => {});
-            }
-            return;
-        }
-    }
-
-    // پاسخ خودکار به دکمه‌های متنی کیبورد شیشه‌ای یا ثابت در صورت فشرده شدن
-    const names = db.menuNames;
-    if (textButtonMatches(text, names.buy_sub) || text === '🛒 خرید اشتراک VIP') {
-        const availablePlans = db.customPlans.filter(p => p.links && p.links.length > 0);
-        if (availablePlans.length === 0) {
-            return bot.sendMessage(chatId, db.botTexts.no_plans).catch(() => {});
-        }
-        const planButtons = availablePlans.map(p => [
-            { text: `🌐 ${p.name} - ${p.volume} | 💰 ${p.price}`, callback_data: `buy_custom_${p.id}` }
-        ]);
-        bot.sendMessage(chatId, db.botTexts.store_title, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: planButtons } }).catch(() => {});
-        return;
-    }
-
-    if (textButtonMatches(text, names.wallet) || text === '💳 کیف پول من') {
-        const balance = db.userWallets[userId] || 0;
-        const walletKeyboard = {
-            reply_markup: {
-                inline_keyboard: [[{ text: '➕ شارژ کیف پول', callback_data: 'wallet_deposit' }]]
-            }
-        };
-        const customWalletText = (db.botTexts.wallet_title || '')
-            .replace('{balance}', balance.toLocaleString())
-            .replace('{userId}', userId);
-        bot.sendMessage(chatId, customWalletText, { parse_mode: 'Markdown', ...walletKeyboard }).catch(() => {});
-        return;
-    }
-
-    if (textButtonMatches(text, names.my_subs) || text === '📦 اشتراک‌های من') {
-        await sendUserSubscriptionsPage(chatId, null, userId, 0, null);
-        return;
-    }
-
-    if (textButtonMatches(text, names.support) || text === '📞 پشتیبانی آنلاین') {
-        db.userStates[chatId] = { step: 'waiting_for_support_message' };
-        saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.support_prompt, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (textButtonMatches(text, names.tutorial) || text === '📖 آموزش اتصال') {
-        bot.sendMessage(chatId, db.botTexts.tutorial_message, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (textButtonMatches(text, names.agency_request) || text === '🤝 اخذ نمایندگی') {
-        db.userStates[chatId] = { step: 'waiting_for_agency_message' };
-        saveDatabase();
-        bot.sendMessage(chatId, db.botTexts.agency_prompt, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (textButtonMatches(text, names.free_sub)) {
-        if (!db.isFreeSubEnabled) return;
-        bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (textButtonMatches(text, names.test_server)) {
-        if (!db.isTestServerEnabled) return;
-        bot.sendMessage(chatId, `🧪 **سرور تست رایگان:**\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (textButtonMatches(text, names.invite)) {
-        if (!db.isInviteSystemEnabled) return;
-        const botInfo = await bot.getMe();
-        const inviteLink = `https://t.me/${botInfo.username}?start=${chatId}`;
-        const refCount = db.referals[chatId] || 0;
-        const inviteText = (db.botTexts.invite_title || '')
-            .replace('{inviteLink}', inviteLink)
-            .replace('{count}', refCount);
-        bot.sendMessage(chatId, inviteText, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
     }
 });
+
+// ==========================================
+// 🛡️ سیستم ضد تکرار حرفه ای پیام های خروجی ربات
+// ==========================================
+const botOutboundHistory = new Map(); // نگهداری هش پیام‌های ارسالی اخیر ربات
+const OUTBOUND_TTL = 10000; // زمان انقضای کش ضد تکرار (۱۰ ثانیه)
+
+// تابع کمکی برای ایجاد کلید یا هش ساده از متن و ساختار پیام
+function generateMessageHash(chatId, text, replyMarkup) {
+    let markupStr = '';
+    try {
+        markupStr = replyMarkup ? JSON.stringify(replyMarkup) : '';
+    } catch (e) {}
+    return `${chatId}_${text}_${markupStr}`;
+}
+
+// مهار متد sendMessage ربات برای جلوگیری از ارسال پیام‌های دابل و تکراری
+const originalSendMessage = bot.sendMessage.bind(bot);
+bot.sendMessage = async (chatId, text, options = {}) => {
+    const hash = generateMessageHash(chatId, text, options.reply_markup);
+    const now = Date.now();
+
+    if (botOutboundHistory.has(hash)) {
+        const lastSentTime = botOutboundHistory.get(hash);
+        if (now - lastSentTime < OUTBOUND_TTL) {
+            // جلوگیری از ارسال پیام کاملاً تکراری در بازه زمانی کوتاه
+            console.log(`🛡️ [Anti-Spam Bot] پیام تکراری به مقصد ${chatId} بلوکه شد.`);
+            return Promise.resolve({ message_id: -1, text: 'Blocked duplicate outbound message' });
+        }
+    }
+
+    botOutboundHistory.set(hash, now);
+    if (botOutboundHistory.size > 1000) {
+        const oldestKey = botOutboundHistory.keys().next().value;
+        botOutboundHistory.delete(oldestKey);
+    }
+
+    return originalSendMessage(chatId, text, options);
+};
