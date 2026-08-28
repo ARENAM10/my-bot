@@ -70,17 +70,11 @@ const PURCHASES_LOG_FILE = path.join(DATA_DIR, 'purchases_log.txt');
 const defaultDatabaseStructure = {
     CHANNEL_USERNAME: '@YourChannelUsername',
     isForceJoinEnabled: false,
-    isTestServerEnabled: false,
-    testServerConfig: '',
-    isFreeSubEnabled: false,
-    freeSubConfig: '',
     isInviteSystemEnabled: true,
     inviteRewardAmount: 5000, 
     userStates: {},
     menuNames: {
         buy_sub: '🛒 خرید اشتراک VIP ⚡️',
-        free_sub: '🎁 اشتراک هدیه رایگان',
-        test_server: '🧪 تست رایگان سرور',
         wallet: '💳 کیف پول حساب من',
         invite: '👥 دعوت دوستان (معرفی)',
         my_subs: '📦 اشتراک‌های فعال من',
@@ -385,12 +379,6 @@ function getPersistentMenuKeyboard() {
         ]
     ];
 
-    if (db.isFreeSubEnabled) {
-        inlineKeyboardRows.push([{ text: names.free_sub, callback_data: 'menu_free_sub' }]);
-    }
-    if (db.isTestServerEnabled) {
-        inlineKeyboardRows.push([{ text: names.test_server, callback_data: 'menu_test_server' }]);
-    }
     if (db.isInviteSystemEnabled) {
         inlineKeyboardRows.push([{ text: names.invite, callback_data: 'menu_invite' }]);
     }
@@ -488,8 +476,6 @@ bot.onText(/\/panel/, async (msg) => {
 
 function sendAdminPanel(chatId) {
     const forceJoinStatus = db.isForceJoinEnabled ? `🟢 جوین اجباری: روشن` : '🔴 جوین اجباری: خاموش';
-    const testServerStatus = db.isTestServerEnabled ? '🟢 سرور تست: روشن' : '🔴 سرور تست: خاموش';
-    const freeSubStatus = db.isFreeSubEnabled ? '🟢 اشتراک رایگان: روشن' : '🔴 اشتراک رایگان: خاموش';
     const inviteStatus = db.isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
     
     const uniqueUsersCount = [...new Set(db.allUsers)].length;
@@ -518,14 +504,6 @@ function sendAdminPanel(chatId) {
                 [
                     { text: '🚫 مسدودسازی کاربران', callback_data: 'admin_block_menu' },
                     { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' }
-                ],
-                [
-                    { text: testServerStatus, callback_data: 'toggle_test_server' },
-                    { text: freeSubStatus, callback_data: 'toggle_free_sub' }
-                ],
-                [
-                    { text: '🧪 لینک سرور تست', callback_data: 'admin_set_test_link' },
-                    { text: '🎁 لینک اشتراک رایگان', callback_data: 'admin_set_free_link' }
                 ],
                 [
                     { text: inviteStatus, callback_data: 'toggle_invite_system' },
@@ -693,28 +671,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data === 'menu_free_sub') {
-        if (!db.isFreeSubEnabled) return;
-        const freeKb = {
-            reply_markup: {
-                inline_keyboard: [[{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'restart_bot' }]]
-            }
-        };
-        await bot.sendMessage(chatId, `🎁 **اشتراک هدیه شما:**\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown', ...freeKb }).catch(() => {});
-        return;
-    }
-
-    if (data === 'menu_test_server') {
-        if (!db.isTestServerEnabled) return;
-        const testKb = {
-            reply_markup: {
-                inline_keyboard: [[{ text: '🔙 بازگشت به منوی اصلی', callback_data: 'restart_bot' }]]
-            }
-        };
-        await bot.sendMessage(chatId, `🧪 **سرور تست رایگان:**\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown', ...testKb }).catch(() => {});
-        return;
-    }
-
     if (data === 'menu_invite') {
         if (!db.isInviteSystemEnabled) return;
         const botInfo = await bot.getMe();
@@ -765,8 +721,6 @@ bot.on('callback_query', async (callbackQuery) => {
             reply_markup: {
                 inline_keyboard: [
                     [{ text: `✏️ خرید اشتراک: ${names.buy_sub}`, callback_data: 'set_name_buy_sub' }],
-                    [{ text: `✏️ اشتراک هدیه: ${names.free_sub}`, callback_data: 'set_name_free_sub' }],
-                    [{ text: `✏️ سرور تست: ${names.test_server}`, callback_data: 'set_name_test_server' }],
                     [{ text: `✏️ کیف پول: ${names.wallet}`, callback_data: 'set_name_wallet' }],
                     [{ text: `✏️ دعوت دوستان: ${names.invite}`, callback_data: 'set_name_invite' }],
                     [{ text: `✏️ اشتراک‌های من: ${names.my_subs}`, callback_data: 'set_name_my_subs' }],
@@ -1388,40 +1342,6 @@ bot.on('callback_query', async (callbackQuery) => {
         db.userStates[chatId] = { step: 'get_new_channel_username' };
         saveDatabase();
         bot.sendMessage(chatId, '📢 آیدی کانال جدید را با فرمت صحیح بفرستید (مثلاً `@ChannelName`):', { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (data === 'toggle_test_server') {
-        if (!isAdmin(callbackQuery)) return;
-        db.isTestServerEnabled = !db.isTestServerEnabled;
-        saveDatabase();
-        bot.sendMessage(chatId, `🧪 سرور تست ${db.isTestServerEnabled ? 'روشن' : 'خاموش'} شد.`).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
-    if (data === 'admin_set_test_link') {
-        if (!isAdmin(callbackQuery)) return;
-        db.userStates[chatId] = { step: 'get_new_test_link' };
-        saveDatabase();
-        bot.sendMessage(chatId, `🧪 لینک جدید سرور تست را بفرستید:\n\`${db.testServerConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (data === 'toggle_free_sub') {
-        if (!isAdmin(callbackQuery)) return;
-        db.isFreeSubEnabled = !db.isFreeSubEnabled;
-        saveDatabase();
-        bot.sendMessage(chatId, `🎁 اشتراک هدیه ${db.isFreeSubEnabled ? 'روشن' : 'خاموش'} شد.`).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
-    if (data === 'admin_set_free_link') {
-        if (!isAdmin(callbackQuery)) return;
-        db.userStates[chatId] = { step: 'get_new_free_link' };
-        saveDatabase();
-        bot.sendMessage(chatId, `🎁 لینک جدید اشتراک هدیه را بفرستید:\n\`${db.freeSubConfig}\``, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
