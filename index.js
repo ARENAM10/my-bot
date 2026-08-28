@@ -2544,3 +2544,73 @@ bot.on('message', async (msg) => {
         }
     }
 });
+    if (data === 'admin_force_join_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        db.isForceJoinEnabled = !db.isForceJoinEnabled;
+        saveDatabase();
+        
+        const newStatusText = db.isForceJoinEnabled ? '🟢 روشن' : '🔴 خاموش';
+        bot.answerCallbackQuery(callbackQuery.id, { text: `وضعیت جوین اجباری به: ${newStatusText} تغییر یافت.` }).catch(() => {});
+        sendAdminPanel(chatId);
+        return;
+    }
+
+    if (data === 'toggle_test_server') {
+        if (!isAdmin(callbackQuery)) return;
+        db.isTestServerEnabled = !db.isTestServerEnabled;
+        saveDatabase();
+        sendAdminPanel(chatId);
+        return;
+    }
+
+    if (data === 'toggle_free_sub') {
+        if (!isAdmin(callbackQuery)) return;
+        db.isFreeSubEnabled = !db.isFreeSubEnabled;
+        saveDatabase();
+        sendAdminPanel(chatId);
+        return;
+    }
+
+    if (data === 'toggle_invite_system') {
+        if (!isAdmin(callbackQuery)) return;
+        db.isInviteSystemEnabled = !db.isInviteSystemEnabled;
+        saveDatabase();
+        sendAdminPanel(chatId);
+        return;
+    }
+
+    if (data === 'admin_set_test_link') {
+        if (!isAdmin(callbackQuery)) return;
+        db.userStates[chatId] = { step: 'admin_get_test_server_link' };
+        saveDatabase();
+        bot.sendMessage(chatId, '🧪 لطفاً لینک سرور تست جدید را ارسال کنید:').catch(() => {});
+        return;
+    }
+
+    if (data === 'admin_set_free_link') {
+        if (!isAdmin(callbackQuery)) return;
+        db.userStates[chatId] = { step: 'admin_get_free_sub_link' };
+        saveDatabase();
+        bot.sendMessage(chatId, '🎁 لطفاً لینک اشتراک هدیه جدید را ارسال کنید:').catch(() => {});
+        return;
+    }
+
+    if (data === 'admin_stats') {
+        if (!isAdmin(callbackQuery)) return;
+        const uniqueUsers = [...new Set(db.allUsers)].length;
+        const totalSubs = (db.allSubscriptionsHistory || []).length;
+        const statsText = `📊 **آمار کلی ربات:**\n\n` +
+                          `👥 کل کاربران فعال: \`${uniqueUsers} نفر\`\n` +
+                          `📦 مجموع اشتراک‌های صادر شده: \`${totalSubs} سرویس\`\n` +
+                          `🕒 تاریخ به‌روزرسانی: ${getPersianDateTime()}`;
+        bot.sendMessage(chatId, statsText, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (data === 'admin_back_to_panel') {
+        if (!isAdmin(callbackQuery)) return;
+        sendAdminPanel(chatId);
+        return;
+    }
+});
+
