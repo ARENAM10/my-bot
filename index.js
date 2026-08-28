@@ -18,7 +18,6 @@ const PORT = process.env.PORT || 3000;
 
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 
-// 🔹 تنظیم پولینگ ربات
 const bot = new TelegramBot(TOKEN, { 
     polling: true 
 });
@@ -377,7 +376,6 @@ async function fetchAndParseConfig(url) {
     return resultInfo;
 }
 
-// 🎛 ساخت کیبورد شیشه‌ای حرفه‌ای منوی اصلی
 function getPersistentMenuKeyboard() {
     const names = db.menuNames;
     let inlineKeyboardRows = [
@@ -2282,6 +2280,24 @@ bot.on('message', async (msg) => {
         }
 
         bot.sendMessage(chatId, '✅ رسید شما با موفقیت برای مدیریت ارسال شد. پس از بررسی و تایید، اشتراک شما ارسال می‌گردد. 🙏', { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
+
+    if (currentState.step === 'get_user_discount_input') {
+        const planId = currentState.planId;
+        const code = text.toUpperCase();
+
+        if (db.discountCodes && db.discountCodes[code]) {
+            const discData = db.discountCodes[code];
+            if (!db.appliedDiscounts) db.appliedDiscounts = {};
+            db.appliedDiscounts[userId] = { code, percent: discData.percent };
+            delete db.userStates[chatId];
+            saveDatabase();
+
+            bot.sendMessage(chatId, `✅ کد تخفیف **${code}** (${discData.percent}%) با موفقیت اعمال شد! اکنون می‌توانید از طریق فروشگاه اقدام به خرید کنید.`).catch(() => {});
+        } else {
+            bot.sendMessage(chatId, `❌ کد تخفیف معتبر نیست یا منقضی شده است.`).catch(() => {});
+        }
         return;
     }
 });
