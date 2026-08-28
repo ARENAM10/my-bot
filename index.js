@@ -18,7 +18,6 @@ const PORT = process.env.PORT || 3000;
 
 const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 
-// 🔹 تنظیم دقیق و ایمن پولینگ برای جلوگیری از دریافت آپدیت‌های تکراری
 const bot = new TelegramBot(TOKEN, { 
     polling: {
         interval: 2000, 
@@ -32,12 +31,6 @@ const bot = new TelegramBot(TOKEN, {
 const ADMIN_USERNAME = 'arenam_10';
 const ADMIN_CHAT_ID = 8923324852;
 const CHANNEL_LOG_ID = '-1004488082323';
-
-const userCooldowns = new Map();
-const COOLDOWN_TIME = 2000; // محدودیت زمان بین هر درخواست کاربر (۲ ثانیه)
-
-// 🔒 سیستم حرفه‌ای جلوگیری از ارسال پیام توسط ربات بدون لمس کاربر (Rate Limiting & Callback Lock)
-const activeLocks = new Set();
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -627,15 +620,6 @@ bot.on('callback_query', async (callbackQuery) => {
     const chatId = callbackQuery.message.chat.id;
     const userId = callbackQuery.from.id.toString();
     const data = callbackQuery.data;
-    const currentTime = Date.now();
-
-    // 🔒 سیستم حرفه‌ای جلوگیری از ارسال پیام/درخواست موازی ربات بدون لمس اضافی یا کلیک‌های مکرر کاربر
-    const lockKey = `${userId}_${data}`;
-    if (activeLocks.has(lockKey)) {
-        return bot.answerCallbackQuery(callbackQuery.id, { text: '⚠️ در حال پردازش، لطفاً دکمه را مکرراً لمس نکنید...', show_alert: false }).catch(() => {});
-    }
-    activeLocks.add(lockKey);
-    setTimeout(() => activeLocks.delete(lockKey), 2500);
 
     try {
         await bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
@@ -647,14 +631,6 @@ bot.on('callback_query', async (callbackQuery) => {
     if (!isAdmin(callbackQuery) && db.blockedUsers && db.blockedUsers.includes(userId)) {
         return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ شما مسدود شده‌اید.', show_alert: true }).catch(() => {});
     }
-
-    if (userCooldowns.has(userId)) {
-        const lastClickTime = userCooldowns.get(userId);
-        if (currentTime - lastClickTime < COOLDOWN_TIME) {
-            return;
-        }
-    }
-    userCooldowns.set(userId, currentTime);
 
     const userObj = callbackQuery.from;
     if (userObj) {
@@ -2339,10 +2315,10 @@ bot.on('message', async (msg) => {
 
     if (currentState.step === 'get_new_channel_username') {
         if (!isAdmin(msg)) return;
-        db.CHANNEL_USERNAME = text;
+        db.CHANNEL_USERNAME = text.startsWith('@') ? text : '@' + text;
         delete db.userStates[chatId];
         saveDatabase();
-        bot.sendMessage(chatId, `✅ آیدی کانال جوین اجباری به \`${text}\` تغییر یافت.`, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(chatId, `✅ آیدی کانال جوین اجباری به \`${db.CHANNEL_USERNAME}\` تغییر یافت.`, { parse_mode: 'Markdown' }).catch(() => {});
         sendAdminPanel(chatId);
         return;
     }
@@ -2352,7 +2328,7 @@ bot.on('message', async (msg) => {
         db.testServerConfig = text;
         delete db.userStates[chatId];
         saveDatabase();
-        bot.sendMessage(chatId, '✅ لینک سرور تست با موفقیت آپدیت شد.').catch(() => {});
+        bot.sendMessage(chatId, `✅ لینک سرور تست آپدیت شد.`).catch(() => {});
         sendAdminPanel(chatId);
         return;
     }
@@ -2362,7 +2338,7 @@ bot.on('message', async (msg) => {
         db.freeSubConfig = text;
         delete db.userStates[chatId];
         saveDatabase();
-        bot.sendMessage(chatId, '✅ لینک اشتراک هدیه با موفقیت آپدیت شد.').catch(() => {});
+        bot.sendMessage(chatId, `✅ لینک اشتراک هدیه آپدیت شد.`).catch(() => {});
         sendAdminPanel(chatId);
         return;
     }
@@ -2375,40 +2351,8 @@ bot.on('message', async (msg) => {
         }
         delete db.userStates[chatId];
         saveDatabase();
-        bot.sendMessage(chatId, '✅ متن مورد نظر با موفقیت بروزرسانی شد.').catch(() => {});
+        bot.sendMessage(chatId, `✅ متن مورد نظر با موفقیت به‌روزرسانی شد.`).catch(() => {});
         sendAdminPanel(chatId);
-        return;
-    }
-
-    if (currentState.step === 'wallet_manager_waiting_for_amount') {
-        if (!isAdmin(msg)) return;
-        const amount = parsePrice(text);
-        if (amount <= 0) {
-            return bot.sendMessage(chatId, '❌ مبلغ نامعتبر است. لطفاً یک عدد معتبر وارد کنید:').catch(() => {});
-        }
-
-        const action = currentState.action;
-        const targetUser = currentState.targetUser;
-        const currentBalance = db.userWallets[targetUser] || 0;
-
-        if (action === 'inc') {
-            db.userWallets[targetUser] = currentBalance + amount;
-        } else {
-            db.userWallets[targetUser] = Math.max(0, currentBalance - amount);
-        }
-
-        delete db.userStates[chatId];
-        saveDatabase();
-
-        const actionText = action === 'inc' ? 'افزایش یافت' : 'کاهش یافت';
-        bot.sendMessage(chatId, `✅ عملیات موفق:\nمبلغ ${amount.toLocaleString()} تومان به حساب کاربر \`${targetUser}\` ${actionText}.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`, { parse_mode: 'Markdown' }).catch(() => {});
-
-        try {
-            const notifyText = action === 'inc' 
-                ? `🎉 حساب شما توسط مدیریت به مبلغ ${amount.toLocaleString()} تومان شارژ شد.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`
-                : `⚠️ مبلغ ${amount.toLocaleString()} تومان توسط مدیریت از حساب شما کسر گردید.\n💰 موجودی جدید: ${db.userWallets[targetUser].toLocaleString()} تومان`;
-            bot.sendMessage(targetUser, notifyText);
-        } catch (e) {}
         return;
     }
 });
