@@ -2925,43 +2925,4 @@ bot.on('message', async (msg) => {
             return;
         }
     }
-});
-
-// ==========================================
-// 🛡️ سیستم ضد تکرار حرفه ای پیام های خروجی ربات
-// ==========================================
-const botOutboundHistory = new Map(); // نگهداری هش پیام‌های ارسالی اخیر ربات
-const OUTBOUND_TTL = 10000; // زمان انقضای کش ضد تکرار (۱۰ ثانیه)
-
-// تابع کمکی برای ایجاد کلید یا هش ساده از متن و ساختار پیام
-function generateMessageHash(chatId, text, replyMarkup) {
-    let markupStr = '';
-    try {
-        markupStr = replyMarkup ? JSON.stringify(replyMarkup) : '';
-    } catch (e) {}
-    return `${chatId}_${text}_${markupStr}`;
-}
-
-// مهار متد sendMessage ربات برای جلوگیری از ارسال پیام‌های دابل و تکراری
-const originalSendMessage = bot.sendMessage.bind(bot);
-bot.sendMessage = async (chatId, text, options = {}) => {
-    const hash = generateMessageHash(chatId, text, options.reply_markup);
-    const now = Date.now();
-
-    if (botOutboundHistory.has(hash)) {
-        const lastSentTime = botOutboundHistory.get(hash);
-        if (now - lastSentTime < OUTBOUND_TTL) {
-            // جلوگیری از ارسال پیام کاملاً تکراری در بازه زمانی کوتاه
-            console.log(`🛡️ [Anti-Spam Bot] پیام تکراری به مقصد ${chatId} بلوکه شد.`);
-            return Promise.resolve({ message_id: -1, text: 'Blocked duplicate outbound message' });
-        }
-    }
-
-    botOutboundHistory.set(hash, now);
-    if (botOutboundHistory.size > 1000) {
-        const oldestKey = botOutboundHistory.keys().next().value;
-        botOutboundHistory.delete(oldestKey);
-    }
-
-    return originalSendMessage(chatId, text, options);
-};
+})
