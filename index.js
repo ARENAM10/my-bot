@@ -2312,47 +2312,4 @@ bot.on('message', async (msg) => {
         }
         return;
     }
-
-    if (currentState.step === 'get_new_channel_username') {
-        if (!isAdmin(msg)) return;
-        db.CHANNEL_USERNAME = text.startsWith('@') ? text : '@' + text;
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ آیدی کانال جوین اجباری به \`${db.CHANNEL_USERNAME}\` تغییر یافت.`, { parse_mode: 'Markdown' }).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
-    if (currentState.step === 'get_new_test_link') {
-        if (!isAdmin(msg)) return;
-        db.testServerConfig = text;
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ لینک سرور تست آپدیت شد.`).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
-    if (currentState.step === 'get_new_free_link') {
-        if (!isAdmin(msg)) return;
-        db.freeSubConfig = text;
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ لینک اشتراک هدیه آپدیت شد.`).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
-    if (currentState.step === 'get_new_bot_text') {
-        if (!isAdmin(msg)) return;
-        const key = currentState.targetTextKey;
-        if (db.botTexts[key] !== undefined) {
-            db.botTexts[key] = text;
-        }
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ متن مورد نظر با موفقیت به‌روزرسانی شد.`).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
 });
