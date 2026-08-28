@@ -186,33 +186,6 @@ function logPurchaseToFile(subObj) {
 
 loadDatabase();
 
-async function sendBackupToAdmin() {
-    const backupDir = path.join(DATA_DIR, 'backups');
-    if (!fs.existsSync(backupDir)) {
-        fs.mkdirSync(backupDir, { recursive: true });
-    }
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupDbPath = path.join(backupDir, `backup_${timestamp}_database.txt`);
-    const backupLogPath = path.join(backupDir, `backup_${timestamp}_purchases_log.txt`);
-
-    try {
-        if (fs.existsSync(DB_FILE)) {
-            fs.copyFileSync(DB_FILE, backupDbPath);
-            await bot.sendDocument(ADMIN_CHAT_ID, backupDbPath, {
-                caption: `📦 **پشتیبان خودکار دیتابیس ربات**\n👤 ادمین: arenam_10\n🕒 زمان: ${getPersianDateTime()}`
-            }).catch(() => {});
-        }
-        if (fs.existsSync(PURCHASES_LOG_FILE)) {
-            fs.copyFileSync(PURCHASES_LOG_FILE, backupLogPath);
-            await bot.sendDocument(ADMIN_CHAT_ID, backupLogPath, {
-                caption: `📑 **فایل کامل سوابق و جزئیات خریدهای انجام‌شده**\n👤 ادمین: arenam_10`
-            }).catch(() => {});
-        }
-    } catch (e) {}
-}
-
-setInterval(sendBackupToAdmin, 24 * 60 * 60 * 1000);
-
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -490,7 +463,6 @@ function sendAdminPanel(chatId) {
                     { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' }
                 ],
                 [
-                    { text: '✏️ ویرایش نام دکمه‌ها', callback_data: 'admin_edit_names_menu' },
                     { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' }
                 ],
                 [
@@ -510,8 +482,7 @@ function sendAdminPanel(chatId) {
                     { text: forceJoinStatus, callback_data: 'admin_force_join_menu' }
                 ],
                 [
-                    { text: '📢 ارسال پیام همگانی', callback_data: 'admin_broadcast' },
-                    { text: '📦 پشتیبان‌گیری دستی', callback_data: 'admin_send_backup' }
+                    { text: '📢 ارسال پیام همگانی', callback_data: 'admin_broadcast' }
                 ]
             ]
         }
@@ -711,34 +682,6 @@ bot.on('callback_query', async (callbackQuery) => {
         db.userStates[chatId] = { step: 'get_new_card_number' };
         saveDatabase();
         bot.sendMessage(chatId, `💳 **تنظیم شماره کارت**\n\nشماره کارت فعلی: \`${db.paymentCardNumber}\`\n\nشماره کارت جدید را ارسال کنید:`, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
-    if (data === 'admin_edit_names_menu') {
-        if (!isAdmin(callbackQuery)) return;
-        const names = db.menuNames;
-        const editNamesKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: `✏️ خرید اشتراک: ${names.buy_sub}`, callback_data: 'set_name_buy_sub' }],
-                    [{ text: `✏️ کیف پول: ${names.wallet}`, callback_data: 'set_name_wallet' }],
-                    [{ text: `✏️ دعوت دوستان: ${names.invite}`, callback_data: 'set_name_invite' }],
-                    [{ text: `✏️ اشتراک‌های من: ${names.my_subs}`, callback_data: 'set_name_my_subs' }],
-                    [{ text: `✏️ آموزش: ${names.tutorial}`, callback_data: 'set_name_tutorial' }],
-                    [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
-                ]
-            }
-        };
-        await bot.editMessageText('✏️ **تغییر نام دکمه‌های منوی اصلی**\nگزینه مورد نظر را انتخاب کنید:', { parse_mode: 'Markdown', ...editNamesKeyboard }).catch(() => {});
-        return;
-    }
-
-    if (data.startsWith('set_name_')) {
-        if (!isAdmin(callbackQuery)) return;
-        const key = data.replace('set_name_', '');
-        db.userStates[chatId] = { step: 'get_new_menu_name', targetKey: key };
-        saveDatabase();
-        bot.sendMessage(chatId, `✏️ نام جدید این دکمه را ارسال کنید:`, { parse_mode: 'Markdown' }).catch(() => {});
         return;
     }
 
@@ -1260,13 +1203,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data === 'admin_send_backup') {
-        if (!isAdmin(callbackQuery)) return;
-        bot.sendMessage(chatId, '⏳ در حال ارسال فایل‌های پشتیبان...').catch(() => {});
-        await sendBackupToAdmin();
-        return;
-    }
-
     if (data === 'restart_bot') {
         delete db.userStates[chatId];
         saveDatabase();
@@ -1770,19 +1706,6 @@ bot.on('message', async (msg) => {
         delete db.userStates[chatId];
         saveDatabase();
         bot.sendMessage(chatId, `✅ شماره کارت جدید ذخیره شد:\n\`${text}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
-    if (currentState.step === 'get_new_menu_name') {
-        if (!isAdmin(msg)) return;
-        const targetKey = currentState.targetKey;
-        if (db.menuNames[targetKey] !== undefined) {
-            db.menuNames[targetKey] = text;
-        }
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ نام دکمه با موفقیت به روز شد.`).catch(() => {});
         sendAdminPanel(chatId);
         return;
     }
