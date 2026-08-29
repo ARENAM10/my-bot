@@ -311,9 +311,6 @@ async function fetchAndParseConfig(url) {
                         if (key.toLowerCase() === 'upload') resultInfo.upload = formatBytes(numVal);
                         if (key.toLowerCase() === 'download') resultInfo.download = formatBytes(numVal);
                         if (key.toLowerCase() === 'total') resultInfo.total = formatBytes(numVal);
-                        if (key.toLowerCase() === 'remaining' || key.toLowerCase() === 'expire') {
-                            // اطلاعات دیگر
-                        }
                     }
                 });
             }
@@ -464,7 +461,8 @@ function sendAdminPanel(chatId) {
                     { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' }
                 ],
                 [
-                    { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' }
+                    { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' },
+                    { text: '🎛 ویرایش دکمه‌ها', callback_data: 'admin_edit_buttons_menu' }
                 ],
                 [
                     { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' },
@@ -598,6 +596,33 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     const names = db.menuNames;
+
+    if (data === 'admin_edit_buttons_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        const editButtonsKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: `🛒 خرید اشتراک: ${names.buy_sub}`, callback_data: 'edit_btn_buy_sub' }],
+                    [{ text: `💳 کیف پول: ${names.wallet}`, callback_data: 'edit_btn_wallet' }],
+                    [{ text: `⚡️ سرویس های من: ${names.my_subs}`, callback_data: 'edit_btn_my_subs' }],
+                    [{ text: `🎉 زیر مجموعه گیری: ${names.invite}`, callback_data: 'edit_btn_invite' }],
+                    [{ text: `💬 پشتیبانی: ${names.support}`, callback_data: 'edit_btn_support' }],
+                    [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, '🎛 **مدیریت و ویرایش نام دکمه‌های منوی اصلی**\nدکمه مورد نظر برای تغییر عنوان را انتخاب کنید:', { parse_mode: 'Markdown', ...editButtonsKeyboard }).catch(() => {});
+        return;
+    }
+
+    if (data.startsWith('edit_btn_')) {
+        if (!isAdmin(callbackQuery)) return;
+        const btnKey = data.replace('edit_btn_', '');
+        db.userStates[chatId] = { step: 'get_new_menu_button_name', targetBtnKey: btnKey };
+        saveDatabase();
+        bot.sendMessage(chatId, `🎛 لطفاً نام جدید دکمه را ارسال کنید:\n\n*(نام فعلی):\n\`${names[btnKey]}\`*`, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
 
     if (data === 'admin_set_invite_reward') {
         if (!isAdmin(callbackQuery)) return;
@@ -1586,7 +1611,6 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        // کسر موجودی از کیف پول کاربر و ذخیره سازی
         db.userWallets[userId] = userBalance - priceNumber;
         
         const assignedLink = plan.links.shift();
@@ -1617,7 +1641,7 @@ bot.on('callback_query', async (callbackQuery) => {
         if (db.appliedDiscounts[userId]) {
             delete db.appliedDiscounts[userId];
         }
-        saveDatabase(); // ذخیره تغییرات دیتابیس شامل کسر موجودی کیف پول
+        saveDatabase();
 
         const rawUName = userInfo.username || 'ندارد';
         const cleanUName = rawUName.replace('@', '');
@@ -1758,6 +1782,17 @@ bot.on('message', async (msg) => {
 
     const currentState = db.userStates[chatId];
     if (!currentState) return;
+
+    if (currentState.step === 'get_new_menu_button_name') {
+        if (!isAdmin(msg)) return;
+        const btnKey = currentState.targetBtnKey;
+        db.menuNames[btnKey] = text;
+        delete db.userStates[chatId];
+        saveDatabase();
+        bot.sendMessage(chatId, `✅ نام دکمه مورد نظر با موفقیت به \`${text}\` تغییر یافت و منوی کاربران به‌روزرسانی شد.`, { parse_mode: 'Markdown' }).catch(() => {});
+        sendAdminPanel(chatId);
+        return;
+    }
 
     if (currentState.step === 'get_new_invite_reward') {
         if (!isAdmin(msg)) return;
@@ -2216,7 +2251,7 @@ bot.on('message', async (msg) => {
 
                 inlineBtns.push([{ text: `💳 پرداخت کارت به کارت (آپلود رسید)`, callback_data: `pay_card_${selectedPlan.id}` }]);
                 inlineBtns.push([{ text: `🎟 وارد کردن کد تخفیف`, callback_data: `enter_discount_${selectedPlan.id}` }]);
-                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: 'buy_sub' }]);
+                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: `buy_sub` }]);
 
                 bot.sendMessage(chatId, paymentDesc, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineBtns } }).catch(() => {});
             }
