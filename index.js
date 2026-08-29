@@ -148,15 +148,9 @@ function loadDatabase() {
     }
 }
 
-// 🛡️ مکانیسم ایمن‌سازی ذخیره‌سازی برای جلوگیری از تداخل و تغییر ناخواسته اطلاعات در ترافیک بالا
 let isSaving = false;
-let saveQueue = false;
-
 function saveDatabase() {
-    if (isSaving) {
-        saveQueue = true;
-        return;
-    }
+    if (isSaving) return;
     try {
         isSaving = true;
         if (!fs.existsSync(DATA_DIR)) {
@@ -169,10 +163,6 @@ function saveDatabase() {
         console.log('❌ خطا در ذخیره‌سازی دیتابیس:', e);
     } finally {
         isSaving = false;
-        if (saveQueue) {
-            saveQueue = false;
-            saveDatabase();
-        }
     }
 }
 
@@ -1003,6 +993,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 delete db.pending_deposits[depositKey];
                 saveDatabase();
                 
+                // ارسال تاییدیه به کانال لاگ
                 const channelDepositMsg = `✅ **تأیید شارژ کیف پول:**\n` +
                                           `👤 کاربر: @${cleanUName} (\`${targetUserId}\`)\n` +
                                           `💵 مبلغ شارژ: ${depositInfo.amount.toLocaleString()} تومان\n` +
@@ -1016,6 +1007,7 @@ bot.on('callback_query', async (callbackQuery) => {
             delete db.pending_deposits[depositKey];
             saveDatabase();
             
+            // ارسال رد رسید به کانال لاگ
             const channelRejectMsg = `❌ **رد رسید شارژ کیف پول:**\n` +
                                      `👤 کاربر: @${cleanUName} (\`${targetUserId}\`)\n` +
                                      `🕒 زمان: ${getPersianDateTime()}`;
@@ -1852,8 +1844,10 @@ bot.on('message', async (msg) => {
             }
         };
 
+        // ارسال رسید به ادمین
         if (msg.photo) {
             bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch(() => {});
+            // ارسال کپی رسید به کانال لاگ
             bot.sendPhoto(CHANNEL_LOG_ID, fileId, { caption: `📥 **رسید شارژ کیف پول (در انتظار تایید)**\n👤 کاربر: @${(userInfo.username || 'ندارد').replace('@', '')} (\`${userId}\`)\n💵 مبلغ: ${amount.toLocaleString()} تومان`, parse_mode: 'Markdown' }).catch(() => {});
         } else {
             bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch(() => {});
@@ -1916,8 +1910,10 @@ bot.on('message', async (msg) => {
             }
         };
 
+        // ارسال رسید به ادمین
         if (msg.photo) {
             bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch(() => {});
+            // ارسال کپی رسید به کانال لاگ
             bot.sendPhoto(CHANNEL_LOG_ID, fileId, { caption: `📥 **رسید خرید کارت به کارت (در انتظار تایید)**\n👤 کاربر: @${(userInfo.username || 'ندارد').replace('@', '')} (\`${userId}\`)\n📦 پلن: ${plan.name}\n💵 مبلغ: ${priceNumber.toLocaleString()} تومان`, parse_mode: 'Markdown' }).catch(() => {});
         } else {
             bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch(() => {});
@@ -2089,7 +2085,7 @@ bot.on('message', async (msg) => {
         delete db.userStates[chatId];
         saveDatabase();
 
-,        if (db.discountCodes && db.discountCodes[code]) {
+        if (db.discountCodes && db.discountCodes[code]) {
             const discInfo = db.discountCodes[code];
             if (!db.appliedDiscounts) db.appliedDiscounts = {};
             db.appliedDiscounts[userId] = { code, percent: discInfo.percent };
