@@ -384,17 +384,21 @@ async function handleForceJoin(msg) {
     return true;
 }
 
-bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
-    loadDatabase(); 
+// 🚀 بازنویسی کامل و امن بخش دستور استارت برای رفع مشکلات اجرا و مدیریت زیرمجموعه
+bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
+
+    loadDatabase();
 
     if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
         return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.').catch(() => {});
     }
 
-    delete db.userStates[chatId];
-    saveDatabase();
+    if (db.userStates && db.userStates[chatId]) {
+        delete db.userStates[chatId];
+        saveDatabase();
+    }
 
     trackUserAndNotifyAdmin(msg);
     const canProceed = await handleForceJoin(msg);
@@ -404,8 +408,8 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     const currentReward = db.inviteRewardAmount || 5000;
 
     if (payload && db.isInviteSystemEnabled && payload !== chatId.toString()) {
-        const refId = payload;
-        if (!db.userWallets[`referred_${chatId}`]) {
+        const refId = payload.trim();
+        if (!db.userWallets[`referred_${chatId}`] && refId !== userId) {
             db.userWallets[`referred_${chatId}`] = true; 
             db.userWallets[refId] = (db.userWallets[refId] || 0) + currentReward;
             db.referals[refId] = (db.referals[refId] || 0) + 1;
@@ -432,7 +436,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
         return;
     }
 
-    sendMainMenu(chatId);
+    await sendMainMenu(chatId);
 });
 
 bot.on('message', async (msg) => {
