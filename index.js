@@ -1031,6 +1031,17 @@ bot.on('callback_query', async (callbackQuery) => {
                 db.userWallets[targetUserId] = (db.userWallets[targetUserId] || 0) + depositInfo.amount;
                 delete db.pending_deposits[depositKey];
                 saveDatabase();
+                
+                // ارسال پیام به کانال لاگ برای شارژ کیف پول تایید شده
+                const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر', username: 'ندارد' };
+                const rawUName = userInfo.username || 'ندارد';
+                const cleanUName = rawUName.replace('@', '');
+                const depositLogMsg = `💳 **شارژ موفق کیف پول (کارت به کارت):**\n` +
+                                      `👤 کاربر: @${cleanUName} (\`${targetUserId}\`)\n` +
+                                      `💵 مبلغ شارژ: ${depositInfo.amount.toLocaleString()} تومان\n` +
+                                      `🕒 زمان: ${getPersianDateTime()}`;
+                bot.sendMessage(CHANNEL_LOG_ID, depositLogMsg, { parse_mode: 'Markdown' }).catch(() => {});
+
                 bot.sendMessage(targetUserId, `🎉 **شارژ کیف پول شما تأیید شد!**\nمبلغ \`${depositInfo.amount.toLocaleString()} تومان\` به حسابتان واریز شد. ✨`, { parse_mode: 'Markdown' }).catch(() => {});
                 bot.sendMessage(chatId, '✅ شارژ کیف پول تأیید شد.').catch(() => {});
             }
@@ -1093,12 +1104,26 @@ bot.on('callback_query', async (callbackQuery) => {
                 delete db.pending_card_purchases[cardKey];
                 saveDatabase();
 
+                let priceNumber = parsePrice(plan.price);
+                if (db.agents && db.agents[targetUserId]) {
+                    const agentPct = db.agents[targetUserId].discountPercent || 0;
+                    priceNumber -= Math.min(priceNumber, Math.floor((priceNumber * agentPct) / 100));
+                }
+                if (db.appliedDiscounts && db.appliedDiscounts[targetUserId]) {
+                    const disc = db.appliedDiscounts[targetUserId];
+                    priceNumber -= Math.min(priceNumber, Math.floor((priceNumber * disc.percent) / 100));
+                    delete db.appliedDiscounts[targetUserId];
+                    saveDatabase();
+                }
+
                 const rawUsername = userInfo.username || 'ندارد';
                 const cleanUsername = rawUsername.replace('@', '');
-                const purchaseMessage = `🛒 **خرید کارت به کارت جدید:**\n` +
-                                        `👤 **نام کاربری:** @${cleanUsername}\n` +
+                const purchaseMessage = `🛒 **خرید کارت به کارت جدید (تأیید شد):**\n` +
+                                        `👤 **کاربر:** @${cleanUsername} (\`${targetUserId}\`)\n` +
+                                        `📦 **پلن:** ${plan.name}\n` +
+                                        `💵 **مبلغ:** ${priceNumber.toLocaleString()} تومان\n` +
                                         `⏰ **زمان:** ${currentDateStr}\n` +
-                                        `📦 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}\n\n` +
+                                        `🌐 **حجم:** ${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}\n\n` +
                                         `🔗 **لینک اشتراک:**\n\`${assignedLink}\``;
                 
                 const channelKeyboard = {
