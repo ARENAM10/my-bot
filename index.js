@@ -311,9 +311,6 @@ async function fetchAndParseConfig(url) {
                         if (key.toLowerCase() === 'upload') resultInfo.upload = formatBytes(numVal);
                         if (key.toLowerCase() === 'download') resultInfo.download = formatBytes(numVal);
                         if (key.toLowerCase() === 'total') resultInfo.total = formatBytes(numVal);
-                        if (key.toLowerCase() === 'remaining' || key.toLowerCase() === 'expire') {
-                            // اگر اطلاعات دیگری بود اینجا هندل میشه
-                        }
                     }
                 });
             }
@@ -387,63 +384,65 @@ async function handleForceJoin(msg) {
     return true;
 }
 
-// اصلاح هندلر دستور /start به صورت دقیق و بدون تداخل با مسج‌های معمولی
+// هندلر اختصاصی و مستقل برای دستور /start جهت رفع مشکل کار نکردن دکمه استارت
+bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id.toString();
+
+    loadDatabase();
+    if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
+        return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.').catch(() => {});
+    }
+
+    delete db.userStates[chatId];
+    saveDatabase();
+
+    trackUserAndNotifyAdmin(msg);
+    const canProceed = await handleForceJoin(msg);
+    if (!canProceed) return;
+
+    const payload = match ? match[1] : null; 
+    const currentReward = db.inviteRewardAmount || 5000;
+
+    if (payload && db.isInviteSystemEnabled && payload !== chatId.toString()) {
+        const refId = payload;
+        if (!db.userWallets[`referred_${chatId}`]) {
+            db.userWallets[`referred_${chatId}`] = true; 
+            db.userWallets[refId] = (db.userWallets[refId] || 0) + currentReward;
+            db.referals[refId] = (db.referals[refId] || 0) + 1;
+            saveDatabase();
+
+            bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${currentReward.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
+                .catch(() => {});
+        }
+    }
+
+    if (isAdmin(msg)) {
+        const adminReplyKeyboard = {
+            reply_markup: {
+                keyboard: [
+                    [{ text: '💻 پنل مدیریت' }],
+                    [{ text: '🚪 بستن ربات و خروج' }]
+                ],
+                resize_keyboard: true,
+                is_persistent: true,
+                remove_keyboard: false
+            }
+        };
+        bot.sendMessage(chatId, '👑 **دسترسی‌های پنل مدیریت برای شما فعال شد.**\nبرای دسترسی به پنل از دکمه زیر یا دستور `/panel` استفاده کنید. 🛡', adminReplyKeyboard).catch(() => {});
+        return;
+    }
+
+    sendMainMenu(chatId);
+});
+
 bot.on('message', async (msg) => {
     if (!msg.text && !msg.photo && !msg.document) return;
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
     const text = msg.text ? msg.text.trim() : '';
 
-    // مدیریت دقیق دستور استارت در بخش پیام‌های متنی عمومی برای جلوگیری از بلاک شدن آن
-    if (text.startsWith('/start')) {
-        loadDatabase();
-        if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
-            return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.').catch(() => {});
-        }
-
-        delete db.userStates[chatId];
-        saveDatabase();
-
-        trackUserAndNotifyAdmin(msg);
-        const canProceed = await handleForceJoin(msg);
-        if (!canProceed) return;
-
-        const parts = text.split(' ');
-        const payload = parts.length > 1 ? parts[1] : null; 
-        const currentReward = db.inviteRewardAmount || 5000;
-
-        if (payload && db.isInviteSystemEnabled && payload !== chatId.toString()) {
-            const refId = payload;
-            if (!db.userWallets[`referred_${chatId}`]) {
-                db.userWallets[`referred_${chatId}`] = true; 
-                db.userWallets[refId] = (db.userWallets[refId] || 0) + currentReward;
-                db.referals[refId] = (db.referals[refId] || 0) + 1;
-                saveDatabase();
-
-                bot.sendMessage(refId, `🎉 **تبریک!**\nیک کاربر جدید با لینک اختصاصی شما وارد ربات شد.\n\n💰 مبلغ \`${currentReward.toLocaleString()} تومان\` به کیف پول شما واریز شد! 🚀`, { parse_mode: 'Markdown' })
-                    .catch(() => {});
-            }
-        }
-
-        if (isAdmin(msg)) {
-            const adminReplyKeyboard = {
-                reply_markup: {
-                    keyboard: [
-                        [{ text: '💻 پنل مدیریت' }],
-                        [{ text: '🚪 بستن ربات و خروج' }]
-                    ],
-                    resize_keyboard: true,
-                    is_persistent: true,
-                    remove_keyboard: false
-                }
-            };
-            bot.sendMessage(chatId, '👑 **دسترسی‌های پنل مدیریت برای شما فعال شد.**\nبرای دسترسی به پنل از دکمه زیر یا دستور `/panel` استفاده کنید. 🛡', adminReplyKeyboard).catch(() => {});
-            return;
-        }
-
-        sendMainMenu(chatId);
-        return;
-    }
+    if (text.startsWith('/start')) return;
 
     if (text === '💻 پنل مدیریت' || text === '/panel') {
         loadDatabase();
