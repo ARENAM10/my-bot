@@ -79,10 +79,13 @@ const defaultDatabaseStructure = {
     userStates: {},
     menuNames: {
         buy_sub: '🛒 خرید اشتراک 🛍',
+        test_account: '🎁 اکانت تست',
         wallet: '💳 کیف پول + شارژ',
         my_subs: '⚡️ سرویس های من',
         invite: '🎉 زیر مجموعه گیری',
-        support: '💬 پشتیبانی'
+        support: '💬 پشتیبانی',
+        tutorial: '📚 آموزش',
+        lucky_wheel: '⭐ گردونه شانس'
     },
     botTexts: {
         start_message: '✨🎛 **با سلام و احترام، به سامانه هوشمند آرنا خوش آمدید.** 🚀\n\n🌐 بالاترین سرعت، کمترین میزان پینگ و پایداری ۱۰۰ درصدی را با زیرساخت‌های قدرتمند ما تجربه فرمایید.\n💎 لطفاً جهت دسترسی به خدمات، از منوی دسترسی زیر استفاده نمایید 👇\n\n🔥 **ARENA VIP | امن، پایدار و بدون محدودیت** 🛡',
@@ -90,8 +93,7 @@ const defaultDatabaseStructure = {
         no_plans: '🛒 در حال حاضر پلن فعالی در این بخش موجود نمی‌باشد. لطفاً در زمانی دیگر مراجعه فرمایید. 😎',
         wallet_title: '💳 **مدیریت حساب کاربری و کیف پول**\n\n💰 موجودی فعلی: `✨ {balance} تومان`\n\n🆔 شناسه کاربری شما: `{userId}`',
         invite_title: '👥 **سیستم دعوت از دوستان و کسب درآمد** 🎁\n\nلینک اختصاصی زیر را برای دوستان خود ارسال کنید و به ازای هر دعوت، پاداش دریافت نمایید:\n`{inviteLink}`\n\n✨ تعداد کاربرانی که تا کنون توسط شما دعوت شده‌اند: **{count} نفر**',
-        empty_subs: '📱 شما در حال حاضر هیچ اشتراک فعالی ندارید! می‌توانید از طریق فروشگاه نسبت به تهیه سرویس اقدام فرمایید. 🛒🔥',
-        support_text: '💬 **بخش پشتیبانی و ارتباط با مدیریت**\n\nلطفاً برای ارتباط با پشتیبانی روی دکمه زیر کلیک کنید:'
+        empty_subs: '📱 شما در حال حاضر هیچ اشتراک فعالی ندارید! می‌توانید از طریق فروشگاه نسبت به تهیه سرویس اقدام فرمایید. 🛒🔥'
     },
     userWallets: {},
     pending_deposits: {},
@@ -345,12 +347,13 @@ async function fetchAndParseConfig(url) {
 function getPersistentMenuKeyboard() {
     const names = db.menuNames;
     let keyboardRows = [
-        [{ text: names.buy_sub }],
+        [{ text: names.buy_sub }, { text: names.test_account }],
         [{ text: names.my_subs }, { text: names.wallet }],
-        [{ text: names.invite }, { text: names.support }]
+        [{ text: names.lucky_wheel }, { text: names.invite }],
+        [{ text: names.support }, { text: names.tutorial }]
     ];
     
-    keyboardRows.push([{ text: '🚪 بستن ربات و خروج' }]);
+    keyboardRows.push([{ text: '🚪 بستن کیبورد ربات' }]);
 
     return {
         reply_markup: {
@@ -427,7 +430,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
             reply_markup: {
                 keyboard: [
                     [{ text: '💻 پنل مدیریت' }],
-                    [{ text: '🚪 بستن ربات و خروج' }]
+                    [{ text: '🚪 بستن کیبورد ربات' }]
                 ],
                 resize_keyboard: true,
                 is_persistent: true,
@@ -1139,7 +1142,7 @@ bot.on('callback_query', async (callbackQuery) => {
         if (isAdmin(callbackQuery)) {
             bot.sendMessage(chatId, '👑 پنل مدیریت ربات:', {
                 reply_markup: {
-                    keyboard: [[{ text: '💻 پنل مدیریت' }], [{ text: '🚪 بستن ربات و خروج' }]],
+                    keyboard: [[{ text: '💻 پنل مدیریت' }], [{ text: '🚪 بستن کیبورد ربات' }]],
                     resize_keyboard: true,
                     is_persistent: true
                 }
@@ -1161,7 +1164,6 @@ bot.on('callback_query', async (callbackQuery) => {
                     [{ text: '📝 متن منوی کیف پول', callback_data: 'set_text_wallet_title' }],
                     [{ text: '📝 متن دعوت دوستان', callback_data: 'set_text_invite_title' }],
                     [{ text: '📝 متن نداشتن اشتراک', callback_data: 'set_text_empty_subs' }],
-                    [{ text: '📝 متن بخش پشتیبانی', callback_data: 'set_text_support_text' }],
                     [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
                 ]
             }
@@ -1392,19 +1394,6 @@ bot.on('callback_query', async (callbackQuery) => {
         db.userStates[chatId] = { step: 'get_broadcast_content' };
         saveDatabase();
         bot.sendMessage(chatId, '📢 متن پیام همگانی را ارسال کنید:').catch(() => {});
-        return;
-    }
-
-    if (textButtonMatches(data, names.support)) {
-        const supportText = db.botTexts.support_text || '💬 بخش پشتیبانی و ارتباط با مدیریت';
-        const supportKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '💬 ارتباط با مدیریت / پشتیبانی', url: `https://t.me/${ADMIN_USERNAME}` }]
-                ]
-            }
-        };
-        bot.sendMessage(chatId, supportText, { parse_mode: 'Markdown', ...supportKeyboard }).catch(() => {});
         return;
     }
 
@@ -1664,7 +1653,7 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (text === '🚪 بستن ربات و خروج') {
+    if (text === '🚪 بستن کیبورد ربات') {
         return bot.sendMessage(chatId, '🚪 کیبورد ربات بسته شد. برای باز کردن مجدد می‌توانید از دستور /start استفاده کنید.', {
             reply_markup: { remove_keyboard: true }
         }).catch(() => {});
@@ -1711,18 +1700,6 @@ bot.on('message', async (msg) => {
         return sendUserSubscriptionsPage(chatId, null, userId, 0, null);
     }
 
-    if (text === names.support) {
-        const supportText = db.botTexts.support_text || '💬 بخش پشتیبانی و ارتباط با مدیریت';
-        const supportKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '💬 ارتباط با مدیریت / پشتیبانی', url: `https://t.me/${ADMIN_USERNAME}` }]
-                ]
-            }
-        };
-        return bot.sendMessage(chatId, supportText, { parse_mode: 'Markdown', ...supportKeyboard }).catch(() => {});
-    }
-
     if (db.isInviteSystemEnabled && text === names.invite) {
         const botInfo = await bot.getMe();
         const inviteLink = `https://t.me/${botInfo.username}?start=${chatId}`;
@@ -1756,27 +1733,6 @@ bot.on('message', async (msg) => {
         delete db.userStates[chatId];
         saveDatabase();
         bot.sendMessage(chatId, `✅ شماره کارت جدید ذخیره شد:\n\`${text}\``, { parse_mode: 'Markdown' }).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
-    if (currentState.step === 'get_new_bot_text') {
-        if (!isAdmin(msg)) return;
-        const key = currentState.targetTextKey;
-        db.botTexts[key] = text;
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ متن بخش \`${key}\` با موفقیت به‌روزرسانی شد.`, { parse_mode: 'Markdown' }).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
-    if (currentState.step === 'get_new_channel_username') {
-        if (!isAdmin(msg)) return;
-        db.CHANNEL_USERNAME = text;
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ آیدی کانال به \`${text}\` تغییر یافت.`, { parse_mode: 'Markdown' }).catch(() => {});
         sendAdminPanel(chatId);
         return;
     }
