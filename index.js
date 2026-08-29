@@ -347,11 +347,10 @@ function getPersistentMenuKeyboard() {
     let keyboardRows = [
         [{ text: names.buy_sub }],
         [{ text: names.my_subs }, { text: names.wallet }],
-        [{ text: names.invite }],
-        [{ text: names.support }]
+        [{ text: names.invite }, { text: names.support }]
     ];
     
-    keyboardRows.push([{ text: '🚪 بستن کیبورد ربات' }]);
+    keyboardRows.push([{ text: '🚪 بستن ربات و خروج' }]);
 
     return {
         reply_markup: {
@@ -428,7 +427,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
             reply_markup: {
                 keyboard: [
                     [{ text: '💻 پنل مدیریت' }],
-                    [{ text: '🚪 بستن کیبورد ربات' }]
+                    [{ text: '🚪 بستن ربات و خروج' }]
                 ],
                 resize_keyboard: true,
                 is_persistent: true,
@@ -1140,7 +1139,7 @@ bot.on('callback_query', async (callbackQuery) => {
         if (isAdmin(callbackQuery)) {
             bot.sendMessage(chatId, '👑 پنل مدیریت ربات:', {
                 reply_markup: {
-                    keyboard: [[{ text: '💻 پنل مدیریت' }], [{ text: '🚪 بستن کیبورد ربات' }]],
+                    keyboard: [[{ text: '💻 پنل مدیریت' }], [{ text: '🚪 بستن ربات و خروج' }]],
                     resize_keyboard: true,
                     is_persistent: true
                 }
@@ -1665,7 +1664,7 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (text === '🚪 بستن کیبورد ربات') {
+    if (text === '🚪 بستن ربات و خروج') {
         return bot.sendMessage(chatId, '🚪 کیبورد ربات بسته شد. برای باز کردن مجدد می‌توانید از دستور /start استفاده کنید.', {
             reply_markup: { remove_keyboard: true }
         }).catch(() => {});
