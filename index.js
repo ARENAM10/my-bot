@@ -72,8 +72,8 @@ const DB_FILE = path.join(DATA_DIR, 'database.json');
 const PURCHASES_LOG_FILE = path.join(DATA_DIR, 'purchases_log.txt');
 
 const defaultDatabaseStructure = {
-    CHANNEL_USERNAME: '@YourChannelUsername',
-    isForceJoinEnabled: false,
+    CHANNEL_USERNAME: '@Config_Arena',
+    isForceJoinEnabled: true,
     isInviteSystemEnabled: true,
     inviteRewardAmount: 5000, 
     userStates: {},
@@ -121,6 +121,8 @@ function loadDatabase() {
             db = {
                 ...defaultDatabaseStructure,
                 ...parsed,
+                CHANNEL_USERNAME: '@Config_Arena',
+                isForceJoinEnabled: true,
                 paymentCardNumber: parsed.paymentCardNumber || defaultDatabaseStructure.paymentCardNumber,
                 inviteRewardAmount: parsed.inviteRewardAmount !== undefined ? parsed.inviteRewardAmount : defaultDatabaseStructure.inviteRewardAmount,
                 menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
@@ -143,6 +145,8 @@ function loadDatabase() {
                 messagesMap: parsed.messagesMap || {}
             };
         } else {
+            db.CHANNEL_USERNAME = '@Config_Arena';
+            db.isForceJoinEnabled = true;
             saveDatabase();
         }
     } catch (e) {
@@ -452,7 +456,6 @@ bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
 });
 
 function sendAdminPanel(chatId) {
-    const forceJoinStatus = db.isForceJoinEnabled ? `🟢 جوین اجباری: روشن` : '🔴 جوین اجباری: خاموش';
     const inviteStatus = db.isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
     
     const uniqueUsersCount = [...new Set(db.allUsers)].length;
@@ -482,8 +485,7 @@ function sendAdminPanel(chatId) {
                     { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' }
                 ],
                 [
-                    { text: inviteStatus, callback_data: 'toggle_invite_system' },
-                    { text: forceJoinStatus, callback_data: 'admin_force_join_menu' }
+                    { text: inviteStatus, callback_data: 'toggle_invite_system' }
                 ],
                 [
                     { text: '📢 ارسال پیام همگانی', callback_data: 'admin_broadcast' }
@@ -1179,39 +1181,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data === 'admin_force_join_menu') {
-        if (!isAdmin(callbackQuery)) return;
-        const statusText = db.isForceJoinEnabled ? '🟢 روشن' : '🔴 خاموش';
-        const fjMenu = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: `وضعیت: ${statusText} (تغییر وضعیت)`, callback_data: 'toggle_force_join' }],
-                    [{ text: `✏️ تنظیم کانال (فعلی: ${db.CHANNEL_USERNAME})`, callback_data: 'set_channel_username' }],
-                    [{ text: '🔙 بازگشت', callback_data: 'admin_back_to_panel' }]
-                ]
-            }
-        };
-        bot.sendMessage(chatId, '📢 **مدیریت جوین اجباری**', { parse_mode: 'Markdown', ...fjMenu }).catch(() => {});
-        return;
-    }
-
-    if (data === 'toggle_force_join') {
-        if (!isAdmin(callbackQuery)) return;
-        db.isForceJoinEnabled = !db.isForceJoinEnabled;
-        saveDatabase();
-        bot.sendMessage(chatId, `جوین اجباری ${db.isForceJoinEnabled ? 'روشن' : 'خاموش'} شد.`).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
-    if (data === 'set_channel_username') {
-        if (!isAdmin(callbackQuery)) return;
-        db.userStates[chatId] = { step: 'get_new_channel_username' };
-        saveDatabase();
-        bot.sendMessage(chatId, '📢 آیدی کانال جدید را با فرمت صحیح بفرستید (مثلاً `@ChannelName`):', { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
-
     if (data === 'toggle_invite_system') {
         if (!isAdmin(callbackQuery)) return;
         db.isInviteSystemEnabled = !db.isInviteSystemEnabled;
@@ -1771,16 +1740,6 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (currentState.step === 'get_new_channel_username') {
-        if (!isAdmin(msg)) return;
-        db.CHANNEL_USERNAME = text;
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ آیدی کانال به \`${text}\` تغییر یافت.`, { parse_mode: 'Markdown' }).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
     if (currentState.step === 'admin_waiting_for_block_identifier') {
         if (!isAdmin(msg)) return;
         let targetId = text.replace('@', '').trim();
@@ -2195,7 +2154,7 @@ bot.on('message', async (msg) => {
 
                 inlineBtns.push([{ text: `💳 پرداخت کارت به کارت (آپلود رسید)`, callback_data: `pay_card_${selectedPlan.id}` }]);
                 inlineBtns.push([{ text: `🎟 وارد کردن کد تخفیف`, callback_data: `enter_discount_${selectedPlan.id}` }]);
-                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: 'buy_sub' }]);
+                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: `buy_sub` }]);
 
                 bot.sendMessage(chatId, paymentDesc, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineBtns } }).catch(() => {});
             }
