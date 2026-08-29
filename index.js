@@ -1,9 +1,26 @@
 const TelegramBot = require('node-telegram-bot-api');
 
-const token = '7994848248:AAEjIu3pMZZrWzVz1X3kQ_Vp2J9xZ8Y2w7Q';
-const bot = new TelegramBot(token, { polling: true });
+// توکن استخراج‌شده از کد شما
+const TOKEN = '8850301156:AAF03oS1Aayj4CZ9rv1mmLd4zvZ_HznAbEk';
 
-bot.on('message', (msg) => {
+const bot = new TelegramBot(TOKEN, { polling: true });
+
+console.log('Bot is running and waiting for messages...');
+
+// پاسخ ساده به دستور /start برای تست عملکرد ربات
+bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, 'سلام! ربات شما با موفقیت روشن شد و به درستی کار می‌کند. 🚀');
+    const name = msg.from.first_name || 'دوست عزیز';
+    
+    bot.sendMessage(chatId, `سلام ${name} جان! 👋\nربات با موفقیت روشن شد و بدون مشکل کار می‌کند. 🚀`, {
+        parse_mode: 'Markdown'
+    });
+});
+
+// پاسخ به هر متن دیگری برای اطمینان از دریافت پیام‌ها
+bot.on('message', (msg) => {
+    if (msg.text && !msg.text.startsWith('/start')) {
+        const chatId = msg.chat.id;
+        bot.sendMessage(chatId, `پیام شما دریافت شد: "${msg.text}" ✅`);
+    }
 });
