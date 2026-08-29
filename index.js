@@ -2089,7 +2089,7 @@ bot.on('message', async (msg) => {
         delete db.userStates[chatId];
         saveDatabase();
 
-        if (db.discountCodes && db.discountCodes[code]) {
+,        if (db.discountCodes && db.discountCodes[code]) {
             const discInfo = db.discountCodes[code];
             if (!db.appliedDiscounts) db.appliedDiscounts = {};
             db.appliedDiscounts[userId] = { code, percent: discInfo.percent };
@@ -2145,3 +2145,4 @@ bot.on('message', async (msg) => {
         return;
     }
 });
+
