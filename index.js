@@ -72,7 +72,7 @@ const DB_FILE = path.join(DATA_DIR, 'database.json');
 const PURCHASES_LOG_FILE = path.join(DATA_DIR, 'purchases_log.txt');
 
 const defaultDatabaseStructure = {
-    CHANNEL_USERNAME: '@Config_Arena',
+    CHANNEL_USERNAME: '@YourChannelUsername',
     isForceJoinEnabled: false,
     isInviteSystemEnabled: true,
     inviteRewardAmount: 5000, 
@@ -85,11 +85,11 @@ const defaultDatabaseStructure = {
         support: '💬 پشتیبانی'
     },
     botTexts: {
-        start_message: '✨ به آرنا کانفیگ خوش آمدید! 🚀\n\n⚡️ خرید سریع سرویس‌های پرسرعت و پایدار با چند کلیک!\n\n💎 سرعت بالا | پایداری عالی | اتصال مطمئن\n🛒 خرید آنلاین و سریع\n📱 مدیریت آسان اشتراک‌ها\n🎁 دوستاتو دعوت کن و با هر دعوت پاداش بگیر! 💰\n\n📢 کانال رسمی👈 Config_Arena@\n\n👇 از منوی زیر سرویس موردنظرت رو انتخاب کن:',
-        store_title: '🔥 ARENA VIP | سریع، پایدار و حرفه‌ای 🛡️🛒 فروشگاه اختصاصی ARENA 🚀\n\n⚡️ اشتراک‌های پرسرعت و پایدار\n💎 پلن‌های متنوع با قیمت مناسب\n\n👇 پلن موردنظرت روازبین گزینه های زیرانتخاب وسفارشت رو ثبت کن:',
-        no_plans: '🛒 در حال حاضر پلنی برای فروش فعال نیست.\n\n⏳ به‌زودی پلن‌ها (اشتراک های) جدید اضافه خواهند شد.\n💎 لطفاً بعداً دوباره سر بزنید. 🙏',
-        wallet_title: '💳 مدیریت کیف پول \n\n💰 موجودی فعلی حساب شما:\n✨ {balance} تومان\n\n🆔 شناسه کاربری شما:\n🔹 {userId}\n\n━━━━━━━━━━━━━━━━\n\n💎 از طریق گزینه‌ زیر می‌توانید کیف پول خود را مدیریت کنید و موجودی حساب خود را افزایش دهید.👇',
-        invite_title: '🎁 دعوت کن، پاداش بگیر! 👥\n\nلینک اختصاصی زیر را برای دوستان خود ارسال کنید و به ازای هر دعوت، پاداش دریافت نمایید:\n{inviteLink}\n\n✨ تعداد کاربرانی که تا کنون توسط شما دعوت شده‌اند: {count} نفر',
+        start_message: '✨🎛 **با سلام و احترام، به سامانه هوشمند آرنا خوش آمدید.** 🚀\n\n🌐 بالاترین سرعت، کمترین میزان پینگ و پایداری ۱۰۰ درصدی را با زیرساخت‌های قدرتمند ما تجربه فرمایید.\n💎 لطفاً جهت دسترسی به خدمات، از منوی دسترسی زیر استفاده نمایید 👇\n\n🔥 **ARENA VIP | امن، پایدار و بدون محدودیت** 🛡',
+        store_title: '🛒 **فروشگاه اشتراک‌های پرسرعت و اختصاصی آرنا** 🚀\n\nلطفاً جهت ثبت سفارش، پلن مدنظر خود را از گزینه‌های زیر انتخاب فرمایید: 👇',
+        no_plans: '🛒 در حال حاضر پلن فعالی در این بخش موجود نمی‌باشد. لطفاً در زمانی دیگر مراجعه فرمایید. 😎',
+        wallet_title: '💳 **مدیریت حساب کاربری و کیف پول**\n\n💰 موجودی فعلی: `✨ {balance} تومان`\n\n🆔 شناسه کاربری شما: `{userId}`',
+        invite_title: '👥 **سیستم دعوت از دوستان و کسب درآمد** 🎁\n\nلینک اختصاصی زیر را برای دوستان خود ارسال کنید و به ازای هر دعوت، پاداش دریافت نمایید:\n`{inviteLink}`\n\n✨ تعداد کاربرانی که تا کنون توسط شما دعوت شده‌اند: **{count} نفر**',
         empty_subs: '📱 شما در حال حاضر هیچ اشتراک فعالی ندارید! می‌توانید از طریق فروشگاه نسبت به تهیه سرویس اقدام فرمایید. 🛒🔥',
         support_text: '💬 **بخش پشتیبانی و ارتباط با مدیریت**\n\nلطفاً برای ارتباط با پشتیبانی روی دکمه زیر کلیک کنید:'
     },
@@ -1586,6 +1586,7 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
+        // کسر موجودی از کیف پول کاربر و ذخیره سازی
         db.userWallets[userId] = userBalance - priceNumber;
         
         const assignedLink = plan.links.shift();
@@ -1616,7 +1617,7 @@ bot.on('callback_query', async (callbackQuery) => {
         if (db.appliedDiscounts[userId]) {
             delete db.appliedDiscounts[userId];
         }
-        saveDatabase();
+        saveDatabase(); // ذخیره تغییرات دیتابیس شامل کسر موجودی کیف پول
 
         const rawUName = userInfo.username || 'ندارد';
         const cleanUName = rawUName.replace('@', '');
