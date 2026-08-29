@@ -312,7 +312,7 @@ async function fetchAndParseConfig(url) {
                         if (key.toLowerCase() === 'download') resultInfo.download = formatBytes(numVal);
                         if (key.toLowerCase() === 'total') resultInfo.total = formatBytes(numVal);
                         if (key.toLowerCase() === 'remaining' || key.toLowerCase() === 'expire') {
-                            // اگر اطلاعات دیگری بود اینجا هندل میشه
+                            // اطلاعات دیگر
                         }
                     }
                 });
@@ -1586,7 +1586,9 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
+        // کسر موجودی از کیف پول کاربر و ذخیره سازی
         db.userWallets[userId] = userBalance - priceNumber;
+        
         const assignedLink = plan.links.shift();
         const parsedData = await fetchAndParseConfig(assignedLink);
         const currentDateStr = getPersianDateTime();
@@ -1615,7 +1617,7 @@ bot.on('callback_query', async (callbackQuery) => {
         if (db.appliedDiscounts[userId]) {
             delete db.appliedDiscounts[userId];
         }
-        saveDatabase();
+        saveDatabase(); // ذخیره تغییرات دیتابیس شامل کسر موجودی کیف پول
 
         const rawUName = userInfo.username || 'ندارد';
         const cleanUName = rawUName.replace('@', '');
@@ -2214,7 +2216,7 @@ bot.on('message', async (msg) => {
 
                 inlineBtns.push([{ text: `💳 پرداخت کارت به کارت (آپلود رسید)`, callback_data: `pay_card_${selectedPlan.id}` }]);
                 inlineBtns.push([{ text: `🎟 وارد کردن کد تخفیف`, callback_data: `enter_discount_${selectedPlan.id}` }]);
-                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: `buy_sub` }]);
+                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: 'buy_sub' }]);
 
                 bot.sendMessage(chatId, paymentDesc, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineBtns } }).catch(() => {});
             }
