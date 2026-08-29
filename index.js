@@ -179,7 +179,6 @@ function logPurchaseToFile(subObj) {
                          `شناسه کاربر (Chat ID): ${subObj.userId}\n` +
                          `نام پلن: ${subObj.planName}\n` +
                          `حجم کل: ${subObj.totalVolume || subObj.volume}\n` +
-                         `تاریخ انقضا: ${subObj.expiryDate}\n` +
                          `لینک اشتراک:\n${subObj.configLink}\n` +
                          `----------------------------------------\n\n`;
         fs.appendFileSync(PURCHASES_LOG_FILE, logEntry, 'utf8');
@@ -279,8 +278,7 @@ async function fetchAndParseConfig(url) {
         upload: 'نامشخص',
         download: 'نامشخص',
         total: 'نامشخص',
-        remaining: 'نامشخص',
-        expireDate: 'نامشخص'
+        remaining: 'نامشخص'
     };
 
     try {
@@ -313,9 +311,8 @@ async function fetchAndParseConfig(url) {
                         if (key.toLowerCase() === 'upload') resultInfo.upload = formatBytes(numVal);
                         if (key.toLowerCase() === 'download') resultInfo.download = formatBytes(numVal);
                         if (key.toLowerCase() === 'total') resultInfo.total = formatBytes(numVal);
-                        if (key.toLowerCase() === 'expire') {
-                            const date = new Date(numVal * 1000);
-                            resultInfo.expireDate = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { timeZone: 'Asia/Tehran', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+                        if (key.toLowerCase() === 'remaining' || key.toLowerCase() === 'expire') {
+                            // اگر اطلاعات دیگری بود اینجا هندل میشه
                         }
                     }
                 });
@@ -699,13 +696,15 @@ bot.on('callback_query', async (callbackQuery) => {
             
             const freshData = await fetchAndParseConfig(sub.configLink);
             if (freshData.total !== 'نامشخص') sub.totalVolume = freshData.total;
-            if (freshData.expireDate !== 'نامشخص') sub.expiryDate = freshData.expireDate;
+            if (freshData.upload !== 'نامشخص') sub.upload = freshData.upload;
+            if (freshData.download !== 'نامشخص') sub.download = freshData.download;
             saveDatabase();
 
             let subDetailMsg = `📱 **جزئیات اشتراک شما:**\n\n` +
                                `📦 پلن: \`${sub.planName}\`\n` +
                                `🌐 حجم کل: \`${sub.totalVolume || sub.volume}\`\n` +
-                               `⏳ تاریخ انقضا: \`${sub.expiryDate}\`\n\n` +
+                               `📥 آپلود: \`${sub.upload || 'نامشخص'}\`\n` +
+                               `📤 دانلود: \`${sub.download || 'نامشخص'}\`\n\n` +
                                `🔗 **لینک اشتراک:**\n\`${sub.configLink}\``;
 
             if (freshData.extractedConfigs && freshData.extractedConfigs.length > 0) {
@@ -773,7 +772,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
         if (subs.length > 0) {
             subs.forEach((sub, idx) => {
-                subText += `🔹 **اشتراک ${idx + 1}:** ${sub.planName} | انقضا: ${sub.expiryDate}\n`;
+                subText += `🔹 **اشتراک ${idx + 1}:** ${sub.planName} | حجم: ${sub.totalVolume || sub.volume}\n`;
                 inlineBtns.push([{ text: `🗑 حذف اشتراک ${idx + 1}`, callback_data: `adm_del_sub_${targetUserId}_${idx}` }]);
             });
         } else {
@@ -1032,7 +1031,6 @@ bot.on('callback_query', async (callbackQuery) => {
                 delete db.pending_deposits[depositKey];
                 saveDatabase();
                 
-                // ارسال پیام به کانال لاگ برای شارژ کیف پول تایید شده
                 const userInfo = db.usersDetailMap[targetUserId] || { name: 'کاربر', username: 'ندارد' };
                 const rawUName = userInfo.username || 'ندارد';
                 const cleanUName = rawUName.replace('@', '');
@@ -1084,7 +1082,6 @@ bot.on('callback_query', async (callbackQuery) => {
                     userId: targetUserId,
                     userName: userInfo.name,
                     planName: plan.name,
-                    expiryDate: parsedData.expireDate !== 'نامشخص' ? parsedData.expireDate : plan.duration,
                     volume: plan.volume,
                     totalVolume: parsedData.total,
                     upload: parsedData.upload,
@@ -1136,8 +1133,9 @@ bot.on('callback_query', async (callbackQuery) => {
 
                 let successMsg = `🎉 **پرداخت شما تأیید و اشتراک صادر شد!** 🚀\n\n` +
                                  `📦 پلن: \`${plan.name}\`\n` +
-                                 `🌐 حجم: \`${parsedData.total}\`\n` +
-                                 `⏳ انقضا: \`${subObj.expiryDate}\`\n\n` +
+                                 `🌐 حجم: \`${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}\`\n` +
+                                 `📥 آپلود: \`${parsedData.upload}\`\n` +
+                                 `📤 دانلود: \`${parsedData.download}\`\n\n` +
                                  `🔗 **لینک اشتراک اختصاصی:**\n\`${assignedLink}\``;
 
                 if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
@@ -1379,7 +1377,6 @@ bot.on('callback_query', async (callbackQuery) => {
                            `👤 شناسه مشتری: \`${sub.userId}\`\n` +
                            `📛 نام پلن: ${sub.planName}\n` +
                            `🌐 حجم: ${sub.totalVolume || sub.volume}\n` +
-                           `⏳ انقضا: ${sub.expiryDate}\n` +
                            `🔗 لینک: \`${sub.configLink}\`\n\n`;
         });
         bot.sendMessage(chatId, historyText, { parse_mode: 'Markdown' }).catch(() => {});
@@ -1545,7 +1542,6 @@ bot.on('callback_query', async (callbackQuery) => {
         let paymentDesc = `📋 **فاکتور نهایی خرید اشتراک** ⚡️\n\n` +
                           `🏷 نام پلن: \`${selectedPlan.name}\`\n` +
                           `🌐 حجم ترافیک: \`${selectedPlan.volume}\`\n` +
-                          `⏳ مدت زمان: \`${selectedPlan.duration}\`\n` +
                           discountInfoText +
                           `💵 **مبلغ قابل پرداخت: ${priceNumber.toLocaleString()} تومان**\n` +
                           `💰 موجودی کیف پول شما: \`${userBalance.toLocaleString()} تومان\`\n\n`;
@@ -1600,7 +1596,6 @@ bot.on('callback_query', async (callbackQuery) => {
             userId: userId,
             userName: userInfo.name,
             planName: plan.name,
-            expiryDate: parsedData.expireDate !== 'نامشخص' ? parsedData.expireDate : plan.duration,
             volume: plan.volume,
             totalVolume: parsedData.total,
             upload: parsedData.upload,
@@ -1636,7 +1631,8 @@ bot.on('callback_query', async (callbackQuery) => {
         let successText = `🎉 **خرید شما با موفقیت انجام شد!** 🚀\n\n` +
                           `📦 پلن: \`${plan.name}\`\n` +
                           `🌐 حجم کل: \`${parsedData.total !== 'نامشخص' ? parsedData.total : plan.volume}\`\n` +
-                          `⏳ تاریخ انقضا: \`${subObj.expiryDate}\`\n\n` +
+                          `📥 آپلود: \`${parsedData.upload}\`\n` +
+                          `📤 دانلود: \`${parsedData.download}\`\n\n` +
                           `🔗 **لینک اختصاصی اشتراک شما:**\n\`${assignedLink}\``;
 
         if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
@@ -1870,7 +1866,6 @@ bot.on('message', async (msg) => {
             userId: targetUserId,
             userName: userInfo.name,
             planName: 'اشتراک دستی ادمین',
-            expiryDate: parsedData.expireDate !== 'نامشخص' ? parsedData.expireDate : '۳۰ روزه',
             volume: parsedData.total !== 'نامشخص' ? parsedData.total : 'نامحدود',
             totalVolume: parsedData.total,
             upload: parsedData.upload,
@@ -1894,7 +1889,7 @@ bot.on('message', async (msg) => {
         
         try {
             let userMsg = `🎁 **یک اشتراک جدید توسط مدیریت به شما اختصاص یافت!** 🚀\n\n` +
-                          `🔗 **لینک اشتراک:**\n\`${configLink}\``;
+                          `🔗 **لینک اشتراک:**\n\`{configLink}\``.replace('{configLink}', configLink);
             if (parsedData.extractedConfigs && parsedData.extractedConfigs.length > 0) {
                 userMsg += `\n\n⚙️ **کانفیگ‌های مجزا:**\n\`\`\`\n${parsedData.extractedConfigs.join('\n\n')}\n\`\`\``;
             }
@@ -2206,7 +2201,6 @@ bot.on('message', async (msg) => {
                 let paymentDesc = `📋 **فاکتور نهایی خرید اشتراک** ⚡️\n\n` +
                                   `🏷 نام پلن: \`${selectedPlan.name}\`\n` +
                                   `🌐 حجم ترافیک: \`${selectedPlan.volume}\`\n` +
-                                  `⏳ مدت زمان: \`${selectedPlan.duration}\`\n` +
                                   discountInfoText +
                                   `💵 **مبلغ قابل پرداخت: ${priceNumber.toLocaleString()} تومان**\n` +
                                   `💰 موجودی کیف پول شما: \`${userBalance.toLocaleString()} تومان\`\n\n`;
@@ -2220,7 +2214,7 @@ bot.on('message', async (msg) => {
 
                 inlineBtns.push([{ text: `💳 پرداخت کارت به کارت (آپلود رسید)`, callback_data: `pay_card_${selectedPlan.id}` }]);
                 inlineBtns.push([{ text: `🎟 وارد کردن کد تخفیف`, callback_data: `enter_discount_${selectedPlan.id}` }]);
-                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: 'buy_sub' }]);
+                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: `buy_sub` }]);
 
                 bot.sendMessage(chatId, paymentDesc, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineBtns } }).catch(() => {});
             }
