@@ -384,12 +384,11 @@ async function handleForceJoin(msg) {
     return true;
 }
 
-// هندلر اختصاصی و مستقل برای دستور /start جهت رفع مشکل کار نکردن دکمه استارت
-bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
+bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
+    loadDatabase(); 
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
 
-    loadDatabase();
     if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
         return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.').catch(() => {});
     }
