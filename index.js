@@ -72,8 +72,6 @@ const DB_FILE = path.join(DATA_DIR, 'database.json');
 const PURCHASES_LOG_FILE = path.join(DATA_DIR, 'purchases_log.txt');
 
 const defaultDatabaseStructure = {
-    CHANNEL_USERNAME: '@Config_Arena',
-    isForceJoinEnabled: true,
     isInviteSystemEnabled: true,
     inviteRewardAmount: 5000, 
     userStates: {},
@@ -121,8 +119,6 @@ function loadDatabase() {
             db = {
                 ...defaultDatabaseStructure,
                 ...parsed,
-                CHANNEL_USERNAME: '@Config_Arena',
-                isForceJoinEnabled: true,
                 paymentCardNumber: parsed.paymentCardNumber || defaultDatabaseStructure.paymentCardNumber,
                 inviteRewardAmount: parsed.inviteRewardAmount !== undefined ? parsed.inviteRewardAmount : defaultDatabaseStructure.inviteRewardAmount,
                 menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
@@ -145,8 +141,6 @@ function loadDatabase() {
                 messagesMap: parsed.messagesMap || {}
             };
         } else {
-            db.CHANNEL_USERNAME = '@Config_Arena';
-            db.isForceJoinEnabled = true;
             saveDatabase();
         }
     } catch (e) {
@@ -264,17 +258,6 @@ function trackUserAndNotifyAdmin(msg) {
     }
 }
 
-async function checkMembership(userId) {
-    if (!db.CHANNEL_USERNAME || db.CHANNEL_USERNAME === '@YourChannelUsername') return true;
-    try {
-        const chatMember = await bot.getChatMember(db.CHANNEL_USERNAME, userId);
-        const status = chatMember.status;
-        return ['creator', 'administrator', 'member'].includes(status);
-    } catch (error) {
-        return false;
-    }
-}
-
 async function fetchAndParseConfig(url) {
     let resultInfo = {
         isSubLink: false,
@@ -370,30 +353,6 @@ async function sendMainMenu(chatId) {
     await bot.sendMessage(chatId, db.botTexts.start_message, { parse_mode: 'Markdown', ...getPersistentMenuKeyboard() }).catch(() => {});
 }
 
-async function handleForceJoin(msg) {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-
-    if (isAdmin(msg)) return true; 
-    if (!db.isForceJoinEnabled) return true; 
-
-    const isMember = await checkMembership(userId);
-    if (!isMember) {
-        const joinKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '📢 عضویت در کانال رسمی ما', url: `https://t.me/${db.CHANNEL_USERNAME.replace('@', '')}` }],
-                    [{ text: '✅ عضو شدم، ادامه بده', callback_data: 'check_membership' }]
-                ],
-                remove_keyboard: true
-            }
-        };
-        bot.sendMessage(chatId, `⚠️ **کاربر گرامی!**\nبرای استفاده از ربات، لطفاً ابتدا در کانال زیر عضو شوید:\n\n📢 ${db.CHANNEL_USERNAME}\n\nسپس روی دکمه تایید زیر کلیک کنید 👇`, { parse_mode: 'Markdown', ...joinKeyboard }).catch(() => {});
-        return false;
-    }
-    return true;
-}
-
 bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     loadDatabase(); 
     const chatId = msg.chat.id;
@@ -407,8 +366,6 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     saveDatabase();
 
     trackUserAndNotifyAdmin(msg);
-    const canProceed = await handleForceJoin(msg);
-    if (!canProceed) return;
 
     const payload = match ? match[1] : null; 
     const currentReward = db.inviteRewardAmount || 5000;
@@ -457,38 +414,38 @@ bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
 
 function sendAdminPanel(chatId) {
     const inviteStatus = db.isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
-    
     const uniqueUsersCount = [...new Set(db.allUsers)].length;
 
+    // چینش گزینه‌ها بر اساس اولویت اهمیت مدیریت
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
-                [{ text: `📊 آمار ربات (${uniqueUsersCount} کاربر)`, callback_data: 'admin_stats' }],
-                [{ text: `🎁 تنظیم پاداش دعوت (${(db.inviteRewardAmount || 5000).toLocaleString()} ت)`, callback_data: 'admin_set_invite_reward' }],
                 [
                     { text: '⚙️ مدیریت پلن‌ها', callback_data: 'admin_manage_plans' },
-                    { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' }
-                ],
-                [
-                    { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' }
-                ],
-                [
-                    { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' },
-                    { text: '📁 رسیدهای مالی', callback_data: 'admin_receipts' }
-                ],
-                [
-                    { text: '💰 مدیریت کیف پول‌ها', callback_data: 'manage_wallets' },
                     { text: '📱 مدیریت اشتراک کاربران', callback_data: 'manage_user_subs' }
                 ],
                 [
-                    { text: '🚫 مسدودسازی کاربران', callback_data: 'admin_block_menu' },
+                    { text: '💰 مدیریت کیف پول‌ها', callback_data: 'manage_wallets' },
+                    { text: '📁 رسیدهای مالی', callback_data: 'admin_receipts' }
+                ],
+                [
+                    { text: `📊 آمار ربات (${uniqueUsersCount} کاربر)`, callback_data: 'admin_stats' },
+                    { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' }
+                ],
+                [
+                    { text: '📢 ارسال پیام همگانی', callback_data: 'admin_broadcast' },
+                    { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' }
+                ],
+                [
+                    { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' },
                     { text: '💳 تنظیم شماره کارت', callback_data: 'admin_pay_settings' }
                 ],
                 [
-                    { text: inviteStatus, callback_data: 'toggle_invite_system' }
+                    { text: `🎁 تنظیم پاداش دعوت (${(db.inviteRewardAmount || 5000).toLocaleString()} ت)`, callback_data: 'admin_set_invite_reward' },
+                    { text: '🚫 مسدودسازی کاربران', callback_data: 'admin_block_menu' }
                 ],
                 [
-                    { text: '📢 ارسال پیام همگانی', callback_data: 'admin_broadcast' }
+                    { text: inviteStatus, callback_data: 'toggle_invite_system' }
                 ]
             ]
         }
@@ -1190,17 +1147,6 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    if (data === 'check_membership') {
-        const isMember = await checkMembership(userId);
-        if (isMember) {
-            bot.sendMessage(chatId, '✅ عضویت شما تأیید شد. خوش آمدید! 🎉').catch(() => {});
-            sendMainMenu(chatId);
-        } else {
-            bot.sendMessage(chatId, '❌ شما هنوز در کانال عضو نشده‌اید یا ربات قادر به بررسی نیست. لطفاً مجدداً تلاش کنید ⚠️').catch(() => {});
-        }
-        return;
-    }
-
     if (data === 'admin_manage_plans') {
         const plansMenuKeyboard = {
             reply_markup: {
@@ -1646,8 +1592,6 @@ bot.on('message', async (msg) => {
     }
 
     trackUserAndNotifyAdmin(msg);
-    const canProceed = await handleForceJoin(msg);
-    if (!canProceed) return;
 
     const names = db.menuNames;
     if (text === names.buy_sub) {
