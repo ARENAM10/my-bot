@@ -74,6 +74,8 @@ const PURCHASES_LOG_FILE = path.join(DATA_DIR, 'purchases_log.txt');
 const defaultDatabaseStructure = {
     isInviteSystemEnabled: true,
     inviteRewardAmount: 5000, 
+    forcedJoinEnabled: false,
+    forcedJoinChannel: '',
     userStates: {},
     menuNames: {
         buy_sub: '🛒 خرید اشتراک 🛍',
@@ -121,6 +123,8 @@ function loadDatabase() {
                 ...parsed,
                 paymentCardNumber: parsed.paymentCardNumber || defaultDatabaseStructure.paymentCardNumber,
                 inviteRewardAmount: parsed.inviteRewardAmount !== undefined ? parsed.inviteRewardAmount : defaultDatabaseStructure.inviteRewardAmount,
+                forcedJoinEnabled: parsed.forcedJoinEnabled !== undefined ? parsed.forcedJoinEnabled : defaultDatabaseStructure.forcedJoinEnabled,
+                forcedJoinChannel: parsed.forcedJoinChannel || defaultDatabaseStructure.forcedJoinChannel,
                 menuNames: { ...defaultDatabaseStructure.menuNames, ...(parsed.menuNames || {}) },
                 botTexts: { ...defaultDatabaseStructure.botTexts, ...(parsed.botTexts || {}) },
                 userStates: parsed.userStates || {},
@@ -216,6 +220,53 @@ function parsePrice(priceStr) {
     if (!priceStr) return 0;
     const digits = priceStr.toString().replace(/[^0-9]/g, '');
     return parseInt(digits, 10) || 0;
+}
+
+async function checkUserMembership(userId) {
+    if (!db.forcedJoinEnabled || !db.forcedJoinChannel) return true;
+    try {
+        let channel = db.forcedJoinChannel.trim();
+        const chatMember = await bot.getChatMember(channel, userId);
+        if (chatMember && ['member', 'administrator', 'creator'].includes(chatMember.status)) {
+            return true;
+        }
+        return false;
+    } catch (e) {
+        return true; 
+    }
+}
+
+async function checkAndEnforceJoin(msgOrQuery) {
+    if (!db.forcedJoinEnabled || !db.forcedJoinChannel) return true;
+    const userId = msgOrQuery.from.id;
+    const chatId = msgOrQuery.message ? msgOrQuery.message.chat.id : msgOrQuery.chat.id;
+
+    if (isAdmin(msgOrQuery)) return true;
+
+    const isMember = await checkUserMembership(userId);
+    if (!isMember) {
+        let channel = db.forcedJoinChannel.trim();
+        let channelUsername = channel.replace('@', '');
+        
+        let joinKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '📢 عضویت در کانال ربات', url: `https://t.me/${channelUsername}` }],
+                    [{ text: '✅ عضو شدم، بررسی مجدد', callback_data: 'check_membership' }]
+                ]
+            }
+        };
+
+        const text = `❌ **برای استفاده از ربات باید در کانال زیر عضو باشید:**\n\n👉 @${channelUsername}\n\nپس از عضویت، روی دکمه «عضو شدم» کلیک کنید.`;
+        
+        if (msgOrQuery.message) {
+            bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...joinKeyboard }).catch(() => {});
+        } else {
+            bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...joinKeyboard }).catch(() => {});
+        }
+        return false;
+    }
+    return true;
 }
 
 function trackUserAndNotifyAdmin(msg) {
@@ -373,6 +424,10 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
 
     trackUserAndNotifyAdmin(msg);
 
+    if (!(await checkAndEnforceJoin(msg))) {
+        return;
+    }
+
     const payload = match ? match[1] : null; 
     const currentReward = db.inviteRewardAmount || 5000;
 
@@ -419,7 +474,8 @@ bot.onText(/🖥️ پنل مدیریت|\/panel/, async (msg) => {
 });
 
 function sendAdminPanel(chatId) {
-    const inviteStatus = db.isInviteSystemEnabled ? '🟢 وضعیت زیرمجموعه‌گیری: روشن' : '🟢 وضعیت زیرمجموعه‌گیری: خاموش';
+    const inviteStatus = db.isInviteSystemEnabled ? '🟢 وضعیت زیرمجموعه‌گیری: روشن' : '🔴 وضعیت زیرمجموعه‌گیری: خاموش';
+    const forcedJoinStatus = db.forcedJoinEnabled ? '🟢 جوین اجباری: روشن' : '🔴 جوین اجباری: خاموش';
     const uniqueUsersCount = [...new Set(db.allUsers)].length;
 
     const adminKeyboard = {
@@ -453,7 +509,8 @@ function sendAdminPanel(chatId) {
                     { text: `🎁 پاداش دعوت (${(db.inviteRewardAmount || 5000).toLocaleString()} ت)`, callback_data: 'admin_set_invite_reward' }
                 ],
                 [
-                    { text: inviteStatus, callback_data: 'toggle_invite_system' }
+                    { text: inviteStatus, callback_data: 'toggle_invite_system' },
+                    { text: forcedJoinStatus, callback_data: 'admin_forced_join_menu' }
                 ]
             ]
         }
@@ -546,6 +603,20 @@ bot.on('callback_query', async (callbackQuery) => {
         return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ شما مسدود شده‌اید.', show_alert: true }).catch(() => {});
     }
 
+    if (data === 'check_membership') {
+        const isMember = await checkUserMembership(userId);
+        if (!isMember) {
+            return bot.answerCallbackQuery(callbackQuery.id, { text: '❌ شما هنوز در کانال عضو نشده‌اید!', show_alert: true }).catch(() => {});
+        }
+        await bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+        bot.sendMessage(chatId, '✅ عضویت شما تایید شد! اکنون می‌توانید از ربات استفاده کنید.', getPersistentMenuKeyboard()).catch(() => {});
+        return;
+    }
+
+    if (!(await checkAndEnforceJoin(callbackQuery))) {
+        return;
+    }
+
     const userObj = callbackQuery.from;
     if (userObj) {
         const name = userObj.first_name || userObj.last_name || 'بدون نام';
@@ -568,6 +639,64 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     const names = db.menuNames;
+
+    if (data === 'admin_forced_join_menu') {
+        if (!isAdmin(callbackQuery)) return;
+        const statusText = db.forcedJoinEnabled ? '🟢 روشن' : '🔴 خاموش';
+        const currentChannel = db.forcedJoinChannel || 'تنظیم نشده';
+
+        const fjKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: `🔄 تغییر وضعیت (فعلی: ${statusText})`, callback_data: 'toggle_forced_join_status' }],
+                    [{ text: `📝 تنظیم کانال (فعلی: ${currentChannel})`, callback_data: 'set_forced_join_channel' }],
+                    [{ text: '🔙 بازگشت به پنل مدیریت', callback_data: 'admin_back_to_panel' }]
+                ]
+            }
+        };
+
+        await bot.editMessageText(`📢 **مدیریت جوین اجباری**\n\nوضعیت: \`${statusText}\`\nکانال هدف: \`${currentChannel}\``, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: fjKeyboard.reply_markup
+        }).catch(() => {});
+        return;
+    }
+
+    if (data === 'toggle_forced_join_status') {
+        if (!isAdmin(callbackQuery)) return;
+        db.forcedJoinEnabled = !db.forcedJoinEnabled;
+        saveDatabase();
+        
+        // Refresh menu
+        const statusText = db.forcedJoinEnabled ? '🟢 روشن' : '🔴 خاموش';
+        const currentChannel = db.forcedJoinChannel || 'تنظیم نشده';
+        const fjKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: `🔄 تغییر وضعیت (فعلی: ${statusText})`, callback_data: 'toggle_forced_join_status' }],
+                    [{ text: `📝 تنظیم کانال (فعلی: ${currentChannel})`, callback_data: 'set_forced_join_channel' }],
+                    [{ text: '🔙 بازگشت به پنل مدیریت', callback_data: 'admin_back_to_panel' }]
+                ]
+            }
+        };
+        await bot.editMessageText(`📢 **مدیریت جوین اجباری**\n\nوضعیت: \`${statusText}\`\nکانال هدف: \`${currentChannel}\``, {
+            chat_id: chatId,
+            message_id: msg.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: fjKeyboard.reply_markup
+        }).catch(() => {});
+        return;
+    }
+
+    if (data === 'set_forced_join_channel') {
+        if (!isAdmin(callbackQuery)) return;
+        db.userStates[chatId] = { step: 'get_new_forced_join_channel' };
+        saveDatabase();
+        bot.sendMessage(chatId, `📝 **تنظیم کانال جوین اجباری**\n\nلطفاً یوزرنیم کانال (مثلاً \`@ChannelUsername\` یا لینک) را ارسال کنید:` , { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+    }
 
     if (data === 'admin_set_invite_reward') {
         if (!isAdmin(callbackQuery)) return;
@@ -1633,6 +1762,10 @@ bot.on('message', async (msg) => {
         return;
     }
 
+    if (!(await checkAndEnforceJoin(msg))) {
+        return;
+    }
+
     trackUserAndNotifyAdmin(msg);
 
     const names = db.menuNames;
@@ -1690,6 +1823,16 @@ bot.on('message', async (msg) => {
 
     const currentState = db.userStates[chatId];
     if (!currentState) return;
+
+    if (currentState.step === 'get_new_forced_join_channel') {
+        if (!isAdmin(msg)) return;
+        db.forcedJoinChannel = text;
+        delete db.userStates[chatId];
+        saveDatabase();
+        bot.sendMessage(chatId, `✅ کانال جوین اجباری با موفقیت به \`${text}\` تغییر یافت.`, { parse_mode: 'Markdown' }).catch(() => {});
+        sendAdminPanel(chatId);
+        return;
+    }
 
     if (currentState.step === 'get_new_invite_reward') {
         if (!isAdmin(msg)) return;
