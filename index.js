@@ -1440,8 +1440,9 @@ bot.on('callback_query', async (callbackQuery) => {
         const planId = parseInt(data.split('_')[2]);
         const selectedPlan = db.customPlans.find(p => p.id === planId);
 
-        if (!selectedPlan || selectedPlan.links.length === 0) {
-            bot.sendMessage(chatId, '❌ این پلن به اتمام رسیده است.').catch(() => {});
+        // 🛡️ بررسی پیشگیرانه صحت وجود و خالی نبودن آرشیو لینک پیش از ارائه گزینه خرید
+        if (!selectedPlan || !selectedPlan.links || selectedPlan.links.length === 0) {
+            bot.sendMessage(chatId, '❌ این پلن به اتمام رسیده یا فاقد لینک در انبار است.').catch(() => {});
             return;
         }
 
@@ -1496,8 +1497,9 @@ bot.on('callback_query', async (callbackQuery) => {
         const planId = parseInt(data.replace('pay_wallet_', ''));
         const plan = db.customPlans.find(p => p.id === planId);
 
-        if (!plan || plan.links.length === 0) {
-            bot.sendMessage(chatId, '❌ خطا: پلن مورد نظر نامعتبر است یا به اتمام رسیده.').catch(() => {});
+        // 🛡️ بررسی مجدد وجود لینک پیش از کسر موجودی کیف پول
+        if (!plan || !plan.links || plan.links.length === 0) {
+            bot.sendMessage(chatId, '❌ خطا: لینکی برای این پلن در انبار موجود نیست. موجودی شما کسر نگردید.').catch(() => {});
             return;
         }
 
@@ -2093,7 +2095,8 @@ bot.on('message', async (msg) => {
     }
 
     if (currentState.step === 'get_user_discount_input') {
-        const planId = currentState.step.planId || currentState.planId;
+        // 🛠️ اصلاح خط خوانش شناسه پلن (جلوگیری از باگ undefined شدن planId)
+        const planId = currentState.planId;
         const code = text.toUpperCase();
         delete db.userStates[chatId];
         saveDatabase();
