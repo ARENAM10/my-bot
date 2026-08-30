@@ -421,8 +421,7 @@ function sendAdminPanel(chatId) {
                     { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' }
                 ],
                 [
-                    { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' },
-                    { text: '🎛 ویرایش دکمه‌ها', callback_data: 'admin_edit_buttons_menu' }
+                    { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' }
                 ],
                 [
                     { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' },
@@ -555,33 +554,6 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     const names = db.menuNames;
-
-    if (data === 'admin_edit_buttons_menu') {
-        if (!isAdmin(callbackQuery)) return;
-        const editButtonsKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: `🛒 خرید اشتراک: ${names.buy_sub}`, callback_data: 'edit_btn_buy_sub' }],
-                    [{ text: `💳 کیف پول: ${names.wallet}`, callback_data: 'edit_btn_wallet' }],
-                    [{ text: `⚡️ سرویس های من: ${names.my_subs}`, callback_data: 'edit_btn_my_subs' }],
-                    [{ text: `🎉 زیر مجموعه گیری: ${names.invite}`, callback_data: 'edit_btn_invite' }],
-                    [{ text: `💬 پشتیبانی: ${names.support}`, callback_data: 'edit_btn_support' }],
-                    [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
-                ]
-            }
-        };
-        bot.sendMessage(chatId, '🎛 **مدیریت و ویرایش نام دکمه‌های منوی اصلی**\nدکمه مورد نظر برای تغییر عنوان را انتخاب کنید:', { parse_mode: 'Markdown', ...editButtonsKeyboard }).catch(() => {});
-        return;
-    }
-
-    if (data.startsWith('edit_btn_')) {
-        if (!isAdmin(callbackQuery)) return;
-        const btnKey = data.replace('edit_btn_', '');
-        db.userStates[chatId] = { step: 'get_new_menu_button_name', targetBtnKey: btnKey };
-        saveDatabase();
-        bot.sendMessage(chatId, `🎛 لطفاً نام جدید دکمه را ارسال کنید:\n\n*(نام فعلی):\n\`${names[btnKey]}\`*`, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
 
     if (data === 'admin_set_invite_reward') {
         if (!isAdmin(callbackQuery)) return;
@@ -1696,17 +1668,6 @@ bot.on('message', async (msg) => {
     const currentState = db.userStates[chatId];
     if (!currentState) return;
 
-    if (currentState.step === 'get_new_menu_button_name') {
-        if (!isAdmin(msg)) return;
-        const btnKey = currentState.targetBtnKey;
-        db.menuNames[btnKey] = text;
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ نام دکمه مورد نظر با موفقیت به \`${text}\` تغییر یافت و منوی کاربران به‌روزرسانی شد.`, { parse_mode: 'Markdown' }).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
     if (currentState.step === 'get_new_invite_reward') {
         if (!isAdmin(msg)) return;
         const newReward = parsePrice(text);
@@ -1967,7 +1928,7 @@ bot.on('message', async (msg) => {
                 } else if (msg.document) {
                     await bot.sendDocument(uId, msg.document.file_id, { caption: msg.caption || '', parse_mode: 'Markdown' });
                 } else {
-                    await bot.sendMessage(uId, text, { parse_mode: 'Markdown' });
+                    await bot.sendMessage(uId, msg.text, { parse_mode: 'Markdown' });
                 }
                 successCount++;
                 await sleep(50); 
