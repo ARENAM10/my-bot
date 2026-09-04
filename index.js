@@ -16,7 +16,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const TOKEN = '8850301156:AAH1MryTDXakGuKYsAxTlmVO2h_lSw9lnoM';
+const TOKEN = '8850301156:AAGr1yWbbtDwWii__eC1TDvXcygzN7TC5JA';
 
 const bot = new TelegramBot(TOKEN, { 
     polling: {
