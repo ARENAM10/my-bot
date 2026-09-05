@@ -229,7 +229,7 @@ function parsePrice(priceStr) {
 
 function trackUserAndNotifyAdmin(msg) {
     if (msg && msg.from && msg.from.id) {
-        const userId = msg.from.id.toString(); // اصلاح به String برای همگانی کلیدها در دیتابیس
+        const userId = msg.from.id.toString();
         const user = msg.from;
         const name = user.first_name || user.last_name || 'بدون نام';
         const username = user.username ? `@${user.username}` : 'ندارد (فاقد یوزرنیم)';
@@ -2074,7 +2074,7 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if, (currentState.step === 'get_new_discount_percent') {
+    if (currentState.step === 'get_new_discount_percent') {
         if (!isAdmin(msg)) return;
         const percent = parseInt(text, 10);
         if (isNaN(percent) || percent <= 0 || percent > 100) {
