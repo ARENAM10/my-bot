@@ -148,22 +148,21 @@ function loadDatabase() {
     }
 }
 
-let isSaving = false;
+let saveTimeout = null;
 function saveDatabase() {
-    if (isSaving) return;
-    try {
-        isSaving = true;
-        if (!fs.existsSync(DATA_DIR)) {
-            fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+        try {
+            if (!fs.existsSync(DATA_DIR)) {
+                fs.mkdirSync(DATA_DIR, { recursive: true });
+            }
+            const tempFile = DB_FILE + '.tmp';
+            fs.writeFileSync(tempFile, JSON.stringify(db, null, 2), 'utf8');
+            fs.renameSync(tempFile, DB_FILE);
+        } catch (e) {
+            console.log('❌ خطا در ذخیره‌سازی دیتابیس:', e);
         }
-        const tempFile = DB_FILE + '.tmp';
-        fs.writeFileSync(tempFile, JSON.stringify(db, null, 2), 'utf8');
-        fs.renameSync(tempFile, DB_FILE);
-    } catch (e) {
-        console.log('❌ خطا در ذخیره‌سازی دیتابیس:', e);
-    } finally {
-        isSaving = false;
-    }
+    }, 300); // ذخیره غیرهمگام و تاخیری برای جلوگیری از فریز شدن سرور در ترافیک بالا
 }
 
 function logPurchaseToFile(subObj) {
@@ -179,7 +178,7 @@ function logPurchaseToFile(subObj) {
                          `حجم کل: ${subObj.totalVolume || subObj.volume}\n` +
                          `لینک اشتراک:\n${subObj.configLink}\n` +
                          `----------------------------------------\n\n`;
-        fs.appendFileSync(PURCHASES_LOG_FILE, logEntry, 'utf8');
+        fs.appendFile(PURCHASES_LOG_FILE, logEntry, 'utf8', () => {});
     } catch (e) {
         console.log('❌ خطا در نوشتن لاگ خرید در فایل متنی:', e);
     }
@@ -348,7 +347,6 @@ async function sendMainMenu(chatId) {
 }
 
 bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
-    loadDatabase(); 
     const chatId = msg.chat.id;
     const userId = msg.from.id.toString();
 
@@ -397,7 +395,6 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
 });
 
 bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
-    loadDatabase();
     const chatId = msg.chat.id;
     if (!isAdmin(msg)) {
         bot.sendMessage(chatId, '❌ شما به این بخش دسترسی ندارید.').catch(() => {});
@@ -408,7 +405,6 @@ bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
 
 function sendAdminPanel(chatId) {
     const inviteStatus = db.isInviteSystemEnabled ? '🟢 زیرمجموعه‌گیری: روشن' : '🔴 زیرمجموعه‌گیری: خاموش';
-    
     const uniqueUsersCount = [...new Set(db.allUsers)].length;
 
     const adminKeyboard = {
@@ -525,7 +521,6 @@ bot.on('callback_query', async (callbackQuery) => {
         await bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
     } catch (e) {}
 
-    loadDatabase(); 
     const msg = callbackQuery.message;
 
     if (!isAdmin(callbackQuery) && db.blockedUsers && db.blockedUsers.includes(userId)) {
@@ -1604,8 +1599,6 @@ bot.on('message', async (msg) => {
         }).catch(() => {});
     }
 
-    loadDatabase();
-
     if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
         return;
     }
@@ -1939,7 +1932,7 @@ bot.on('message', async (msg) => {
                     await bot.sendMessage(uId, text, { parse_mode: 'Markdown' });
                 }
                 successCount++;
-                await sleep(50); 
+                await sleep(40); 
             } catch (err) {
                 failCount++;
             }
