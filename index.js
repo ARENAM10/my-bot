@@ -2001,7 +2001,7 @@ bot.on('message', async (msg) => {
             delete db.userStates[chatId];
             saveDatabase();
 
-            bot.sendMessage(chatId, `✅ **پلن جدید با موفقیت ایجاد شد!**\n\n📌 نام: ${newPlan.name}\n📦 تعداد لینک‌های ذخیره شده: ${newPlan.links.length} عدد`, { parse_mode: 'Markdown' }).catch(() => {});
+            bot.sendMessage(chatId, `✅ **پلن جدید با موفقیت ایجاد شد!**\n\n📌 نام: ${newPlan.name}\n📦 تعداد لینک‌های ذخیره شده: ${newPlan.links.length} عدد`, { parse_Mode: 'Markdown' }).catch(() => {});
             sendAdminPanel(chatId);
             return;
         } else {
@@ -2078,4 +2078,58 @@ bot.on('message', async (msg) => {
         delete db.userStates[chatId];
         saveDatabase();
 
-,
+        if (db.discountCodes && db.discountCodes[code]) {
+            const discInfo = db.discountCodes[code];
+            if (!db.appliedDiscounts) db.appliedDiscounts = {};
+            db.appliedDiscounts[userId] = { code, percent: discInfo.percent };
+            saveDatabase();
+
+            bot.sendMessage(chatId, `🎉 **کد تخفیف با موفقیت اعمال شد!**\nمیزان تخفیف: ${discInfo.percent}% 🎁`).catch(() => {});
+            
+            const selectedPlan = db.customPlans.find(p => p.id === planId);
+            if (selectedPlan) {
+                let priceNumber = parsePrice(selectedPlan.price);
+                let discountInfoText = '';
+                
+                let agentDiscountPercent = 0;
+                if (db.agents && db.agents[userId]) {
+                    agentDiscountPercent = db.agents[userId].discountPercent || 0;
+                }
+                if (agentDiscountPercent > 0) {
+                    const agentAmt = Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
+                    priceNumber -= agentAmt;
+                    discountInfoText += `🤝 تخفیف نمایندگی (${agentDiscountPercent}%): -${agentAmt.toLocaleString()} تومان\n`;
+                }
+
+                const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * discInfo.percent) / 100));
+                priceNumber -= discountAmount;
+                discountInfoText += `🎟 تخفیف کد (${discInfo.percent}%): -${discountAmount.toLocaleString()} تومان\n`;
+
+                const userBalance = db.userWallets[userId] || 0;
+                const inlineBtns = [];
+                let paymentDesc = `📋 **فاکتور نهایی خرید اشتراک** ⚡️\n\n` +
+                                  `🏷 نام پلن: \`${selectedPlan.name}\`\n` +
+                                  `🌐 حجم ترافیک: \`${selectedPlan.volume}\`\n` +
+                                  discountInfoText +
+                                  `💵 **مبلغ قابل پرداخت: ${priceNumber.toLocaleString()} تومان**\n` +
+                                  `💰 موجودی کیف پول شما: \`${userBalance.toLocaleString()} تومان\`\n\n`;
+
+                if (userBalance >= priceNumber) {
+                    paymentDesc += `✅ موجودی کیف پول شما کافی است.`;
+                    inlineBtns.push([{ text: `💳 پرداخت آنی از کیف پول (${priceNumber.toLocaleString()} ت)`, callback_data: `pay_wallet_${selectedPlan.id}` }]);
+                } else {
+                    paymentDesc += `⚠️ موجودی کیف پول کافی نیست.`;
+                }
+
+                inlineBtns.push([{ text: `💳 پرداخت کارت به کارت (آپلود رسید)`, callback_data: `pay_card_${selectedPlan.id}` }]);
+                inlineBtns.push([{ text: `🎟 وارد کردن کد تخفیف`, callback_data: `enter_discount_${selectedPlan.id}` }]);
+                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: `buy_sub` }]);
+
+                bot.sendMessage(chatId, paymentDesc, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineBtns } }).catch(() => {});
+            }
+        } else {
+            bot.sendMessage(chatId, '❌ کد تخفیف وارد شده نامعتبر یا منقضی شده است!').catch(() => {});
+        }
+        return;
+    }
+});
