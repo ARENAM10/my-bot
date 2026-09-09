@@ -421,8 +421,7 @@ function sendAdminPanel(chatId) {
                     { text: '🎟 مدیریت کدهای تخفیف', callback_data: 'admin_discount_menu' }
                 ],
                 [
-                    { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' },
-                    { text: '🎛 ویرایش دکمه‌ها', callback_data: 'admin_edit_buttons_menu' }
+                    { text: '📝 ویرایش متن‌های ربات', callback_data: 'admin_edit_texts_menu' }
                 ],
                 [
                     { text: '📦 سوابق اشتراک‌ها', callback_data: 'admin_history' },
@@ -555,33 +554,6 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 
     const names = db.menuNames;
-
-    if (data === 'admin_edit_buttons_menu') {
-        if (!isAdmin(callbackQuery)) return;
-        const editButtonsKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: `🛒 خرید اشتراک: ${names.buy_sub}`, callback_data: 'edit_btn_buy_sub' }],
-                    [{ text: `💳 کیف پول: ${names.wallet}`, callback_data: 'edit_btn_wallet' }],
-                    [{ text: `⚡️ سرویس های من: ${names.my_subs}`, callback_data: 'edit_btn_my_subs' }],
-                    [{ text: `🎉 زیر مجموعه گیری: ${names.invite}`, callback_data: 'edit_btn_invite' }],
-                    [{ text: `💬 پشتیبانی: ${names.support}`, callback_data: 'edit_btn_support' }],
-                    [{ text: '🔙 بازگشت به پنل', callback_data: 'admin_back_to_panel' }]
-                ]
-            }
-        };
-        bot.sendMessage(chatId, '🎛 **مدیریت و ویرایش نام دکمه‌های منوی اصلی**\nدکمه مورد نظر برای تغییر عنوان را انتخاب کنید:', { parse_mode: 'Markdown', ...editButtonsKeyboard }).catch(() => {});
-        return;
-    }
-
-    if (data.startsWith('edit_btn_')) {
-        if (!isAdmin(callbackQuery)) return;
-        const btnKey = data.replace('edit_btn_', '');
-        db.userStates[chatId] = { step: 'get_new_menu_button_name', targetBtnKey: btnKey };
-        saveDatabase();
-        bot.sendMessage(chatId, `🎛 لطفاً نام جدید دکمه را ارسال کنید:\n\n*(نام فعلی):\n\`${names[btnKey]}\`*`, { parse_mode: 'Markdown' }).catch(() => {});
-        return;
-    }
 
     if (data === 'admin_set_invite_reward') {
         if (!isAdmin(callbackQuery)) return;
@@ -1696,17 +1668,6 @@ bot.on('message', async (msg) => {
     const currentState = db.userStates[chatId];
     if (!currentState) return;
 
-    if (currentState.step === 'get_new_menu_button_name') {
-        if (!isAdmin(msg)) return;
-        const btnKey = currentState.targetBtnKey;
-        db.menuNames[btnKey] = text;
-        delete db.userStates[chatId];
-        saveDatabase();
-        bot.sendMessage(chatId, `✅ نام دکمه مورد نظر با موفقیت به \`${text}\` تغییر یافت و منوی کاربران به‌روزرسانی شد.`, { parse_mode: 'Markdown' }).catch(() => {});
-        sendAdminPanel(chatId);
-        return;
-    }
-
     if (currentState.step === 'get_new_invite_reward') {
         if (!isAdmin(msg)) return;
         const newReward = parsePrice(text);
@@ -2117,58 +2078,4 @@ bot.on('message', async (msg) => {
         delete db.userStates[chatId];
         saveDatabase();
 
-        if (db.discountCodes && db.discountCodes[code]) {
-            const discInfo = db.discountCodes[code];
-            if (!db.appliedDiscounts) db.appliedDiscounts = {};
-            db.appliedDiscounts[userId] = { code, percent: discInfo.percent };
-            saveDatabase();
-
-            bot.sendMessage(chatId, `🎉 **کد تخفیف با موفقیت اعمال شد!**\nمیزان تخفیف: ${discInfo.percent}% 🎁`).catch(() => {});
-            
-            const selectedPlan = db.customPlans.find(p => p.id === planId);
-            if (selectedPlan) {
-                let priceNumber = parsePrice(selectedPlan.price);
-                let discountInfoText = '';
-                
-                let agentDiscountPercent = 0;
-                if (db.agents && db.agents[userId]) {
-                    agentDiscountPercent = db.agents[userId].discountPercent || 0;
-                }
-                if (agentDiscountPercent > 0) {
-                    const agentAmt = Math.min(priceNumber, Math.floor((priceNumber * agentDiscountPercent) / 100));
-                    priceNumber -= agentAmt;
-                    discountInfoText += `🤝 تخفیف نمایندگی (${agentDiscountPercent}%): -${agentAmt.toLocaleString()} تومان\n`;
-                }
-
-                const discountAmount = Math.min(priceNumber, Math.floor((priceNumber * discInfo.percent) / 100));
-                priceNumber -= discountAmount;
-                discountInfoText += `🎟 تخفیف کد (${discInfo.percent}%): -${discountAmount.toLocaleString()} تومان\n`;
-
-                const userBalance = db.userWallets[userId] || 0;
-                const inlineBtns = [];
-                let paymentDesc = `📋 **فاکتور نهایی خرید اشتراک** ⚡️\n\n` +
-                                  `🏷 نام پلن: \`${selectedPlan.name}\`\n` +
-                                  `🌐 حجم ترافیک: \`${selectedPlan.volume}\`\n` +
-                                  discountInfoText +
-                                  `💵 **مبلغ قابل پرداخت: ${priceNumber.toLocaleString()} تومان**\n` +
-                                  `💰 موجودی کیف پول شما: \`${userBalance.toLocaleString()} تومان\`\n\n`;
-
-                if (userBalance >= priceNumber) {
-                    paymentDesc += `✅ موجودی کیف پول شما کافی است.`;
-                    inlineBtns.push([{ text: `💳 پرداخت آنی از کیف پول (${priceNumber.toLocaleString()} ت)`, callback_data: `pay_wallet_${selectedPlan.id}` }]);
-                } else {
-                    paymentDesc += `⚠️ موجودی کیف پول کافی نیست.`;
-                }
-
-                inlineBtns.push([{ text: `💳 پرداخت کارت به کارت (آپلود رسید)`, callback_data: `pay_card_${selectedPlan.id}` }]);
-                inlineBtns.push([{ text: `🎟 وارد کردن کد تخفیف`, callback_data: `enter_discount_${selectedPlan.id}` }]);
-                inlineBtns.push([{ text: `🔙 بازگشت به فروشگاه`, callback_data: `buy_sub` }]);
-
-                bot.sendMessage(chatId, paymentDesc, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineBtns } }).catch(() => {});
-            }
-        } else {
-            bot.sendMessage(chatId, '❌ کد تخفیف وارد شده نامعتبر یا منقضی شده است!').catch(() => {});
-        }
-        return;
-    }
-});
+,
