@@ -1367,10 +1367,10 @@ bot.on('callback_query', async (callbackQuery) => {
             }
         };
 
-        delete db.userStates[chatId];
+        db.userStates[chatId] = { step: 'waiting_deposit_amount_choice' };
         saveDatabase();
         
-        bot.sendMessage(chatId, '💳 **افزایش موجودی کیف پول**\n\nمبلغ مورد نظر خود را برای شارژ حساب انتخاب کنید: 👇', {
+        bot.sendMessage(chatId, '💳 **افزایش موجودی کیف پول**\n\nمبلغ مورد نظر خود را برای شارژ حساب انتخاب کرده یا مبلغ دلخواه خود را به تومان ارسال کنید (مثلاً 75000): 👇', {
             parse_mode: 'Markdown',
             reply_markup: depositAmountsKeyboard.reply_markup
         }).catch(() => {});
@@ -1657,9 +1657,23 @@ bot.on('message', async (msg) => {
 
     const currentState = db.userStates[chatId];
 
-    // 💡 رفع مشکل ارسال نشدن رسیدها: اگر کاربر عکس/فایل بفرستد اما state او تنظیم نشده باشد یا منقضی شده باشد
-    if (!currentState && (msg.photo || msg.document)) {
-        return bot.sendMessage(chatId, '⚠️ لطفاً ابتدا از طریق دکمه «خرید اشتراک» یا «شارژ کیف پول» اقدام به ثبت سفارش کرده و سپس رسید خود را ارسال نمایید.', { parse_mode: 'Markdown' }).catch(() => {});
+    if (currentState && currentState.step === 'waiting_deposit_amount_choice') {
+        const customAmount = parsePrice(text);
+        if (customAmount <= 0) {
+            return bot.sendMessage(chatId, '❌ مبلغ وارد شده نامعتبر است. لطفاً یک عدد معتبر به تومان وارد کنید:').catch(() => {});
+        }
+
+        db.userStates[chatId] = { 
+            step: 'get_wallet_deposit_receipt', 
+            depositAmount: customAmount 
+        };
+        saveDatabase();
+
+        const depositMsg = `💳 **فاکتور شارژ کیف پول**\n\n` +
+                           `💵 مبلغ انتخابی: \`${customAmount.toLocaleString()} تومان\`\n\n` +
+                           `لطفاً مبلغ را به شماره کارت زیر واریز کرده و **عکس رسید** را همینجا ارسال کنید تا تأیید شود:\n\`${db.paymentCardNumber}\``;
+        
+        return bot.sendMessage(chatId, depositMsg, { parse_mode: 'Markdown' }).catch(() => {});
     }
 
     if (!currentState) return;
@@ -2106,8 +2120,6 @@ bot.on('message', async (msg) => {
                 let paymentDesc = `📋 **فاکتور نهایی خرید اشتراک** ⚡️\n\n` +
                                   `🏷 نام پلن: \`${selectedPlan.name}\`\n` +
                                   `🌐 حجم ترافیک: \`${selectedPlan.volume}\`\n` +
-                                  discountInfoText +
-                                  `💵 **مبلغ قابل پرداخت: ${priceNumber.toLocaleString()} تومان**\n` +
                                   `💰 موجودی کیف پول شما: \`${userBalance.toLocaleString()} تومان\`\n\n`;
 
                 if (userBalance >= priceNumber) {
