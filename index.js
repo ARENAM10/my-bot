@@ -28,7 +28,7 @@ const bot = new TelegramBot(TOKEN, {
 });
 
 const ADMIN_USERNAME = 'arenam_10';
-const ADMIN_CHAT_ID = 8923324852; // اصلاح به صورت عدد صحیح برای جلوگیری از خطاهای ارسال به ادمین
+const ADMIN_CHAT_ID = '8923324852'; // اصلاح به صورت رشته برای جلوگیری از خطای ارسال به ادمین
 const CHANNEL_LOG_ID = '-1004488082323';
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -251,7 +251,9 @@ function trackUserAndNotifyAdmin(msg) {
                 `🆔 **شناسه عددی:** \`${userId}\`\n` +
                 `🕒 **تاریخ و ساعت:** ${currentPersianTime}`, 
                 { parse_mode: 'Markdown', ...keyboard }
-            ).catch(() => {});
+            ).catch((err) => {
+                console.log('Error notifying admin about new user:', err);
+            });
         }
     }
 }
