@@ -28,7 +28,7 @@ const bot = new TelegramBot(TOKEN, {
 });
 
 const ADMIN_USERNAME = 'arenam_10';
-const ADMIN_CHAT_ID = 8923324852;
+const ADMIN_CHAT_ID = '8923324852'; // اصلاح به صورت رشته برای جلوگیری از خطاهای ارسال پیام به ادمین
 const CHANNEL_LOG_ID = '-1004488082323';
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -198,10 +198,10 @@ app.listen(PORT, () => {
 });
 
 function isAdmin(msgOrQuery) {
-    const chatId = msgOrQuery.message ? msgOrQuery.message.chat.id : msgOrQuery.chat.id;
+    const chatId = msgOrQuery.message ? msgOrQuery.message.chat.id.toString() : msgOrQuery.chat.id.toString();
     const user = msgOrQuery.from;
     const username = user && user.username;
-    return chatId === ADMIN_CHAT_ID || (username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase());
+    return chatId === ADMIN_CHAT_ID.toString() || (username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase());
 }
 
 function parsePrice(priceStr) {
@@ -212,11 +212,11 @@ function parsePrice(priceStr) {
 
 function trackUserAndNotifyAdmin(msg) {
     if (msg && msg.from && msg.from.id) {
-        const userId = msg.from.id;
+        const userId = msg.from.id.toString();
         const user = msg.from;
         const name = user.first_name || user.last_name || 'بدون نام';
         const username = user.username ? `@${user.username}` : 'ندارد (فاقد یوزرنیم)';
-        const chatId = msg.chat ? msg.chat.id : userId;
+        const chatId = msg.chat ? msg.chat.id.toString() : userId;
         const currentPersianTime = getPersianDateTime();
 
         let isBrandNew = false;
@@ -237,7 +237,7 @@ function trackUserAndNotifyAdmin(msg) {
         }
         saveDatabase();
 
-        if (isBrandNew && chatId !== ADMIN_CHAT_ID) {
+        if (isBrandNew && chatId !== ADMIN_CHAT_ID.toString()) {
             const keyboard = {
                 reply_markup: {
                     inline_keyboard: [[{ text: '👤 پروفایل کاربر در تلگرام', url: `tg://user?id=${userId}` }]]
@@ -347,7 +347,7 @@ async function sendMainMenu(chatId) {
 }
 
 bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
-    const chatId = msg.chat.id;
+    const chatId = msg.chat.id.toString();
     const userId = msg.from.id.toString();
 
     if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
@@ -359,7 +359,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     const payload = match ? match[1] : null; 
     const currentReward = db.inviteRewardAmount || 5000;
 
-    if (payload && db.isInviteSystemEnabled && payload !== chatId.toString()) {
+    if (payload && db.isInviteSystemEnabled && payload !== chatId) {
         const refId = payload;
         if (!db.userWallets[`referred_${chatId}`]) {
             db.userWallets[`referred_${chatId}`] = true; 
@@ -392,7 +392,7 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
 });
 
 bot.onText(/💻 پنل مدیریت|\/panel/, async (msg) => {
-    const chatId = msg.chat.id;
+    const chatId = msg.chat.id.toString();
     if (!isAdmin(msg)) {
         bot.sendMessage(chatId, '❌ شما به این بخش دسترسی ندارید.').catch(() => {});
         return;
@@ -510,7 +510,7 @@ async function sendUserSubscriptionsPage(chatId, messageId, userId, page = 0, ca
 }
 
 bot.on('callback_query', async (callbackQuery) => {
-    const chatId = callbackQuery.message.chat.id;
+    const chatId = callbackQuery.message.chat.id.toString();
     const userId = callbackQuery.from.id.toString();
     const data = callbackQuery.data;
 
@@ -1582,7 +1582,7 @@ function textButtonMatches(data, buttonText) {
 
 bot.on('message', async (msg) => {
     if (!msg.text && !msg.photo && !msg.document && !msg.video && !msg.audio && !msg.voice && !msg.animation) return;
-    const chatId = msg.chat.id;
+    const chatId = msg.chat.id.toString();
     const userId = msg.from.id.toString();
     const text = msg.text ? msg.text.trim() : '';
 
@@ -1848,9 +1848,13 @@ bot.on('message', async (msg) => {
         };
 
         if (msg.photo) {
-            bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch(() => {});
+            bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch((e) => {
+                console.log('Error sending photo to admin:', e);
+            });
         } else {
-            bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch(() => {});
+            bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch((e) => {
+                console.log('Error sending document to admin:', e);
+            });
         }
 
         bot.sendMessage(chatId, '✅ رسید شما با موفقیت برای مدیریت ارسال شد. پس از بررسی، حساب شما شارژ خواهد شد. 🙏', { parse_mode: 'Markdown' }).catch(() => {});
@@ -1910,9 +1914,13 @@ bot.on('message', async (msg) => {
         };
 
         if (msg.photo) {
-            bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch(() => {});
+            bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch((e) => {
+                console.log('Error sending card photo to admin:', e);
+            });
         } else {
-            bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch(() => {});
+            bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch((e) => {
+                console.log('Error sending card document to admin:', e);
+            });
         }
 
         bot.sendMessage(chatId, '✅ رسید خرید شما با موفقیت ارسال شد. پس از تایید توسط مدیریت، اشتراک شما به طور خودکار صادر و ارسال خواهد شد. 🙏✨', { parse_mode: 'Markdown' }).catch(() => {});
