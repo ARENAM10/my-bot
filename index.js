@@ -162,7 +162,7 @@ function saveDatabase() {
         } catch (e) {
             console.log('❌ خطا در ذخیره‌سازی دیتابیس:', e);
         }
-    }, 300); // ذخیره غیرهمگام و تاخیری برای جلوگیری از فریز شدن سرور در ترافیک بالا
+    }, 300);
 }
 
 function logPurchaseToFile(subObj) {
@@ -353,9 +353,6 @@ bot.onText(/\/start(?: (.+))?/, async (msg, match) => {
     if (!isAdmin(msg) && db.blockedUsers && db.blockedUsers.includes(userId)) {
         return bot.sendMessage(chatId, '❌ شما توسط مدیریت مسدود شده‌اید و نمی‌توانید از ربات استفاده کنید.').catch(() => {});
     }
-
-    delete db.userStates[chatId];
-    saveDatabase();
 
     trackUserAndNotifyAdmin(msg);
 
@@ -1659,6 +1656,12 @@ bot.on('message', async (msg) => {
     }
 
     const currentState = db.userStates[chatId];
+
+    // 💡 رفع مشکل ارسال نشدن رسیدها: اگر کاربر عکس/فایل بفرستد اما state او تنظیم نشده باشد یا منقضی شده باشد
+    if (!currentState && (msg.photo || msg.document)) {
+        return bot.sendMessage(chatId, '⚠️ لطفاً ابتدا از طریق دکمه «خرید اشتراک» یا «شارژ کیف پول» اقدام به ثبت سفارش کرده و سپس رسید خود را ارسال نمایید.', { parse_mode: 'Markdown' }).catch(() => {});
+    }
+
     if (!currentState) return;
 
     if (currentState.step === 'get_new_invite_reward') {
