@@ -28,7 +28,7 @@ const bot = new TelegramBot(TOKEN, {
 });
 
 const ADMIN_USERNAME = 'arenam_10';
-const ADMIN_CHAT_ID = '8923324852'; // اصلاح به صورت رشته برای جلوگیری از خطای ارسال به ادمین
+const ADMIN_CHAT_ID = '8923324852'; // تعریف دقیق به صورت رشته برای جلوگیری از خطای ارسال به ادمین
 const CHANNEL_LOG_ID = '-1004488082323';
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1678,7 +1678,7 @@ bot.on('message', async (msg) => {
         return bot.sendMessage(chatId, depositMsg, { parse_mode: 'Markdown' }).catch(() => {});
     }
 
-    // --- هندل کردن دریافت رسید شارژ کیف پول یا خرید کارت به کارت ---
+    // --- هندل کردن دریافت رسید شارژ کیف پول یا خرید کارت به کارت و ارسال صحیح به ادمین ---
     if (currentState && (currentState.step === 'get_wallet_deposit_receipt' || currentState.step === 'get_card_purchase_receipt') && (msg.photo || msg.document)) {
         const userInfo = db.usersDetailMap[userId] || { name: 'کاربر', username: 'ندارد' };
         const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
@@ -1721,11 +1721,11 @@ bot.on('message', async (msg) => {
 
             if (msg.photo) {
                 bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch((e) => {
-                    console.log('Error sending photo to admin:', e);
+                    console.error('❌ خطا در ارسال عکس رسید شارژ به ادمین:', e);
                 });
             } else {
                 bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch((e) => {
-                    console.log('Error sending document to admin:', e);
+                    console.error('❌ خطا در ارسال فایل رسید شارژ به ادمین:', e);
                 });
             }
 
@@ -1784,11 +1784,11 @@ bot.on('message', async (msg) => {
 
             if (msg.photo) {
                 bot.sendPhoto(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch((e) => {
-                    console.log('Error sending card photo to admin:', e);
+                    console.error('❌ خطا در ارسال عکس رسید خرید به ادمین:', e);
                 });
             } else {
                 bot.sendDocument(ADMIN_CHAT_ID, fileId, { caption: adminCaption, parse_mode: 'Markdown', ...approvalKeyboard }).catch((e) => {
-                    console.log('Error sending card document to admin:', e);
+                    console.error('❌ خطا در ارسال فایل رسید خرید به ادمین:', e);
                 });
             }
 
